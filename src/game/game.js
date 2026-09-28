@@ -2,38 +2,114 @@
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
 // Rules run on a fixed character grid; physics and light run in pixels on top of it.
-const GW = 64, GH = 44, PY = GH - 3;   // playfield in cells; PY is the cannon's top row
-const ALIENS = [   // 5x3 sprites, two animation frames each
-  [[" (^) ", "<o_o>", " / \\ "], [" (^) ", "<o_o>", " \\ / "]],
-  [["~[=]~", "(O.O)", "/   \\"], ["~[=]~", "(O.O)", " | | "]],
-  [[" oOo ", "{-v-}", " ' ' "], [" oOo ", "{-^-}", "'   '"]]
+const GW = 96, GH = 66, PY = GH - 4;   // playfield in cells; PY is the cannon's top row
+const AW = 7, AH = 4;                   // alien sprite size
+// Enemy types, two frames each. `from` is the first level they can appear in. Every enemy fires
+// laser lines: rate multiplies fire rate, speed the laser speed, bomb is the chance a shot is a bomb.
+const TYPES = [
+  { name: "GRUNT",   from: 1, hp: 1, pts: 10, rate: 1,   speed: 1,   bomb: 0.1,  rgb: [0.55, 1.0, 0.3],
+    art: [["  .-.  ", " (o o) ", " /)=(\\ ", "  ' '  "], ["  .-.  ", " (o o) ", " \\)=(/ ", " '   ' "]] },
+  { name: "TROOPER", from: 1, hp: 1, pts: 15, rate: 1,   speed: 1,   bomb: 0.1,  rgb: [0.3, 0.8, 1.0],
+    art: [["~[===]~", " (O.O) ", " /| |\\ ", " /   \\ "], ["~[===]~", " (O.O) ", " \\| |/ ", "  | |  "]] },
+  { name: "SCOUT",   from: 1, hp: 1, pts: 20, rate: 1,   speed: 1.3, bomb: 0.05, rgb: [1.0, 0.3, 0.8],
+    art: [["   ^   ", " <(o)> ", "<--+-->", "  / \\  "], ["   ^   ", " <(o)> ", "<--+-->", "  \\ /  "]] },
+  { name: "GUNNER",  from: 2, hp: 2, pts: 30, rate: 1,   speed: 1,   bomb: 0.1,  rgb: [1.0, 0.9, 0.3], twin: true,
+    art: [["\\--o--/", " <|=|> ", " [===] ", "  ^ ^  "], ["/--o--\\", " <|=|> ", " [===] ", "  ^ ^  "]] },
+  { name: "TANK",    from: 3, hp: 3, pts: 40, rate: 0.8, speed: 1.5, bomb: 0.15, rgb: [1.0, 0.6, 0.2],
+    art: [[" _____ ", "[#####]", "|@-=-@|", "d-----b"], [" _____ ", "[#####]", "|@-=-@|", "b-----d"]] },
+  { name: "SEEKER",  from: 4, hp: 2, pts: 35, rate: 2,   speed: 1.2, bomb: 0.05, rgb: [0.8, 0.45, 1.0],
+    art: [["  .V.  ", " (@@@) ", "(( + ))", "  `-'  "], ["  .V.  ", " (@@@) ", "(( x ))", "  '-`  "]] },
+  { name: "BOMBER",  from: 6, hp: 4, pts: 60, rate: 1,   speed: 1,   bomb: 0.6,  rgb: [1.0, 0.35, 0.3],
+    art: [["__/^\\__", "[ OOO ]", " \\_v_/ ", "  | |  "], ["__/^\\__", "[ ooo ]", " \\_v_/ ", "  ! !  "]] }
 ];
-const ALIEN_RGB = [[1.0, 0.3, 0.8], [0.3, 0.8, 1.0], [0.55, 1.0, 0.3]], ROW_TYPE = [0, 1, 1, 2];
-const CANNON = ["  A  ", "/=#=\\"], CANNON_RGB = [1.4, 1.1, 0.5];
-const SHIELD = ["  ###  ", " ##### ", "### ###"], SHIELD_RGB = [0.3, 0.9, 0.5], SHIELD_X = [10, 25, 39, 54];
-const DIFF = {   // shot: alien shots per alien per second
-  easy:   { shot: 0.13, step: 0.90, fire: 0.15, lives: 4 },
-  normal: { shot: 0.24, step: 0.72, fire: 0.20, lives: 3 },
-  hard:   { shot: 0.39, step: 0.58, fire: 0.30, lives: 3 }
+// Enemy fire is kept dim and emits no light: only the sun lights the scene, so attacks read as thin lines.
+const WEAPONS = {   // speed in cells per second
+  laser: { speed: 34, rgb: [1.0, 0.3, 0.25], glyph: 124 },
+  bomb:  { speed: 16, rgb: [1.0, 0.75, 0.3], glyph: 111, blast: true }
+};
+const GUNS = [   // shots: [x offset, sideways cells per row]; delay scales the difficulty's fire delay
+  { name: "BLASTER", top: "   |   ", delay: 1,    shots: [[0, 0]] },
+  { name: "RAPID",   top: "  :|:  ", delay: 0.55, shots: [[0, 0]] },
+  { name: "TWIN",    top: "  | |  ", delay: 0.6,  shots: [[-1, 0], [1, 0]] },
+  { name: "TRIDENT", top: " \\ | / ", delay: 0.6,  shots: [[0, 0], [-2, -0.25], [2, 0.25]] },
+  { name: "LANCE",   top: " |I I| ", delay: 0.5,  shots: [[-1, 0], [1, 0]], pierce: 3 },
+  { name: "STORM",   top: "\\\\ | //", delay: 0.45, shots: [[0, 0], [-1, -0.2], [1, 0.2], [-3, -0.45], [3, 0.45]] }
+];
+const DROPS = { P: { rgb: [1.3, 1.0, 0.3] }, S: { rgb: [0.4, 1.4, 0.6] }, L: { rgb: [1.5, 0.4, 0.5] } };   // parts, shield repair, life
+const CANNON_RGB = [1.4, 1.1, 0.5], CANNON_BASE = [" /###\\ ", "/=====\\"], CW = 7;
+const SHIELD = ["   #####   ", "  #######  ", " ######### ", "####   ####"], SHIELD_RGB = [0.3, 0.9, 0.5], SHIELD_X = [14, 36, 60, 82];
+const DIFF = {   // shot: alien shots per alien per second on level 1; step: seconds per fleet step
+  easy:   { shot: 0.13, step: 0.60, fire: 0.15, lives: 4 },
+  normal: { shot: 0.24, step: 0.48, fire: 0.20, lives: 3 },
+  hard:   { shot: 0.39, step: 0.39, fire: 0.30, lives: 3 }
 };
 const DEBRIS = { name: "debris", density: 0.5, e: 0.5, mu: 0.5, kd: 0.9, ks: 0.6, shine: 24 };
-const SHOT_SPEED = 50, BOMB_SPEED = 24, CANNON_SPEED = 22;   // cells per second
-const FONT = {   // 5x5 block letters for the launch screen
-  B: ["####.", "#...#", "####.", "#...#", "####."], A: [".###.", "#...#", "#####", "#...#", "#...#"],
-  S: [".####", "#....", ".###.", "....#", "####."], E: ["#####", "#....", "####.", "#....", "#####"],
-  C: [".####", "#....", "#....", "#....", ".####"], O: [".###.", "#...#", "#...#", "#...#", ".###."],
-  M: ["#...#", "##.##", "#.#.#", "#...#", "#...#"], N: ["#...#", "##..#", "#.#.#", "#..##", "#...#"],
-  D: ["####.", "#...#", "#...#", "#...#", "####."], R: ["####.", "#...#", "####.", "#..#.", "#...#"]
+const CRATE = { name: "crate", density: 1.5, e: 0.3, mu: 0.8, kd: 0.9, ks: 0.3, shine: 10 };
+const SHOT_SPEED = 75, CANNON_SPEED = 33, PLANE_SPEED = 21;   // cells per second
+const STORE = "baseCommander.v1.scores";
+const FONT = {   // 7x7 block letters for the launch screen
+  B: ["######.", "##...##", "##...##", "######.", "##...##", "##...##", "######."],
+  A: [".#####.", "##...##", "##...##", "#######", "##...##", "##...##", "##...##"],
+  S: [".######", "##.....", "##.....", ".#####.", ".....##", ".....##", "######."],
+  E: ["#######", "##.....", "##.....", "######.", "##.....", "##.....", "#######"],
+  C: [".######", "##.....", "##.....", "##.....", "##.....", "##.....", ".######"],
+  O: [".#####.", "##...##", "##...##", "##...##", "##...##", "##...##", ".#####."],
+  M: ["##...##", "###.###", "#######", "##.#.##", "##...##", "##...##", "##...##"],
+  N: ["##...##", "###..##", "####.##", "##.####", "##..###", "##...##", "##...##"],
+  D: ["######.", "##...##", "##...##", "##...##", "##...##", "##...##", "######."],
+  R: ["######.", "##...##", "##...##", "######.", "##.##..", "##..##.", "##...##"]
 };
-const TITLE = [["BASE", 5], ["COMMANDER", 12]];   // word, top row
+const TITLE = [["BASE", 5], ["COMMANDER", 15]];   // word, top row
 
-const D = defaultDisplay(); D.room = 0.3; D.lampRGB = D.lampRGB.map(v => v * 0.55);
-const world = new World(), lamp = { x: 0, y: 0, z: 0, on: true };
-let screen = null, stars = [], diffKey = "normal", score = 0, lives = 3, level = 1;
+const D = defaultDisplay(); D.room = 0.3; D.glow = 0.2;
+const world = new World(), sun = { on: false };   // lamp off: spheres fall back to the engine's fixed directional light
+let screen = null, stars = [], diffKey = "normal", score = 0, lives = 3, level = 1, lv = null;
 let state = "title", titleT = 0, fwT = 0, landed = new Set(), paused = false, deadT = 0, msg = "", msgT = 0;
-let px = 0, fireT = 0, shots = [], bombs = [], aliens = [], shields = [], cannon = null;
+let px = 0, fireT = 0, gun = 0, parts = 0, shots = [], bombs = [], aliens = [], shields = [], cannon = null, plane = null, dropT = 0;
 let fleet = { dir: 1, t: 0, every: 0.7 }, frame = 0, animT = 0, chewT = 0;
+let scores = loadScores(), recorded = false, rank = -1;
 const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
+const partsCost = () => 3 + gun * 2;
+const cannonArt = () => [GUNS[gun].top, ...CANNON_BASE];
+
+/* ---------- saved scores ---------- */
+function loadScores(){
+  try { return JSON.parse(localStorage.getItem(STORE) || "[]"); }
+  catch (e){ console.warn("Base Commander: saved scores unreadable, starting fresh", e); return []; }
+}
+function recordScore(){
+  if (recorded || !score) return;
+  recorded = true;
+  const entry = { s: score, l: level, d: diffKey, t: Date.now() };
+  scores = [...scores, entry].sort((a, b) => b.s - a.s).slice(0, 5); rank = scores.indexOf(entry);
+  try { localStorage.setItem(STORE, JSON.stringify(scores)); }
+  catch (e){ console.warn("Base Commander: could not save score", e); flash("SCORE NOT SAVED (STORAGE BLOCKED)", 3); }
+}
+
+/* ---------- levels ---------- */
+// Seeded, so level N always has the same line-up.
+const rng32 = seed => () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+function makeLevel(n){
+  const d = DIFF[diffKey], rand = rng32(n * 7919 + 1);
+  const pool = TYPES.map((t, i) => i).filter(i => TYPES[i].from <= n);
+  const rows = Math.min(6, 4 + Math.floor((n - 1) / 3)), cols = Math.min(8, 6 + n);
+  const fresh = n > 1 ? pool.find(i => TYPES[i].from === n) : undefined;
+  const rowTypes = Array.from({ length: rows }, () => pool[Math.floor(rand() * pool.length)]);
+  if (fresh !== undefined && !rowTypes.includes(fresh)) rowTypes[0] = fresh;
+  rowTypes.sort((a, b) => TYPES[b].pts - TYPES[a].pts);   // toughest rows at the top
+  return { rows, cols, rowTypes, fresh,
+    top: Math.min(3 + n, 44 - rows * 6),               // later waves start lower
+    step: Math.max(0.22, d.step * 0.95 ** (n - 1)),   // seconds per fleet step
+    shot: d.shot * (1 + 0.12 * (n - 1)),              // fire rate
+    bombMul: Math.min(1.6, 1 + 0.05 * (n - 1)),       // enemy shot speed
+    hpBonus: Math.floor((n - 1) / 8) };               // extra armour every 8 levels
+}
+for (let n = 1; n <= 40; n++){   // self-check: every generated level fits above the shields
+  const L = makeLevel(n);
+  console.assert(L.top >= 3 && L.top + L.rows * 6 <= PY - 8 && L.cols * 10 - 3 <= GW - 6 && (L.fresh === undefined || L.rowTypes.includes(L.fresh)), "Base Commander: bad level", n, L);
+}
+for (const T of TYPES) for (const f of T.art) console.assert(f.length === AH && f.every(r => r.length === AW), "Base Commander: bad sprite", T.name);
+for (const G of GUNS) console.assert(G.top.length === CW, "Base Commander: bad cannon top", G.name);
 
 function layout(){
   const r = stage.getBoundingClientRect(); if (!r.width) return;
@@ -49,31 +125,41 @@ function layout(){
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   world.w = W; world.h = (GH - 1) * screen.ch; world.unit = screen.cw;
   world.g = { x: 0, y: world.h * 1.6 }; world.drag = 2e-4 * (600 / world.h) ** 2;
-  lamp.z = screen.ch * 12;
-  if (old){ const kx = screen.cw / old.cw, ky = screen.ch / old.ch; for (const b of world.bodies){ b.x *= kx; b.y *= ky; b.r *= kx; } }
-  stars = Array.from({ length: 70 }, () => ({ i: (1 + Math.floor(Math.random() * (GH - 2))) * GW + 1 + Math.floor(Math.random() * (GW - 2)), ph: Math.random() * 6.283 }));
+    if (old){ const kx = screen.cw / old.cw, ky = screen.ch / old.ch; for (const b of world.bodies){ b.x *= kx; b.y *= ky; b.r *= kx; } }
+  stars = Array.from({ length: 140 }, () => ({ i: (1 + Math.floor(Math.random() * (GH - 2))) * GW + 1 + Math.floor(Math.random() * (GW - 2)), ph: Math.random() * 6.283 }));
 }
 
-function setupLevel(){
-  const d = DIFF[diffKey];
-  shots = []; bombs = []; aliens = []; shields = []; world.bodies.length = 0;
-  px = (GW - 5) / 2; fireT = 0;
-  const top = 3 + Math.min(level - 1, 4);   // later waves start lower
-  for (let r = 0; r < 4; r++) for (let c = 0; c < 8; c++) aliens.push({ x: 4 + c * 7, y: top + r * 4, type: ROW_TYPE[r], alive: true });
-  fleet = { dir: 1, t: 0, every: Math.max(0.3, d.step - (level - 1) * 0.07) };
+function buildShields(){
+  for (const s of shields) world.bodies.splice(world.bodies.indexOf(s.body), 1);
+  shields = [];
   for (const sx of SHIELD_X) SHIELD.forEach((row, dy) => [...row].forEach((ch, dx) => {
     if (ch !== "#") return;
-    const s = { x: sx - 3 + dx, y: PY - 6 + dy, hp: 3 };
+    const s = { x: sx - 5 + dx, y: PY - 8 + dy, hp: 3 };
     s.body = world.add(cx(s.x), cy(s.y), screen.ch * 0.5, "peg", SHIELD_RGB.slice());
     shields.push(s);
   }));
-  cannon = world.add(-1e4, 0, screen.cw * 2.3, "peg"); cannon.hidden = true;   // invisible bumper so debris bounces off the cannon
+}
+function setupLevel(){
+  lv = makeLevel(level);
+  shields = []; world.bodies.length = 0; shots = []; bombs = []; aliens = []; plane = null; dropT = 5 + Math.random() * 5;
+  px = (GW - CW) / 2; fireT = 0;
+  const x0 = Math.floor((GW - lv.cols * 10 + 3) / 2);
+  lv.rowTypes.forEach((type, r) => { for (let c = 0; c < lv.cols; c++){
+    const hp = TYPES[type].hp + lv.hpBonus;
+    aliens.push({ x: x0 + c * 10, y: lv.top + r * 6, type, hp, maxHp: hp, alive: true, flash: 0 });
+  } });
+  fleet = { dir: 1, t: 0, every: lv.step };
+  buildShields();
+  cannon = world.add(-1e4, 0, screen.cw * 3.2, "peg"); cannon.hidden = true;   // invisible bumper so debris bounces off the cannon
+  flash("LEVEL " + level + (lv.fresh !== undefined ? "  NEW ENEMY: " + TYPES[lv.fresh].name : ""), 2.5);
 }
 function restart(){
   if (state === "clear"){ setupLevel(); state = "play"; return; }
-  score = 0; level = 1; lives = DIFF[diffKey].lives; paused = false; msgT = 0; setupLevel(); state = "play";
+  if (state !== "title") recordScore();   // a run abandoned with R still counts
+  score = 0; level = 1; gun = 0; parts = 0; lives = DIFF[diffKey].lives; paused = false; recorded = false; rank = -1;
+  setupLevel(); state = "play";
 }
-function flash(text){ msg = text; msgT = 1.4; }
+function flash(text, secs = 1.4){ msg = text; msgT = secs; }
 
 /* ---------- physics effects ---------- */
 function burst(x, y, rgb, n, vy0 = 0){
@@ -83,6 +169,12 @@ function burst(x, y, rgb, n, vy0 = 0){
     b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp + vy0; b.w = (Math.random() - 0.5) * 30;
     b.flash = 1; b.life = 3 + Math.random() * 2; b.r0 = r;
   }
+}
+// Airdrop crates are real bodies: they float down on a chute, then bounce off shields and debris.
+function dropCrate(x, y){
+  const r = Math.random(), kind = r < 0.7 ? "P" : r < 0.9 ? "S" : "L";
+  const b = world.add(x, y, screen.ch * 0.5, "crate", DROPS[kind].rgb, CRATE);
+  b.crate = kind; b.chute = true; b.ttl = 8;   // ttl counts down only once it has landed
 }
 function eachCell(sprite, x, y, fn){ sprite.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") fn(x + dx, y + dy, row.charCodeAt(dx)); }); }
 
@@ -94,69 +186,113 @@ function damage(s){
   burst(s.body.x, s.body.y, SHIELD_RGB, 2);
 }
 function hitShield(x, y){ const s = shields.find(s => s.x === x && s.y === y); if (s) damage(s); return !!s; }
-function hitAlien(x, y){
+function hitAlien(x, y, shot){
   for (const a of aliens){
-    const dx = x - a.x, dy = y - a.y;
-    if (!a.alive || dx < 0 || dx > 4 || dy < 0 || dy > 2 || ALIENS[a.type][frame][dy][dx] === " ") continue;
-    a.alive = false; score += 10 + Math.floor((GH - a.y) / 4) + level;
-    eachCell(ALIENS[a.type][frame], a.x, a.y, (gx, gy) => burst(cx(gx), cy(gy), ALIEN_RGB[a.type], 1, -250));
+    if (!a.alive || shot.hits.has(a)) continue;
+    const T = TYPES[a.type], art = T.art[frame], dx = x - a.x, dy = y - a.y;
+    if (dx < 0 || dx >= AW || dy < 0 || dy >= AH || art[dy][dx] === " ") continue;
+    shot.hits.add(a); a.flash = 0.12;
+    if (--a.hp > 0){ score += 1; burst(cx(x), cy(y), T.rgb, 2, -150); return true; }
+    a.alive = false; score += T.pts + Math.floor((GH - a.y) / 4) + level;
+    eachCell(art, a.x, a.y, (gx, gy) => burst(cx(gx), cy(gy), T.rgb, 1, -250));
+    if (a.maxHp >= 3 && Math.random() < 0.35) dropCrate(cx(a.x + 3), cy(a.y + 2));   // armoured enemies may drop parts
     return true;
   }
   return false;
 }
-function inCannon(x, y){ const dx = x - Math.round(px), dy = y - PY; return dy >= 0 && dy < 2 && dx >= 0 && dx < 5 && CANNON[dy][dx] !== " "; }
+function inCannon(x, y){ const art = cannonArt(), dx = x - Math.round(px), dy = y - PY; return dy >= 0 && dy < 3 && dx >= 0 && dx < CW && art[dy][dx] !== " "; }
 function loseLife(){
-  eachCell(CANNON, Math.round(px), PY, (gx, gy) => burst(cx(gx), cy(gy), CANNON_RGB, 2, -300));
+  eachCell(cannonArt(), Math.round(px), PY, (gx, gy) => burst(cx(gx), cy(gy), CANNON_RGB, 2, -300));
   lives--; shots = []; bombs = [];
-  if (lives <= 0){ state = "over"; return; }
-  px = (GW - 5) / 2; state = "dead"; deadT = 1.2; flash("SHIP LOST");
+  if (lives <= 0){ state = "over"; recordScore(); return; }
+  const lost = gun > 0; gun = Math.max(0, gun - 1);
+  px = (GW - CW) / 2; state = "dead"; deadT = 1.2; flash(lost ? "SHIP LOST - GUN DOWN TO " + GUNS[gun].name : "SHIP LOST");
+}
+function collect(kind){
+  burst(cannon.x, cannon.y - screen.ch * 2, DROPS[kind].rgb, 6, -300);
+  if (kind === "S"){ buildShields(); flash("SHIELDS REPAIRED"); return; }
+  if (kind === "L"){ lives++; flash("+1 LIFE"); return; }
+  parts++;
+  if (gun < GUNS.length - 1 && parts >= partsCost()){ parts -= partsCost(); gun++; flash("GUN UPGRADE: " + GUNS[gun].name, 2); }
+  else flash("+1 PARTS");
+}
+function fireAlien(a){
+  const T = TYPES[a.type], x = a.x + 3, y = a.y + AH, sp = T.speed * lv.bombMul;
+  if (Math.random() < T.bomb) bombs.push({ kind: "bomb", x, y, sp: lv.bombMul, acc: 0 });
+  else for (const ox of T.twin ? [-2, 2] : [0]) bombs.push({ kind: "laser", x: x + ox, y, sp, acc: 0 });
+}
+function impact(s, y){   // an enemy shot lands on a shield or the floor; bombs hit a small area
+  const r = WEAPONS[s.kind].blast ? 1 : 0;
+  shields.filter(q => Math.abs(q.x - s.x) <= r && Math.abs(q.y - y) <= r).forEach(damage);
+  burst(cx(s.x), cy(y), WEAPONS[s.kind].rgb.map(v => v * 0.6), r ? 4 : 1, -200);
 }
 
 function update(dt){
   const d = DIFF[diffKey];
   if ((animT += dt) >= 0.35){ animT = 0; frame ^= 1; }
-  px = Math.max(1, Math.min(GW - 6, px + ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * CANNON_SPEED * dt));
-  if ((fireT -= dt) <= 0 && keys.fire){ shots.push({ x: Math.round(px) + 2, y: PY - 1, acc: 0 }); fireT = d.fire; }
+  px = Math.max(1, Math.min(GW - 1 - CW, px + ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * CANNON_SPEED * dt));
+  if ((fireT -= dt) <= 0 && keys.fire){
+    const G = GUNS[gun];
+    for (const [ox, vx] of G.shots){ const x = Math.round(px) + 3 + ox; shots.push({ x, fx: x, y: PY - 1, vx, acc: 0, pierce: G.pierce || 1, hits: new Set() }); }
+    fireT = d.fire * G.delay;
+  }
   // bullets advance one cell at a time so nothing is skipped at low frame rates
   for (const s of shots){
     s.acc += SHOT_SPEED * dt;
-    while (s.acc >= 1 && !s.dead){ s.acc--; s.y--; s.dead = s.y < 1 || hitShield(s.x, s.y) || hitAlien(s.x, s.y); }
+    while (s.acc >= 1 && !s.dead){
+      s.acc--; s.y--; s.fx += s.vx; s.x = Math.round(s.fx);
+      if (s.y < 1 || s.x < 1 || s.x > GW - 2 || hitShield(s.x, s.y)) s.dead = true;
+      else if (hitAlien(s.x, s.y, s) && --s.pierce <= 0) s.dead = true;
+    }
   }
   shots = shots.filter(s => !s.dead);
 
   const alive = aliens.filter(a => a.alive);
-  if (!alive.length){ state = "clear"; level++; return; }
+  if (!alive.length){ score += 50 * level; state = "clear"; level++; return; }
+  for (const a of alive) a.flash -= dt;
   const gone = 1 - alive.length / aliens.length;
   if ((fleet.t += dt) >= Math.max(0.1, fleet.every - gone * 0.4)){
     fleet.t = 0;
-    const minX = Math.min(...alive.map(a => a.x)), maxX = Math.max(...alive.map(a => a.x + 4));
-    if (fleet.dir > 0 ? maxX >= GW - 3 : minX <= 2){ for (const a of alive) a.y++; fleet.dir = -fleet.dir; }
+    const minX = Math.min(...alive.map(a => a.x)), maxX = Math.max(...alive.map(a => a.x + AW - 1));
+    if (fleet.dir > 0 ? maxX >= GW - 3 : minX <= 2){ for (const a of alive) a.y += 2; fleet.dir = -fleet.dir; }
     else for (const a of alive) a.x += fleet.dir;
   }
-  if (Math.max(...alive.map(a => a.y + 2)) >= PY){ lives = 1; loseLife(); return; }   // landed: game over
+  if (Math.max(...alive.map(a => a.y + AH - 1)) >= PY){ lives = 1; loseLife(); return; }   // landed: game over
   if ((chewT += dt) >= 0.2){   // aliens chew through shields they touch
     chewT = 0;
-    for (const a of alive) eachCell(ALIENS[a.type][frame], a.x, a.y, (gx, gy) => { const s = shields.find(s => s.x === gx && s.y === gy); if (s) damage(s); });
+    for (const a of alive) eachCell(TYPES[a.type].art[frame], a.x, a.y, (gx, gy) => { const s = shields.find(s => s.x === gx && s.y === gy); if (s) damage(s); });
   }
   for (const a of alive){
-    if (Math.random() >= (d.shot + gone * 0.18) * dt) continue;
-    if (alive.some(o => o.y > a.y && Math.abs(o.x - a.x) < 5)) continue;   // only the front line fires
-    bombs.push({ x: a.x + 2, y: a.y + 3, acc: 0 });
+    if (Math.random() >= (lv.shot + gone * 0.18) * TYPES[a.type].rate * dt) continue;
+    if (alive.some(o => o.y > a.y && Math.abs(o.x - a.x) < AW)) continue;   // only the front line fires
+    fireAlien(a);
   }
   let hitMe = false;
   for (const s of bombs){
-    s.acc += BOMB_SPEED * dt;
+    s.acc += WEAPONS[s.kind].speed * s.sp * dt;
     while (s.acc >= 1 && !s.dead){
       s.acc--; s.y++;
-      if (s.y >= GH - 1){ s.dead = true; burst(cx(s.x), cy(s.y - 1), [1, 0.4, 0.3], 1, -200); }
-      else if (hitShield(s.x, s.y)) s.dead = true;
+      if (s.y >= GH - 1){ s.dead = true; impact(s, s.y - 1); }
+      else if (shields.some(q => q.x === s.x && q.y === s.y)){ s.dead = true; impact(s, s.y); }
       else if (inCannon(s.x, s.y)) s.dead = hitMe = true;
       else { const p = shots.find(p => !p.dead && p.x === s.x && Math.abs(p.y - s.y) <= 1);
         if (p){ p.dead = s.dead = true; score += 2; burst(cx(s.x), cy(s.y), [1, 0.7, 0.3], 2); } }
     }
   }
   bombs = bombs.filter(s => !s.dead); shots = shots.filter(s => !s.dead);
-  if (hitMe) loseLife();
+  if (hitMe){ loseLife(); return; }
+  // supply plane crosses the top and drops a crate at a random column
+  if (!plane && (dropT -= dt) <= 0){
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    plane = { x: dir > 0 ? -8 : GW, dir, dropX: 6 + Math.floor(Math.random() * (GW - 12)), done: false };
+    dropT = 12 + Math.random() * 10;
+  }
+  if (plane){
+    plane.x += plane.dir * PLANE_SPEED * dt;
+    if (!plane.done && Math.abs(plane.x + 4 - plane.dropX) < 1){ plane.done = true; dropCrate(cx(plane.dropX), cy(3)); }
+    if (plane.x < -9 || plane.x > GW + 1) plane = null;
+  }
+  for (const b of world.bodies) if (b.crate && b.ttl > 0 && Math.hypot(b.x - cannon.x, b.y - cannon.y) < cannon.r + b.r + screen.ch * 0.5){ b.ttl = 0; collect(b.crate); }
   // passing bullets shove loose debris
   for (const b of world.bodies) if (b.life){
     for (const s of shots) if (Math.abs(cx(s.x) - b.x) < screen.cw * 1.5 && Math.abs(cy(s.y) - b.y) < screen.ch){ b.vy = Math.min(b.vy, -500); b.vx += (b.x - cx(s.x)) * 20; }
@@ -167,13 +303,8 @@ function update(dt){
 /* ---------- drawing ---------- */
 function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
 function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, 3, s.charCodeAt(i)); }
-function halo(gx, gy, rgb, k){   // soft light a bullet casts on the floor
-  for (let dy = -2; dy <= 2; dy++) for (let dx = -4; dx <= 4; dx++){
-    const v = k * (1 - Math.hypot(dx / 4.5, dy / 2.5)), x = gx + dx, y = gy + dy;
-    if (v > 0 && x >= 0 && y >= 0 && x < GW && y < GH) screen.add(y * GW + x, rgb[0] * v, rgb[1] * v, rgb[2] * v);
-  }
-}
-const SHOT_RGB = [0.5, 1.1, 1.6], BOMB_RGB = [1.6, 0.35, 0.25], WHITE = [1.6, 1.6, 1.6], BORDER_RGB = [0.12, 0.16, 0.28];
+const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
+const SHOT_RGB = [0.5, 1.1, 1.6], LANCE_RGB = [1.6, 0.6, 1.4], WHITE = [1.6, 1.6, 1.6], DIM = [0.35, 0.4, 0.55], BORDER_RGB = [0.12, 0.16, 0.28];
 function bounce(p){   // ease-out bounce: a letter dropping onto the floor
   const n = 7.5625, d = 2.75;
   if (p < 1 / d) return n * p * p;
@@ -185,53 +316,73 @@ const hue = h => [0, 1, 2].map(k => 0.8 * (0.5 + 0.5 * Math.cos(6.283 * (h - k /
 function drawTitle(t){
   let k = 0;
   for (const [word, y0] of TITLE){
-    const x0 = Math.floor((GW - word.length * 6 + 1) / 2);
+    const x0 = Math.floor((GW - word.length * 8 + 1) / 2);
     for (let i = 0; i < word.length; i++, k++){
       const p = Math.max(0, Math.min(1, (titleT - 0.15 * k) / 1.1)); if (!p) continue;
-      const x = x0 + i * 6, y = Math.round(y0 - (1 - bounce(p)) * (y0 + 6));
-      if (p > 0.37 && !landed.has(k)){ landed.add(k); burst(cx(x + 2), cy(y0 + 5), hue(x / GW), 4, -150); }   // dust on first impact
-      FONT[word[i]].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#"){
+      const x = x0 + i * 8, y = Math.round(y0 - (1 - bounce(p)) * (y0 + 8));
+      if (p > 0.37 && !landed.has(k)){ landed.add(k); burst(cx(x + 3), cy(y0 + 7), hue(x / GW), 6, -150); }   // dust on first impact
+      FONT[word[i]].forEach((row, dy) => { for (let dx = 0; dx < 7; dx++) if (row[dx] === "#"){
         const c = hue(t * 0.0002 + (x + dx) / GW * 0.6 + dy * 0.03);
         put(x + dx + 1, y + dy + 1, c, 0.12, 1, 46);   // drop shadow
         put(x + dx, y + dy, c, 1.5, 2, 35);
       } });
     }
   }
-  const fleetX = Math.round(Math.sin(titleT * 0.8) * 6);
-  for (let i = 0; i < 6; i++) eachCell(ALIENS[i % 3][frame], 5 + fleetX + i * 9, 23, (gx, gy, code) => put(gx, gy, ALIEN_RGB[i % 3], 0.9, 2, code));
+  const fleetX = Math.round(Math.sin(titleT * 0.8) * 3);
+  for (let i = 0; i < 7; i++) eachCell(TYPES[i].art[frame], 6 + fleetX + i * 13, 28, (gx, gy, code) => put(gx, gy, TYPES[i].rgb, 0.9, 2, code));
   if (titleT > 3){
-    text(Math.floor((GW - 20) / 2), 19, "~ DEFEND THE BASE ~", CANNON_RGB);
-    if ((t / 500 | 0) % 2) text(Math.floor((GW - 32) / 2), 31, "PRESS SPACE OR TAP FIRE TO START", WHITE);
+    center(25, "~ DEFEND THE BASE ~", CANNON_RGB);
+    if ((t / 500 | 0) % 2) center(46, "PRESS SPACE OR TAP FIRE TO START", WHITE);
   }
-  const help = "ARROWS/A D MOVE  SPACE FIRE  P PAUSE  R RESTART";
-  text(Math.floor((GW - help.length) / 2), 35, help, [0.35, 0.4, 0.55]);
-  const dl = "DIFFICULTY: " + diffKey.toUpperCase();
-  text(Math.floor((GW - dl.length) / 2), 37, dl, [0.35, 0.4, 0.55]);
+  center(36, "HIGH SCORES", CANNON_RGB);
+  if (!scores.length) center(38, "NO SCORES YET", DIM);
+  scores.forEach((e, i) => center(38 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
+  center(52, "ARROWS/A D MOVE  SPACE FIRE  P PAUSE  R RESTART", DIM);
+  center(54, "CATCH AIRDROPS: [P] PARTS  [S] SHIELDS  [L] LIFE", DIM);
+  center(56, "DIFFICULTY: " + diffKey.toUpperCase(), DIM);
 }
 function draw(t){
   screen.clear();
   for (const s of stars){ const v = 0.07 + 0.05 * Math.sin(t * 0.002 + s.ph); screen.put(s.i, v, v, v * 1.2, 0, 46); }
   const bodies = world.bodies.filter(b => !b.hidden);
-  screen.floor(bodies, lamp);
-  for (const s of shots) halo(s.x, s.y, SHOT_RGB, 0.12);
-  for (const s of bombs) halo(s.x, s.y, BOMB_RGB, 0.1);
-  for (const b of bodies) screen.sphere(b, lamp, { stripe: false });
-  for (const b of bodies) if (b.life) screen.streak(b, world.unit);
+  for (const b of bodies) if (!b.crate) screen.sphere(b, sun, { stripe: false });
+  if (state === "title") for (const b of bodies) if (b.life) screen.streak(b, world.unit);   // in play, streaks would look like enemy lasers
   if (state === "title"){ drawTitle(t); drawBorder(); screen.render(ctx); return; }
   const pulse = 0.85 + 0.15 * frame;
-  for (const a of aliens) if (a.alive) eachCell(ALIENS[a.type][frame], a.x, a.y, (gx, gy, code) => put(gx, gy, ALIEN_RGB[a.type], pulse, 2, code));
-  for (const s of shots) put(s.x, s.y, SHOT_RGB, 1, 3, 124);
-  for (const s of bombs) put(s.x, s.y, BOMB_RGB, 1, 3, s.y & 1 ? 33 : 58);
-  if (state === "play" || state === "clear") eachCell(CANNON, Math.round(px), PY, (gx, gy, code) => put(gx, gy, CANNON_RGB, 1, 3, code));
+  for (const a of aliens) if (a.alive){
+    const k = a.flash > 0 ? 2 : pulse * (0.55 + 0.45 * a.hp / a.maxHp);   // damaged armour glows dimmer
+    eachCell(TYPES[a.type].art[frame], a.x, a.y, (gx, gy, code) => put(gx, gy, TYPES[a.type].rgb, k, 2, code));
+  }
+  for (const b of bodies) if (b.crate && (b.ttl > 3 || (t / 150 | 0) % 2)){
+    const gx = Math.floor(b.x / screen.cw), gy = Math.floor(b.y / screen.ch), c = DROPS[b.crate].rgb;
+    text(gx - 1, gy, "[" + b.crate + "]", c);
+    if (b.chute) text(gx - 1, gy - 1, "/~\\", WHITE);
+  }
+  if (plane) text(Math.floor(plane.x), 2, plane.dir > 0 ? "==-[H]->" : "<-[H]-==", WHITE);
+  for (const s of shots) put(s.x, s.y, GUNS[gun].pierce ? LANCE_RGB : SHOT_RGB, 1, 3, s.vx < 0 ? 92 : s.vx > 0 ? 47 : 124);
+  for (const s of bombs){   // lasers are a two-cell line, bombs a small dot
+    const W = WEAPONS[s.kind]; put(s.x, s.y, W.rgb, 1, 3, W.glyph);
+    if (s.kind === "laser") put(s.x, s.y - 1, W.rgb, 0.6, 3, W.glyph);
+  }
+  if (state === "play" || state === "clear") eachCell(cannonArt(), Math.round(px), PY, (gx, gy, code) => put(gx, gy, CANNON_RGB, 1, 3, code));
   drawBorder();
-  text(2, 0, " SCORE " + String(score).padStart(6, "0") + " ", WHITE);
-  const right = " LEVEL " + level + "  LIVES " + Math.max(0, lives) + "  " + diffKey.toUpperCase() + " ";
+  text(2, 0, " SCORE " + String(score).padStart(6, "0") + "  HI " + String(Math.max(score, scores[0]?.s || 0)).padStart(6, "0") + " ", WHITE);
+  const right = " LV " + level + "  LIVES " + Math.max(0, lives) + "  " + diffKey.toUpperCase() + " ";
   text(GW - 2 - right.length, 0, right, WHITE);
-  const mid = s => text(Math.floor((GW - s.length) / 2), GH >> 1, s, WHITE);
-  if (paused) mid("  [ PAUSED ]  ");
-  else if (state === "over") mid("  GAME OVER - press R  ");
-  else if (state === "clear") mid("  WAVE CLEARED - press R  ");
-  if (msgT > 0) text(Math.floor((GW - msg.length - 2) / 2), 3, " " + msg + " ", BOMB_RGB);
+  text(2, GH - 1, " GUN " + GUNS[gun].name + "  PARTS " + (gun < GUNS.length - 1 ? parts + "/" + partsCost() : "MAX") + " ", CANNON_RGB);
+  const left = " ENEMIES " + aliens.filter(a => a.alive).length + " ";
+  text(GW - 2 - left.length, GH - 1, left, WHITE);
+  const mid = GH >> 1;
+  if (paused) center(mid, "  [ PAUSED ]  ", WHITE);
+  else if (state === "over"){
+    center(mid, "  GAME OVER - press R  ", WHITE);
+    if (rank >= 0) center(mid + 2, "  NEW HIGH SCORE - RANK " + (rank + 1) + "  ", CANNON_RGB);
+  } else if (state === "clear"){
+    const n = makeLevel(level);
+    center(mid, "  WAVE " + (level - 1) + " CLEARED - press R  ", WHITE);
+    center(mid + 2, "  NEXT: " + n.rows * n.cols + " ENEMIES" + (n.fresh !== undefined ? "  NEW: " + TYPES[n.fresh].name : "") + "  ", CANNON_RGB);
+  }
+  if (msgT > 0) center(4, " " + msg + " ", [1.6, 0.5, 0.35]);
   screen.render(ctx);
 }
 
@@ -262,7 +413,7 @@ document.querySelectorAll("[data-key]").forEach(b => {
 cv.addEventListener("pointerdown", () => { if (state === "title") restart(); });
 $("bPause").addEventListener("click", togglePause);
 $("bRestart").addEventListener("click", () => { $("bPause").textContent = "Pause"; restart(); });
-$("bDiff").addEventListener("click", e => {   // takes effect on the next restart, like the lives count
+$("bDiff").addEventListener("click", e => {   // lives change on the next restart; level tuning on the next wave
   const ks = Object.keys(DIFF); diffKey = ks[(ks.indexOf(diffKey) + 1) % ks.length];
   e.target.textContent = "Difficulty: " + diffKey; if (state !== "title") flash("DIFFICULTY " + diffKey.toUpperCase() + " - press R");
 });
@@ -282,16 +433,20 @@ function tick(t){
       }
     }
     msgT -= dt;
-    if (cannon){ cannon.x = state === "play" ? cx(Math.round(px) + 2) : -1e4; cannon.y = PY * screen.ch + screen.ch; }
+    if (cannon){ cannon.x = state === "play" ? cx(Math.round(px) + 3) : -1e4; cannon.y = (PY + 1.5) * screen.ch; }
     world.step(dt);
-    for (const b of world.bodies) if (b.life){ b.life -= dt; if (b.life < 1) b.r = b.r0 * Math.max(0.3, b.life); }
-    world.bodies = world.bodies.filter(b => !(b.life <= 0));
+    for (const b of world.bodies){
+      if (b.life){ b.life -= dt; if (b.life < 1) b.r = b.r0 * Math.max(0.3, b.life); }
+      if (b.crate){
+        if (!b.chute) b.ttl -= dt;
+        // the chute holds the fall to a slow drift until the crate lands on something
+        if (b.chute && (b.touch || b.y + b.r >= world.h - 1)) b.chute = false;
+        if (b.chute){ b.vy = Math.min(b.vy, screen.ch * 8); b.vx *= 0.95; }
+      }
+    }
+    world.bodies = world.bodies.filter(b => !(b.life <= 0) && !(b.ttl <= 0));
   }
-  if (screen){
-    if (state === "title"){ lamp.x = cx(GW / 2 + Math.sin(titleT * 0.6) * 24); lamp.y = cy(28); }
-    else { lamp.x = cx(px + 2); lamp.y = cy(PY - 2); }
-    draw(t);
-  }
+  if (screen) draw(t);
   requestAnimationFrame(tick);
 }
 layout();

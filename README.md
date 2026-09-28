@@ -4,7 +4,7 @@ Three self-contained pages. Open either HTML file in a browser; no server or ins
 
 - `ascii-physics.html`: the engine (touch physics, lighting, 24-bit colour, display settings)
 - `ascii-engine-tutorial.html`: the 14-step tutorial with live demos
-- `base-commander.html`: Base Commander, a fixed-shooter game built on the engine (animated launch screen, debris physics, lit shields, colour)
+- `base-commander.html`: Base Commander, a fixed-shooter game built on the engine: generated levels, 7 enemy types, 6 gun upgrades from airdropped parts, debris physics, sun-lit shields. High scores are saved in localStorage under `baseCommander.v1.scores`.
 
 ## Editing
 
