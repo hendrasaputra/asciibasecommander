@@ -28,3 +28,7 @@ A change to physics or rendering goes in `core.js`, so all pages stay in sync.
 
 - The tutorial loads two fonts from Google Fonts. Offline, it falls back to Georgia and the system monospace font.
 - The engine saves display settings in the browser's localStorage under `asciiPhysics.v3.display`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
