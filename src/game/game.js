@@ -487,8 +487,13 @@ $("bDiff").addEventListener("click", e => {   // lives change on the next restar
 });
 
 /* ---------- loop ---------- */
-let last = performance.now();
+let last = performance.now(), nextFrame = 0, pausedDrawn = false;
+const FRAME_MS = 1000 / 60;
 function tick(t){
+  requestAnimationFrame(tick);
+  // 120 Hz and faster displays call this more often than the game needs: run at most ~60 times a second
+  if (t < nextFrame - 1) return;
+  nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
   const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
   if (screen && !paused){
     if (state === "play") update(dt);
@@ -514,10 +519,9 @@ function tick(t){
     }
     world.bodies = world.bodies.filter(b => !(b.life <= 0) && !(b.ttl <= 0));
   }
-  if (screen) draw(t);
-  requestAnimationFrame(tick);
+  if (screen && !(paused && pausedDrawn)){ draw(t); pausedDrawn = paused; }   // a paused screen is drawn once
 }
 layout();
-new ResizeObserver(() => { if (screen){ layout(); for (const s of shields){ s.body.x = cx(s.x); s.body.y = cy(s.y); } } }).observe(stage);
+new ResizeObserver(() => { if (screen){ layout(); pausedDrawn = false; for (const s of shields){ s.body.x = cx(s.x); s.body.y = cy(s.y); } } }).observe(stage);
 requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
 })();

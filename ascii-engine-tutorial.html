@@ -593,7 +593,7 @@ class World {
       if (b.y + b.r >= H){ b.y = H - b.r; this.wall(b, 0, 1, h); }
     }
     for (const b of this.bodies) b.touch = false;
-    this.collide(); this.collide();
+    this.collide(); this.collide(false);   // second pass reuses the grid: positions only moved by sub-pixel corrections
     for (const b of this.bodies){
       if (b.static) continue;
       if (b.touch && !b.grab && b.vx * b.vx + b.vy * b.vy < 1600){ b.vx *= 0.9; b.vy *= 0.9; b.w *= 0.9; }
@@ -613,18 +613,18 @@ class World {
   buildGrid(){
     const cs = this.cell, grid = this.grid, B = this.bodies; grid.clear();
     for (let i = 0; i < B.length; i++){
-      const key = Math.floor(B[i].x / cs) + "," + Math.floor(B[i].y / cs);
+      const key = Math.floor(B[i].x / cs) * 65536 + Math.floor(B[i].y / cs);   // numeric key: no string per lookup
       let arr = grid.get(key); if (!arr){ arr = []; grid.set(key, arr); } arr.push(i);
     }
   }
-  collide(){
-    this.buildGrid();
+  collide(rebuild = true){
+    if (rebuild) this.buildGrid();
     const cs = this.cell, grid = this.grid, B = this.bodies;
     for (let i = 0; i < B.length; i++){
       const a = B[i], cx = Math.floor(a.x / cs), cy = Math.floor(a.y / cs);
       for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++){
-        const arr = grid.get((cx + ox) + "," + (cy + oy));
-        if (arr) for (const j of arr) if (j > i) this.resolve(a, B[j]);
+        const arr = grid.get((cx + ox) * 65536 + cy + oy);
+        if (arr) for (const j of arr) if (j > i && !(a.static && B[j].static)) this.resolve(a, B[j]);
       }
     }
   }
