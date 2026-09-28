@@ -1,6 +1,6 @@
 # ASCII Physics Engine v0.3
 
-Three self-contained pages. Play online: https://hendrasaputra.github.io/asciibasecommander/ Open either HTML file in a browser; no server or install needed.
+Three self-contained pages. Play online: https://games.hendrasaputra.com/ Open either HTML file in a browser; no server or install needed.
 
 - `ascii-physics.html`: the engine (touch physics, lighting, 24-bit colour, display settings)
 - `ascii-engine-tutorial.html`: the 14-step tutorial with live demos
