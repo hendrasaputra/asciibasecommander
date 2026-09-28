@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ASCII Physics Engine v0.3</title>
+<style>
+:root{
+  --ground:#E9EDF1; --ink:#20304A; --muted:#5E6A7D; --line:#C9D1DB; --panel:#F4F6F8;
+  --btn:#DCE2E9; --btn-on:#20304A; --btn-on-ink:#F4F6F8; --accent:#2F5BD3;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#151B26; --ink:#D9E1EC; --muted:#8792A3; --line:#2A3445; --panel:#1B2230;
+    --btn:#222B3A; --btn-on:#D9E1EC; --btn-on-ink:#151B26; --accent:#7FA2FF;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#151B26; --ink:#D9E1EC; --muted:#8792A3; --line:#2A3445; --panel:#1B2230;
+  --btn:#222B3A; --btn-on:#D9E1EC; --btn-on-ink:#151B26; --accent:#7FA2FF;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{height:100%;margin:0;background:var(--ground);color:var(--ink);
+  font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;-webkit-user-select:none;user-select:none}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px;padding:10px 14px 6px}
+h1{font-size:17px;font-weight:650;margin:0;letter-spacing:-0.01em}
+#hud{font:12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted);white-space:nowrap}
+#stage{flex:1;position:relative;margin:0 8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:0;background:#0B0F16}
+#cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#8792A3;font-size:13px;pointer-events:none;transition:opacity .4s}
+nav{padding:8px 8px 10px;display:flex;flex-direction:column;gap:6px}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+button{flex:1 1 auto;min-width:60px;min-height:40px;padding:6px 8px;border:0;border-radius:8px;background:var(--btn);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+button[aria-pressed="true"]{background:var(--btn-on);color:var(--btn-on-ink);font-weight:600}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tools button{font-weight:600}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 54px);transform:translateX(-50%);background:var(--btn-on);color:var(--btn-on-ink);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;max-width:90vw;text-align:center;z-index:5}
+#toast.show{opacity:1}
+#sheet{position:fixed;left:0;right:0;bottom:0;max-height:58%;overflow-y:auto;background:var(--panel);border-top:1px solid var(--line);
+  border-radius:14px 14px 0 0;padding:12px 14px calc(14px + env(safe-area-inset-bottom,0px));box-shadow:0 -8px 24px rgba(0,0,0,.25);z-index:4}
+#sheet[hidden]{display:none}
+.sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.sh strong{font-size:16px}
+.sh button{flex:0 0 auto}
+.set{display:grid;grid-template-columns:7.5rem 1fr 3rem;align-items:center;gap:8px;margin:6px 0;font-size:14px}
+.set span{color:var(--muted)}
+.set output{font:12px ui-monospace,"SF Mono",Menlo,monospace;text-align:right}
+.set input[type=range]{width:100%;accent-color:var(--accent)}
+.grp{margin:10px 0 4px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+#sCustom{width:100%;min-height:40px;border:1px solid var(--line);border-radius:8px;background:var(--ground);color:var(--ink);font:15px ui-monospace,"SF Mono",Menlo,monospace;padding:6px 10px;margin-top:6px}
+#sLampC{width:100%;height:36px;border:0;background:none;padding:0}
+#rampView{display:block;width:100%;height:64px;border-radius:8px;margin-top:8px;background:#0B0F16}
+.note{font-size:12px;color:var(--muted);margin:4px 0 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>ASCII physics v0.3</h1>
+  <div id="hud">–</div>
+</header>
+<div id="stage">
+  <canvas id="cv" aria-label="ASCII physics canvas. Drag to move balls."></canvas>
+  <div id="hint">Drag a ball and let go to throw it</div>
+</div>
+<nav>
+  <div class="row tools" role="group" aria-label="Touch tool">
+    <button data-tool="grab" aria-pressed="true">Grab</button>
+    <button data-tool="spawn" aria-pressed="false">Add ball</button>
+    <button data-tool="push" aria-pressed="false">Push</button>
+    <button data-tool="light" aria-pressed="false">Move lamp</button>
+  </div>
+  <div class="row">
+    <button id="bMat">Ball: mixed</button>
+    <button id="bGrav">Gravity: down</button>
+    <button id="bScene">Scene: pit</button>
+  </div>
+  <div class="row">
+    <button id="bDisplay">Display settings</button>
+    <button id="bClear">Reset scene</button>
+  </div>
+</nav>
+
+<div id="sheet" hidden role="dialog" aria-label="Display settings">
+  <div class="sh"><strong>Display</strong><button id="sClose">Done</button></div>
+
+  <div class="grp">Character density</div>
+  <label class="set"><span>Cell size</span><input id="sCell" type="range" min="7" max="18" step="1"><output id="oCell"></output></label>
+  <div class="row" role="group" aria-label="Character set">
+    <button data-ramp="classic">classic</button><button data-ramp="detailed">detailed</button><button data-ramp="blocks">blocks</button><button data-ramp="custom">custom</button>
+  </div>
+  <input id="sCustom" type="text" maxlength="48" spellcheck="false" autocomplete="off" aria-label="Custom characters, from empty to dense" hidden>
+  <label class="set"><span>Black cutoff</span><input id="sBlack" type="range" min="0" max="0.4" step="0.01"><output id="oBlack"></output></label>
+  <canvas id="rampView" aria-label="Measured ink per character"></canvas>
+  <p class="note" id="rampNote"></p>
+  <div class="row" style="margin-top:8px">
+    <button id="sCal">Match measured ink</button><button id="sDither">Dither</button>
+  </div>
+
+  <div class="grp">Light</div>
+  <label class="set"><span>Exposure</span><input id="sExp" type="range" min="0.3" max="3" step="0.05"><output id="oExp"></output></label>
+  <label class="set"><span>Gamma</span><input id="sGam" type="range" min="1" max="3" step="0.05"><output id="oGam"></output></label>
+  <label class="set"><span>Tone: chars ↔ colour</span><input id="sSplit" type="range" min="0" max="1" step="0.05"><output id="oSplit"></output></label>
+  <label class="set"><span>Glow</span><input id="sGlow" type="range" min="0" max="1" step="0.05"><output id="oGlow"></output></label>
+  <label class="set"><span>Room light</span><input id="sRoom" type="range" min="0" max="0.6" step="0.02"><output id="oRoom"></output></label>
+  <label class="set"><span>Lamp colour</span><input id="sLampC" type="color"><output></output></label>
+  <div class="row" style="margin-top:8px">
+    <button id="sLamp">Lamp on</button><button id="sGrid">Grid</button><button id="sReset">Reset display</button>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+<script>
+"use strict";
+/* ================= Shared core: physics, light, ink, 24-bit renderer ================= */
+const MONO = 'ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace';
+const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
+// The simulated screen is always dark: characters emit light, so they need a black background.
+const SCREEN = { bg: "#0B0F16", dot: "#1C2432", line: "#263042", text: "#DCE3EC", muted: "#7C889B", accent: "#7FA2FF", pink: "#F07FB8", lamp: "#FFC857" };
+const RAMPS = { classic: " .:-=+*#%@", detailed: " .'`^\",:;Il!i~+_-?]}1)|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@", blocks: " \u2591\u2592\u2593\u2588" };
+function norm(v){ const l = Math.hypot(...v); return v.map(x => x / l); }
+const DIR = norm([-0.5, -0.6, 0.65]), SUB = [0.25, 0.75], MREF = 2.4;
+const AMB_RGB = [0.55, 0.65, 0.9];     // room light is slightly blue
+const FLASH_RGB = [1.0, 0.75, 0.45];   // impact flashes are warm
+const FLOOR_ALB = 0.5;                 // share of light the floor reflects
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const MATS = {
+  foam:   { name: "foam",   density: 0.2, e: 0.70, mu: 0.6, kd: 0.95, ks: 0.05, shine: 4,  alb: [0.20, 0.85, 0.72], rMin: 1.6, rMax: 2.4 },
+  rubber: { name: "rubber", density: 1.0, e: 0.55, mu: 0.8, kd: 0.85, ks: 0.30, shine: 14, alb: [0.30, 0.48, 1.00], alt: [1.00, 0.38, 0.68], rMin: 1.2, rMax: 1.9 },
+  steel:  { name: "steel",  density: 7.0, e: 0.35, mu: 0.2, kd: 0.45, ks: 1.10, shine: 70, alb: [0.72, 0.76, 0.82], rMin: 0.9, rMax: 1.3 },
+  peg:    { name: "peg",    density: 0,   e: 0.50, mu: 0.3, kd: 0.80, ks: 0.20, shine: 10, alb: [0.42, 0.47, 0.56] }
+};
+const MIX = ["rubber", "rubber", "rubber", "rubber", "foam", "foam", "foam", "steel", "steel", "steel"];
+function hexToLinear(hex){
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(c => Math.pow(c / 255, 2.2));
+}
+function defaultDisplay(){
+  return { chars: RAMPS.classic, calibrate: true, dither: false, black: 0.15, exposure: 1.3, gamma: 2.2, split: 0.2, glow: 0.35, room: 0.18, lampHex: "#FFD9A0", lampRGB: hexToLinear("#FFD9A0") };
+}
+
+/* ---------- physics (unchanged from v2) ---------- */
+function hit(b, dv){ if (dv > 220) b.flash = Math.max(b.flash, Math.min(1, (dv - 220) / 1000)); }
+class World {
+  constructor(){ this.bodies = []; this.forces = []; this.w = 300; this.h = 300; this.unit = 10; this.g = { x: 0, y: 0 };
+    this.substeps = 4; this.cell = 60; this.grid = new Map(); this.drag = 0; this.onSub = null; }
+  add(x, y, r, matName, alb, matOverride){
+    const M = matOverride || MATS[matName], st = matName === "peg";
+    const m = st ? 0 : M.density * (r / this.unit) ** 2;
+    const b = { x, y, vx: 0, vy: 0, r, a: Math.random() * 6.283, w: 0, mat: M, alb: alb || M.alb, static: st, m,
+      im: st ? 0 : 1 / m, iI: st ? 0 : 1 / (0.4 * m * r * r), grab: null, flash: 0, touch: false };
+    this.bodies.push(b);
+    if (this.bodies.length > 260){ const i = this.bodies.findIndex(o => !o.static && !o.grab); if (i >= 0) this.bodies.splice(i, 1); }
+    return b;
+  }
+  step(dt){
+    let maxR = 1; for (const b of this.bodies) if (b.r > maxR) maxR = b.r;
+    this.cell = maxR * 2 + 2;
+    const h = dt / this.substeps;
+    for (let s = 0; s < this.substeps; s++){ this.substep(h); if (this.onSub) this.onSub(); }
+    const decay = Math.pow(0.001, dt); for (const b of this.bodies) b.flash *= decay;
+  }
+  substep(h){
+    const { w, h: H, g } = this;
+    for (const b of this.bodies){
+      if (b.static) continue;
+      const mN = Math.max(0.25, b.m / MREF);
+      let ax = g.x, ay = g.y;
+      const sp = Math.hypot(b.vx, b.vy);
+      if (sp > 0 && this.drag){ const k = this.drag * b.r * sp * b.im; ax -= b.vx * k; ay -= b.vy * k; }
+      if (b.grab){ ax += (520 * (b.grab.x - b.x) - 46 * b.vx) / mN; ay += (520 * (b.grab.y - b.y) - 46 * b.vy) / mN; }
+      for (const f of this.forces){
+        const dx = b.x - f.x, dy = b.y - f.y, d = Math.hypot(dx, dy);
+        if (d > 0.001 && d < f.radius){ const k = (1 - d / f.radius) * f.strength / mN; ax += dx / d * k; ay += dy / d * k; }
+      }
+      b.vx += ax * h; b.vy += ay * h;
+      const s2 = Math.hypot(b.vx, b.vy); if (s2 > 4000){ b.vx *= 4000 / s2; b.vy *= 4000 / s2; }
+      b.x += b.vx * h; b.y += b.vy * h; b.a += b.w * h; b.w *= 0.9997;
+      if (b.x - b.r <= 0){ b.x = b.r; this.wall(b, -1, 0, h); }
+      if (b.x + b.r >= w){ b.x = w - b.r; this.wall(b, 1, 0, h); }
+      if (b.y - b.r <= 0){ b.y = b.r; this.wall(b, 0, -1, h); }
+      if (b.y + b.r >= H){ b.y = H - b.r; this.wall(b, 0, 1, h); }
+    }
+    for (const b of this.bodies) b.touch = false;
+    this.collide(); this.collide();
+    for (const b of this.bodies){
+      if (b.static) continue;
+      if (b.touch && !b.grab && b.vx * b.vx + b.vy * b.vy < 1600){ b.vx *= 0.9; b.vy *= 0.9; b.w *= 0.9; }
+      b.x = Math.min(w - b.r, Math.max(b.r, b.x)); b.y = Math.min(H - b.r, Math.max(b.r, b.y));
+    }
+  }
+  wall(b, nx, ny, h){
+    const M = b.mat; let jn; b.touch = true;
+    const vn = b.vx * nx + b.vy * ny;
+    if (vn > 0){ const e = vn < 30 ? 0 : M.e, dv = (1 + e) * vn; b.vx -= dv * nx; b.vy -= dv * ny; hit(b, dv); jn = dv * b.m; }
+    else jn = Math.max(0, this.g.x * nx + this.g.y * ny) * h * b.m;
+    const tx = -ny, ty = nx, slip = b.vx * tx + b.vy * ty + b.w * b.r;
+    let jt = -slip / (b.im + b.r * b.r * b.iI);
+    const lim = M.mu * jn; jt = Math.max(-lim, Math.min(lim, jt));
+    b.vx += jt * tx * b.im; b.vy += jt * ty * b.im; b.w += jt * b.r * b.iI;
+  }
+  buildGrid(){
+    const cs = this.cell, grid = this.grid, B = this.bodies; grid.clear();
+    for (let i = 0; i < B.length; i++){
+      const key = Math.floor(B[i].x / cs) + "," + Math.floor(B[i].y / cs);
+      let arr = grid.get(key); if (!arr){ arr = []; grid.set(key, arr); } arr.push(i);
+    }
+  }
+  collide(){
+    this.buildGrid();
+    const cs = this.cell, grid = this.grid, B = this.bodies;
+    for (let i = 0; i < B.length; i++){
+      const a = B[i], cx = Math.floor(a.x / cs), cy = Math.floor(a.y / cs);
+      for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++){
+        const arr = grid.get((cx + ox) + "," + (cy + oy));
+        if (arr) for (const j of arr) if (j > i) this.resolve(a, B[j]);
+      }
+    }
+  }
+  resolve(a, b){
+    const dx = b.x - a.x, dy = b.y - a.y, rs = a.r + b.r, d2 = dx * dx + dy * dy;
+    if (d2 >= rs * rs || d2 === 0) return;
+    const wa = a.im, wb = b.im, ws = wa + wb; if (ws === 0) return;
+    const d = Math.sqrt(d2), nx = dx / d, ny = dy / d; a.touch = b.touch = true;
+    const corr = Math.max(0, rs - d - 0.3) / ws * 0.8;
+    a.x -= nx * corr * wa; a.y -= ny * corr * wa; b.x += nx * corr * wb; b.y += ny * corr * wb;
+    const rvx = b.vx - a.vx, rvy = b.vy - a.vy, vn = rvx * nx + rvy * ny;
+    if (vn >= 0) return;
+    const e = -vn < 30 ? 0 : (a.mat.e + b.mat.e) / 2, j = -(1 + e) * vn / ws;
+    a.vx -= j * nx * wa; a.vy -= j * ny * wa; b.vx += j * nx * wb; b.vy += j * ny * wb;
+    hit(a, j * wa); hit(b, j * wb);
+    const tx = -ny, ty = nx, vt = rvx * tx + rvy * ty - b.w * b.r - a.w * a.r;
+    let jt = -vt / (ws + a.r * a.r * a.iI + b.r * b.r * b.iI);
+    const lim = Math.sqrt(a.mat.mu * b.mat.mu) * j; jt = Math.max(-lim, Math.min(lim, jt));
+    a.vx -= jt * tx * wa; a.vy -= jt * ty * wa; b.vx += jt * tx * wb; b.vy += jt * ty * wb;
+    a.w -= jt * a.r * a.iI; b.w -= jt * b.r * b.iI;
+  }
+  pick(x, y, slop){
+    let best = null, bestD = Infinity;
+    for (const b of this.bodies){ if (b.static || b.grab) continue;
+      const d = Math.hypot(b.x - x, b.y - y) - b.r; if (d < slop && d < bestD){ best = b; bestD = d; } }
+    return best;
+  }
+}
+function spawn(w, x, y, matName, rScale){
+  const M = MATS[matName], k = rScale ?? (M.rMin + Math.random() * (M.rMax - M.rMin));
+  return w.add(x, y, w.unit * k, matName, M.alt && Math.random() < 0.5 ? M.alt : M.alb);
+}
+
+/* ---------- ink measurement: how much of its cell each character actually fills ---------- */
+const inkCache = new Map();
+function measureInk(chars, fontPx){
+  const key = chars + "|" + fontPx;
+  if (inkCache.has(key)) return inkCache.get(key);
+  const k = 4, c = document.createElement("canvas"), x = c.getContext("2d", { willReadFrequently: true });
+  x.font = (fontPx * k) + "px " + MONO;
+  const cw = Math.ceil(x.measureText("M").width), ch = Math.round(fontPx * 1.15) * k;
+  c.width = cw; c.height = ch;
+  x.font = (fontPx * k) + "px " + MONO; x.textBaseline = "top"; x.fillStyle = "#fff";
+  const yOff = (ch - fontPx * k) / 2, out = [];
+  for (const g of new Set([...chars])){
+    x.clearRect(0, 0, cw, ch); x.fillText(g, 0, yOff);
+    const d = x.getImageData(0, 0, cw, ch).data; let s = 0;
+    for (let i = 3; i < d.length; i += 4) s += d[i];
+    out.push({ ch: g, ink: s / (255 * cw * ch) });
+  }
+  inkCache.set(key, out);
+  return out;
+}
+// Build a 256-entry table: brightness 0..255 -> character code.
+function buildLUT(chars, fontPx, calibrate){
+  if ([...chars].length < 2) chars = " @";
+  const lut = new Uint16Array(256);
+  const measured = measureInk(chars, fontPx);
+  if (calibrate){
+    const lv = measured.slice().sort((a, b) => a.ink - b.ink);
+    if (lv[0].ink > 0.001) lv.unshift({ ch: " ", ink: 0 });
+    const max = lv[lv.length - 1].ink || 1;
+    lv.forEach(l => l.level = l.ink / max);
+    let j = 0;
+    for (let i = 0; i < 256; i++){
+      const t = i / 255;
+      while (j < lv.length - 1 && Math.abs(lv[j + 1].level - t) <= Math.abs(lv[j].level - t)) j++;
+      lut[i] = lv[j].ch.charCodeAt(0);
+    }
+    return { lut, levels: lv, count: lv.length, ascii: lv.every(l => l.ch.charCodeAt(0) < 128) };
+  }
+  const arr = [...chars], n = arr.length - 1;
+  for (let i = 0; i < 256; i++) lut[i] = arr[Math.round(i / 255 * n)].charCodeAt(0);
+  const lv = arr.map((ch, i) => ({ ch, ink: (measured.find(m => m.ch === ch) || { ink: 0 }).ink, level: i / n }));
+  return { lut, levels: lv, count: arr.length, ascii: arr.every(c => c.charCodeAt(0) < 128) };
+}
+
+/* ---------- lighting ---------- */
+// Returns diffuse and highlight strength for one point on a sphere.
+function lightTerms(b, dx, dy, nz, L, out){
+  const M = b.mat; let lx, ly, lz, att;
+  if (L && L.on){
+    const px = b.x + dx * b.r, py = b.y + dy * b.r, pz = b.r * (1 + nz);
+    lx = L.x - px; ly = L.y - py; lz = L.z - pz;
+    const d2 = lx * lx + ly * ly + lz * lz, ld = Math.sqrt(d2) || 1;
+    lx /= ld; ly /= ld; lz /= ld; att = Math.min(3, 2.5 * L.z * L.z / d2);   // inverse-square falloff
+  } else { lx = DIR[0]; ly = DIR[1]; lz = DIR[2]; att = 1; }
+  out.d = att * M.kd * Math.max(0, dx * lx + dy * ly + nz * lz);
+  const hx = lx, hy = ly, hz = lz + 1, hl = Math.sqrt(hx * hx + hy * hy + hz * hz);
+  out.s = att * M.ks * Math.pow(Math.max(0, (dx * hx + dy * hy + nz * hz) / hl), M.shine);
+}
+function shadowAt(fx, fy, B, L){
+  const dx = L.x - fx, dy = L.y - fy, lz = L.z, d2 = dx * dx + dy * dy + lz * lz;
+  let sh = 1;
+  for (const b of B){
+    const cx = b.x - fx, cy = b.y - fy, cz = b.r, t = (cx * dx + cy * dy + cz * lz) / d2;
+    if (t <= 0 || t >= 1) continue;
+    const qx = cx - t * dx, qy = cy - t * dy, qz = cz - t * lz;
+    const o = (b.r * 1.15 - Math.sqrt(qx * qx + qy * qy + qz * qz)) / (b.r * 0.45);
+    if (o <= 0) continue;
+    sh *= 1 - 0.85 * Math.min(1, o); if (sh < 0.12) break;
+  }
+  return sh;
+}
+
+/* ---------- 24-bit character screen ---------- */
+// Layers decide who wins a cell: 0 floor light, 1 trails and rings, 2 balls, 3 lamp bulb.
+class Screen {
+  constructor(fontPx, D){ this.fontPx = fontPx; this.D = D || defaultDisplay();
+    this.colC = document.createElement("canvas"); this.glowC = document.createElement("canvas");
+    this.glowS = document.createElement("canvas"); this.glyphC = document.createElement("canvas"); this.t = {}; }
+  fit(W, H, dpr){
+    const probe = this.glyphC.getContext("2d"); probe.font = this.fontPx + "px " + MONO;
+    this.cw = probe.measureText("M").width; this.ch = Math.round(this.fontPx * 1.15);
+    this.cols = Math.max(1, Math.floor(W / this.cw)); this.rows = Math.max(1, Math.floor(H / this.ch));
+    const n = this.n = this.cols * this.rows;
+    this.rad = new Float32Array(3 * n); this.lum = new Float32Array(n); this.lay = new Int8Array(n);
+    this.over = new Uint16Array(n); this.glyphs = new Uint16Array(n);
+    this.w = this.cols * this.cw; this.h = this.rows * this.ch; this.W = W; this.H = H; this.dpr = dpr;
+    this.colC.width = this.glowC.width = this.cols; this.colC.height = this.glowC.height = this.rows;
+    this.glowS.width = Math.max(1, Math.ceil(this.cols / 4)); this.glowS.height = Math.max(1, Math.ceil(this.rows / 4));
+    this.colX = this.colC.getContext("2d"); this.glowX = this.glowC.getContext("2d"); this.glowSX = this.glowS.getContext("2d");
+    this.colImg = this.colX.createImageData(this.cols, this.rows); this.glowImg = this.glowX.createImageData(this.cols, this.rows);
+    this.glyphC.width = Math.max(1, Math.round(W * dpr)); this.glyphC.height = Math.max(1, Math.round(H * dpr));
+    this.gx = this.glyphC.getContext("2d");
+    this.setRamp();
+  }
+  setRamp(){ this.ink = buildLUT(this.D.chars, this.fontPx, this.D.calibrate); }
+  clear(){ this.rad.fill(0); this.lum.fill(0); this.lay.fill(-1); this.over.fill(0); }
+  put(i, r, g, b, layer, glyph){
+    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b, lay = this.lay;
+    if (lay[i] > layer || (lay[i] === layer && L <= this.lum[i])) return;
+    const k = 3 * i; this.rad[k] = r; this.rad[k + 1] = g; this.rad[k + 2] = b;
+    this.lum[i] = L; lay[i] = layer; this.over[i] = glyph || 0;
+  }
+  add(i, r, g, b){   // light adds up: used for floor light, glows and halos
+    if (this.lay[i] > 0) return;
+    const k = 3 * i; this.rad[k] += r; this.rad[k + 1] += g; this.rad[k + 2] += b;
+    this.lum[i] = 0.2126 * this.rad[k] + 0.7152 * this.rad[k + 1] + 0.0722 * this.rad[k + 2]; this.lay[i] = 0;
+  }
+  light(L){ return L && L.on ? this.D.lampRGB : [0.95, 0.95, 0.95]; }
+  sphere(b, L, opt = {}){
+    const { cols, rows, cw, ch } = this, t = this.t, A = b.alb, LC = this.light(L), room = this.D.room;
+    const dOn = opt.diffuse !== false, sOn = opt.spec !== false, stripe = opt.stripe !== false && !b.static;
+    const c0 = Math.max(0, Math.floor((b.x - b.r) / cw)), c1 = Math.min(cols - 1, Math.floor((b.x + b.r) / cw));
+    const r0 = Math.max(0, Math.floor((b.y - b.r) / ch)), r1 = Math.min(rows - 1, Math.floor((b.y + b.r) / ch));
+    const inv = 1 / b.r, ca = Math.cos(b.a), sa = Math.sin(b.a), fl = b.flash * 0.8;
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+      let R = 0, G = 0, Bv = 0, cov = 0;
+      for (const sy of SUB) for (const sx of SUB){
+        const dx = ((c + sx) * cw - b.x) * inv, dy = ((r + sy) * ch - b.y) * inv, d2 = dx * dx + dy * dy;
+        if (d2 >= 1) continue;
+        cov++; lightTerms(b, dx, dy, Math.sqrt(1 - d2), L, t);
+        const d = dOn ? t.d : 0, s = sOn ? t.s : 0;
+        let k = (stripe && Math.abs(-dx * sa + dy * ca) < 0.13) ? 0.45 : 1;
+        R += k * (A[0] * (AMB_RGB[0] * room + LC[0] * d) + LC[0] * s + FLASH_RGB[0] * fl);
+        G += k * (A[1] * (AMB_RGB[1] * room + LC[1] * d) + LC[1] * s + FLASH_RGB[1] * fl);
+        Bv += k * (A[2] * (AMB_RGB[2] * room + LC[2] * d) + LC[2] * s + FLASH_RGB[2] * fl);
+      }
+      if (cov) this.put(r * cols + c, R / 4, G / 4, Bv / 4, 2);
+    }
+  }
+  floor(B, L, shadows = true){
+    const { cols, rows, cw, ch } = this;
+    if (L && L.on){
+      const LC = this.D.lampRGB, lz2 = L.z * L.z;
+      for (let r = 0; r < rows; r++){
+        const fy = (r + 0.5) * ch;
+        for (let c = 0; c < cols; c++){
+          const fx = (c + 0.5) * cw, dx = L.x - fx, dy = L.y - fy, d2 = dx * dx + dy * dy + lz2, d = Math.sqrt(d2);
+          // point light on a flat floor: cosine of the angle times inverse square = (z / d)^3
+          const q = L.z / d; let v = 0.25 * q * q * q;
+          if (v < 0.002) continue;
+          if (shadows) v *= shadowAt(fx, fy, B, L);
+          v *= FLOOR_ALB;
+          this.add(r * cols + c, LC[0] * v, LC[1] * v, LC[2] * v);
+        }
+      }
+    }
+    for (const g of B){
+      if (g.flash < 0.12) continue;
+      const R = g.r * 4.5, c0 = Math.max(0, Math.floor((g.x - R) / cw)), c1 = Math.min(cols - 1, Math.floor((g.x + R) / cw));
+      const r0 = Math.max(0, Math.floor((g.y - R) / ch)), r1 = Math.min(rows - 1, Math.floor((g.y + R) / ch));
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+        const dd = Math.hypot((c + 0.5) * cw - g.x, (r + 0.5) * ch - g.y); if (dd >= R) continue;
+        const v = g.flash * 0.35 * (1 - dd / R);
+        this.add(r * cols + c, FLASH_RGB[0] * v, FLASH_RGB[1] * v, FLASH_RGB[2] * v);
+      }
+    }
+  }
+  streak(b, unit){
+    if (b.static) return;
+    const sp = Math.hypot(b.vx, b.vy); if (sp < 320) return;
+    const len = Math.min((sp - 320) * 0.045, unit * 7); if (len < 2) return;
+    const { cols, rows, cw, ch } = this, ux = -b.vx / sp, uy = -b.vy / sp, P = Math.PI, A = b.alb;
+    let ang = Math.atan2(b.vy, b.vx); ang = ((ang % P) + P) % P;
+    const glyph = (ang < P / 8 || ang > 7 * P / 8) ? 45 : ang < 3 * P / 8 ? 92 : ang < 5 * P / 8 ? 124 : 47;
+    const step = Math.min(cw, ch) * 0.7;
+    for (let s = b.r * 0.9; s < b.r + len; s += step){
+      const c = Math.floor((b.x + ux * s) / cw), r = Math.floor((b.y + uy * s) / ch);
+      if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+      const v = 0.7 * (1 - (s - b.r) / len);
+      this.put(r * cols + c, A[0] * v, A[1] * v, A[2] * v, 1, glyph);
+    }
+  }
+  ring(x, y, radius, rgb){
+    const { cols, rows, cw, ch } = this, steps = Math.ceil(radius * 0.5);
+    for (let k = 0; k < steps; k++){
+      const a = k / steps * Math.PI * 2, c = Math.floor((x + Math.cos(a) * radius) / cw), r = Math.floor((y + Math.sin(a) * radius) / ch);
+      if (c >= 0 && r >= 0 && c < cols && r < rows) this.put(r * cols + c, rgb[0], rgb[1], rgb[2], 1);
+    }
+  }
+  bulb(L, unit){
+    if (!L.on) return;
+    const { cols, rows, cw, ch } = this, LC = this.D.lampRGB, R = unit * 2.4, Rb = Math.max(unit * 0.9, cw * 1.2);
+    const c0 = Math.max(0, Math.floor((L.x - R) / cw)), c1 = Math.min(cols - 1, Math.floor((L.x + R) / cw));
+    const r0 = Math.max(0, Math.floor((L.y - R) / ch)), r1 = Math.min(rows - 1, Math.floor((L.y + R) / ch));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+      const d = Math.hypot((c + 0.5) * cw - L.x, (r + 0.5) * ch - L.y), i = r * cols + c;
+      if (d < Rb){ const v = 3 * (1 - 0.5 * d / Rb); this.put(i, LC[0] * v, LC[1] * v, LC[2] * v, 3); }
+      else if (d < R){ const v = 0.35 * (1 - d / R); this.add(i, LC[0] * v, LC[1] * v, LC[2] * v); }
+    }
+  }
+  // Light (linear, can exceed 1) -> screen colour -> character + colour per cell -> pixels.
+  render(ctx, opt = {}){
+    const { cols, rows, cw, ch, n, rad, lay, over, glyphs, D } = this;
+    const ex = D.exposure, ig = 1 / D.gamma, split = D.split, black = D.black, lut = this.ink.lut, amp = 1 / Math.max(1, this.ink.count - 1);
+    const cd = this.colImg.data, gd = this.glowImg.data;
+    for (let i = 0; i < n; i++){
+      const p = i * 4;
+      if (lay[i] < 0){ cd[p + 3] = 0; gd[p] = gd[p + 1] = gd[p + 2] = 0; gd[p + 3] = 255; glyphs[i] = 32; continue; }
+      const k = 3 * i;
+      // 1. tone map: squeeze unlimited light into 0..1, then gamma-encode for the screen
+      const R = Math.pow(1 - Math.exp(-rad[k] * ex), ig), G = Math.pow(1 - Math.exp(-rad[k + 1] * ex), ig), B = Math.pow(1 - Math.exp(-rad[k + 2] * ex), ig);
+      gd[p] = R * 255; gd[p + 1] = G * 255; gd[p + 2] = B * 255; gd[p + 3] = 255;
+      const Y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+      if (Y <= black){ cd[p + 3] = 0; glyphs[i] = 32; continue; }   // darker than the cutoff: leave blank
+      // 2. split brightness: part carried by character density, part by colour
+      const Yc = (Y - black) / (1 - black), gl = Yc + split * (1 - Yc);
+      let code = over[i];
+      if (!code){
+        let tt = gl;
+        if (D.dither){ const c = i % cols, r = (i / cols) | 0; tt += ((BAYER[(r & 3) * 4 + (c & 3)] + 0.5) / 16 - 0.5) * amp; }
+        code = lut[Math.max(0, Math.min(255, Math.round(tt * 255)))];
+      }
+      glyphs[i] = code;
+      if (code === 32){ cd[p + 3] = 0; continue; }
+      // colour keeps the cell's hue; its brightness supplies whatever the character's ink does not
+      const kc = Yc / gl / Y; let dr = R * kc, dg = G * kc, db = B * kc; const m = Math.max(dr, dg, db);
+      if (m > 1){ dr /= m; dg /= m; db /= m; }
+      cd[p] = dr * 255; cd[p + 1] = dg * 255; cd[p + 2] = db * 255; cd[p + 3] = 255;
+    }
+    this.colX.putImageData(this.colImg, 0, 0); this.glowX.putImageData(this.glowImg, 0, 0);
+    // 3. draw every character in white on its own layer...
+    const g = this.gx, dpr = this.dpr, yOff = (ch - this.fontPx) / 2;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "source-over"; g.clearRect(0, 0, this.glyphC.width, this.glyphC.height);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.font = this.fontPx + "px " + MONO; g.textBaseline = "top"; g.textAlign = "left"; g.fillStyle = "#fff";
+    if ("fontKerning" in g) g.fontKerning = "none";
+    if (this.ink.ascii){
+      for (let r = 0; r < rows; r++){   // one call per row: monospace ASCII keeps every character on its cell
+        const s = String.fromCharCode.apply(null, glyphs.subarray(r * cols, (r + 1) * cols));
+        if (s.trim()) g.fillText(s, 0, r * ch + yOff);
+      }
+    } else {
+      for (let i = 0; i < n; i++) if (glyphs[i] !== 32) g.fillText(String.fromCharCode(glyphs[i]), (i % cols) * cw, ((i / cols) | 0) * ch + yOff);
+    }
+    // ...then keep the white pixels only, painted with each cell's 24-bit colour
+    g.globalCompositeOperation = "source-in"; g.imageSmoothingEnabled = false;
+    g.drawImage(this.colC, 0, 0, cols * cw, rows * ch);
+    g.globalCompositeOperation = "source-over";
+    // 4. compose: background, soft glow, grid dots, coloured characters
+    ctx.fillStyle = SCREEN.bg; ctx.fillRect(0, 0, this.W, this.H);
+    if (D.glow > 0){
+      ctx.imageSmoothingEnabled = true; this.glowSX.imageSmoothingEnabled = true;
+      this.glowSX.clearRect(0, 0, this.glowS.width, this.glowS.height);
+      this.glowSX.drawImage(this.glowC, 0, 0, this.glowS.width, this.glowS.height);
+      ctx.globalAlpha = D.glow * 0.35; ctx.drawImage(this.glowC, 0, 0, cols * cw, rows * ch);
+      ctx.globalAlpha = D.glow * 0.8; ctx.drawImage(this.glowS, 0, 0, cols * cw, rows * ch);
+      ctx.globalAlpha = 1;
+    }
+    if (opt.grid){
+      ctx.fillStyle = SCREEN.dot; ctx.font = this.fontPx + "px " + MONO; ctx.textBaseline = "top";
+      for (let i = 0; i < n; i++) if (glyphs[i] === 32) ctx.fillText("\u00b7", (i % cols) * cw, ((i / cols) | 0) * ch + yOff);
+    }
+    ctx.drawImage(this.glyphC, 0, 0, this.W, this.H);
+  }
+}
+(() => {
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d", { alpha: false });
+const stage = document.getElementById("stage"), hud = document.getElementById("hud");
+const hint = document.getElementById("hint"), toastEl = document.getElementById("toast");
+const world = new World();
+const STORE = "asciiPhysics.v3.display";
+const D = defaultDisplay(); let rampName = "classic", custom = " .:oO0@", cellPx = 0, showGrid = false;
+const lamp = { x: 0, y: 0, z: 80, R2: 1e6, on: true };
+try {
+  const s = JSON.parse(localStorage.getItem(STORE) || "null");
+  if (s){ Object.assign(D, s.D); rampName = s.rampName || rampName; custom = s.custom ?? custom; cellPx = s.cellPx || 0; lamp.on = s.lampOn !== false; showGrid = !!s.grid; D.lampRGB = hexToLinear(D.lampHex); }
+} catch (e){}
+function save(){ try { localStorage.setItem(STORE, JSON.stringify({ D: { ...D, lampRGB: undefined }, rampName, custom, cellPx, lampOn: lamp.on, grid: showGrid })); } catch (e){} }
+D.chars = rampName === "custom" ? custom : RAMPS[rampName];
+
+let screen = null, W = 0, H = 0, dpr = 1, tool = "grab", gravMode = 0, sceneIdx = 0;
+const MAT_CYCLE = ["mixed", "foam", "rubber", "steel"]; let matIdx = 0;
+
+function layout(){
+  const rect = stage.getBoundingClientRect(); if (!rect.width) return;
+  const oldW = W || rect.width, oldH = H || rect.height;
+  W = rect.width; H = rect.height; dpr = Math.min(window.devicePixelRatio || 1, 3);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!cellPx) cellPx = Math.round(Math.max(9, Math.min(14, W / 64 / 0.6)));
+  screen = new Screen(cellPx, D); screen.fit(W, H, dpr);
+  world.w = screen.w; world.h = screen.h; world.unit = Math.min(W, H) / 40;
+  world.drag = 2e-4 * (600 / world.h) ** 2;
+  if (gravMode === 0) world.g = { x: 0, y: world.h * 1.6 };
+  lamp.z = world.unit * 10; lamp.R2 = (Math.max(W, H) * 0.7) ** 2;
+  if (!lamp.x){ lamp.x = world.w * 0.35; lamp.y = world.h * 0.45; } else { lamp.x *= W / oldW; lamp.y *= H / oldH; }
+  for (const b of world.bodies){ b.x *= W / oldW; b.y *= H / oldH; }
+  drawRampView();
+}
+function pickMat(){ const m = MAT_CYCLE[matIdx]; return m === "mixed" ? MIX[Math.floor(Math.random() * MIX.length)] : m; }
+const GRAV = ["down", "off", "tilt"];
+function setGrav(mode){ gravMode = mode; world.g = mode === 0 ? { x: 0, y: world.h * 1.6 } : { x: 0, y: 0 }; document.getElementById("bGrav").textContent = "Gravity: " + GRAV[mode]; }
+const SCENES = [
+  { name: "pit", grav: 0, build(){ for (let i = 0; i < 28; i++) spawn(world, Math.random() * world.w, Math.random() * world.h * 0.5, MIX[i % MIX.length]); } },
+  { name: "pegs", grav: 0, build(){
+      const pr = Math.max(world.unit * 0.55, screen.cw * 0.9), gap = world.unit * 5.2; let row = 0;
+      for (let y = world.h * 0.3; y < world.h * 0.8; y += gap * 0.8, row++)
+        for (let x = (row % 2 ? gap / 2 : gap / 4); x < world.w; x += gap) world.add(x, y, pr, "peg");
+      for (let i = 0; i < 24; i++) spawn(world, Math.random() * world.w, Math.random() * world.h * 0.2, MIX[i % MIX.length]);
+  }},
+  { name: "space", grav: 1, build(){ for (let i = 0; i < 22; i++){ const b = spawn(world, Math.random() * world.w, Math.random() * world.h, MIX[i % MIX.length]); b.vx = (Math.random() - 0.5) * 500; b.vy = (Math.random() - 0.5) * 500; } } },
+  { name: "dark room", grav: 0, build(){ for (let i = 0; i < 14; i++) spawn(world, Math.random() * world.w, Math.random() * world.h * 0.5, MIX[i % MIX.length]); } },
+  { name: "empty", grav: null, build(){} }
+];
+let roomBeforeDark = null;
+function loadScene(){
+  world.bodies.length = 0; world.forces.length = 0;
+  const s = SCENES[sceneIdx];
+  if (s.name !== "dark room" && roomBeforeDark !== null){ D.room = roomBeforeDark; roomBeforeDark = null; syncSheet(); }
+  if (s.grav !== null && gravMode !== 2) setGrav(s.grav);
+  if (s.name === "dark room" && roomBeforeDark === null){ roomBeforeDark = D.room; D.room = 0.02; lamp.on = true; syncSheet(); }
+  s.build();
+  document.getElementById("bScene").textContent = "Scene: " + s.name;
+}
+
+/* ---------- input ---------- */
+const pointers = new Map();
+const local = e => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+cv.addEventListener("pointerdown", e => {
+  cv.setPointerCapture(e.pointerId);
+  const p = local(e), ptr = { x: p.x, y: p.y, body: null, force: null, lamp: false };
+  if (tool === "grab") ptr.body = world.pick(p.x, p.y, world.unit * 1.8);
+  else if (tool === "spawn") ptr.body = spawn(world, p.x, p.y, pickMat());
+  else if (tool === "push"){ ptr.force = { x: p.x, y: p.y, radius: world.unit * 9, strength: world.h * 30 }; world.forces.push(ptr.force); }
+  else { ptr.lamp = true; lamp.x = p.x; lamp.y = p.y; if (!lamp.on){ lamp.on = true; syncSheet(); } }
+  if (ptr.body) ptr.body.grab = ptr;
+  pointers.set(e.pointerId, ptr); hint.style.opacity = 0;
+});
+cv.addEventListener("pointermove", e => {
+  const ptr = pointers.get(e.pointerId); if (!ptr) return;
+  const p = local(e); ptr.x = p.x; ptr.y = p.y;
+  if (ptr.force){ ptr.force.x = p.x; ptr.force.y = p.y; }
+  if (ptr.lamp){ lamp.x = p.x; lamp.y = p.y; }
+});
+const release = e => {
+  const ptr = pointers.get(e.pointerId); if (!ptr) return;
+  if (ptr.body) ptr.body.grab = null;
+  if (ptr.force) world.forces.splice(world.forces.indexOf(ptr.force), 1);
+  pointers.delete(e.pointerId);
+};
+cv.addEventListener("pointerup", release); cv.addEventListener("pointercancel", release);
+
+/* ---------- toolbar ---------- */
+function toast(msg){ toastEl.textContent = msg; toastEl.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove("show"), 2200); }
+const HINTS = { grab: "Drag a ball and let go to throw it", spawn: "Tap to add a ball, drag to throw it", push: "Hold to push balls away", light: "Drag to move the lamp" };
+document.querySelectorAll("[data-tool]").forEach(btn => btn.addEventListener("click", () => {
+  tool = btn.dataset.tool;
+  document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+  hint.textContent = HINTS[tool]; hint.style.opacity = 1;
+}));
+let tiltOn = false, tiltSeen = false;
+function onTilt(e){ if (gravMode !== 2 || e.gamma == null) return; tiltSeen = true; const G = world.h * 1.6, r = Math.PI / 180; world.g = { x: Math.sin(e.gamma * r) * G, y: Math.sin(e.beta * r) * G }; }
+async function enableTilt(){
+  try {
+    if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"){
+      if (await DeviceOrientationEvent.requestPermission() !== "granted"){ toast("Tilt needs motion access. Allow it and try again."); return; }
+    }
+    if (!tiltOn){ window.addEventListener("deviceorientation", onTilt); tiltOn = true; }
+    setTimeout(() => { if (gravMode === 2 && !tiltSeen) toast("No tilt sensor found. Gravity stays off."); }, 1500);
+  } catch (e){ toast("Tilt is not available on this device."); }
+}
+document.getElementById("bGrav").addEventListener("click", async () => { setGrav((gravMode + 1) % 3); if (gravMode === 2) await enableTilt(); });
+document.getElementById("bMat").addEventListener("click", e => { matIdx = (matIdx + 1) % MAT_CYCLE.length; e.target.textContent = "Ball: " + MAT_CYCLE[matIdx]; });
+document.getElementById("bScene").addEventListener("click", () => { sceneIdx = (sceneIdx + 1) % SCENES.length; loadScene(); });
+document.getElementById("bClear").addEventListener("click", loadScene);
+
+/* ---------- display sheet ---------- */
+const sheet = document.getElementById("sheet"), $ = id => document.getElementById(id);
+$("bDisplay").addEventListener("click", () => { sheet.hidden = false; drawRampView(); });
+$("sClose").addEventListener("click", () => { sheet.hidden = true; });
+const SLIDERS = [
+  ["sBlack", "oBlack", "black", v => v.toFixed(2)],
+  ["sExp", "oExp", "exposure", v => v.toFixed(2)], ["sGam", "oGam", "gamma", v => v.toFixed(2)],
+  ["sSplit", "oSplit", "split", v => Math.round(v * 100) + "%"], ["sGlow", "oGlow", "glow", v => v.toFixed(2)],
+  ["sRoom", "oRoom", "room", v => v.toFixed(2)]
+];
+function syncSheet(){
+  for (const [id, oid, key, f] of SLIDERS){ $(id).value = D[key]; $(oid).textContent = f(D[key]); }
+  $("sCell").value = cellPx; $("oCell").textContent = cellPx + "px";
+  document.querySelectorAll("[data-ramp]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.ramp === rampName)));
+  $("sCustom").hidden = rampName !== "custom"; $("sCustom").value = custom;
+  $("sCal").setAttribute("aria-pressed", String(D.calibrate)); $("sDither").setAttribute("aria-pressed", String(D.dither));
+  $("sLamp").setAttribute("aria-pressed", String(lamp.on)); $("sGrid").setAttribute("aria-pressed", String(showGrid));
+  $("sLampC").value = D.lampHex;
+}
+for (const [id, oid, key, f] of SLIDERS) $(id).addEventListener("input", e => { D[key] = +e.target.value; $(oid).textContent = f(D[key]); save(); });
+$("sCell").addEventListener("input", e => { cellPx = +e.target.value; $("oCell").textContent = cellPx + "px"; layout(); save(); });
+function applyRamp(){ D.chars = rampName === "custom" ? (custom.length > 1 ? custom : " @") : RAMPS[rampName]; if (screen) screen.setRamp(); drawRampView(); save(); }
+document.querySelectorAll("[data-ramp]").forEach(b => b.addEventListener("click", () => { rampName = b.dataset.ramp; syncSheet(); applyRamp(); }));
+$("sCustom").addEventListener("input", e => { custom = e.target.value; applyRamp(); });
+$("sCal").addEventListener("click", () => { D.calibrate = !D.calibrate; syncSheet(); applyRamp(); });
+$("sDither").addEventListener("click", () => { D.dither = !D.dither; syncSheet(); save(); });
+$("sLamp").addEventListener("click", () => { lamp.on = !lamp.on; syncSheet(); save(); });
+$("sGrid").addEventListener("click", () => { showGrid = !showGrid; syncSheet(); save(); });
+$("sLampC").addEventListener("input", e => { D.lampHex = e.target.value; D.lampRGB = hexToLinear(D.lampHex); save(); });
+$("sReset").addEventListener("click", () => {
+  Object.assign(D, defaultDisplay()); rampName = "classic"; cellPx = 0; lamp.on = true; showGrid = false;
+  layout(); syncSheet(); applyRamp();
+});
+
+// Show each character with a bar for how much ink it really puts in its cell.
+function drawRampView(){
+  if (!screen || sheet.hidden) return;
+  const c = $("rampView"), r = c.getBoundingClientRect(), x = c.getContext("2d"), pr = Math.min(window.devicePixelRatio || 1, 3);
+  c.width = Math.round(r.width * pr); c.height = Math.round(r.height * pr); x.setTransform(pr, 0, 0, pr, 0, 0);
+  x.fillStyle = SCREEN.bg; x.fillRect(0, 0, r.width, r.height);
+  const lv = screen.ink.levels, maxInk = Math.max(...lv.map(l => l.ink), 0.001), slot = Math.min(28, (r.width - 16) / lv.length);
+  x.font = Math.min(18, slot * 0.9) + "px " + MONO; x.textAlign = "center"; x.textBaseline = "top";
+  lv.forEach((l, i) => {
+    const cx = 8 + slot * (i + 0.5);
+    x.fillStyle = SCREEN.text; x.fillText(l.ch === " " ? "␣" : l.ch, cx, 6);
+    const bh = 26 * l.ink / maxInk; x.fillStyle = SCREEN.accent; x.fillRect(cx - slot * 0.3, 56 - bh, slot * 0.6, bh);
+  });
+  $("rampNote").textContent = lv.length + " levels. Bars show the ink each character really uses, measured from the font. " +
+    (D.calibrate ? "Brightness picks the character whose ink is closest." : "Brightness picks by position in the list, ignoring ink.");
+}
+
+/* ---------- loop ---------- */
+let last = performance.now(), fpsAcc = 0, fpsN = 0, hudT = 0;
+function frame(t){
+  const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+  if (screen){
+    world.step(dt);
+    screen.clear();
+    screen.floor(world.bodies, lamp);
+    for (const b of world.bodies) screen.sphere(b, lamp);
+    for (const b of world.bodies) screen.streak(b, world.unit);
+    for (const f of world.forces) screen.ring(f.x, f.y, f.radius, [0.45, 0.5, 0.6]);
+    screen.bulb(lamp, world.unit);
+    screen.render(ctx, { grid: showGrid });
+    fpsAcc += dt; fpsN++;
+    if (t - hudT > 250){
+      let text = Math.round(fpsN / fpsAcc) + " fps  " + screen.cols + "\u00d7" + screen.rows + " @" + cellPx + "px  " + world.bodies.length + " balls";
+      for (const p of pointers.values()) if (p.body){ const b = p.body, v = Math.hypot(b.vx, b.vy) / (world.unit * 10); text = b.mat.name + " " + b.m.toFixed(1) + "kg " + v.toFixed(1) + "m/s p=" + (b.m * v).toFixed(1); break; }
+      hud.textContent = text; fpsAcc = 0; fpsN = 0; hudT = t;
+    }
+  }
+  requestAnimationFrame(frame);
+}
+layout(); syncSheet(); loadScene();
+new ResizeObserver(() => { layout(); }).observe(stage);
+requestAnimationFrame(t => { last = t; requestAnimationFrame(frame); });
+})();
+</script>
+</body></html>

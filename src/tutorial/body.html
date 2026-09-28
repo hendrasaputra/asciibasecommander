@@ -1,0 +1,251 @@
+<body>
+<main>
+<h1>How the ASCII physics engine works</h1>
+<p class="lede">Fourteen steps, from a grid of characters to lit, coloured balls you can throw. Every step has a live demo and the code that runs it. Updated for v0.3: 24-bit colour and configurable character density.</p>
+<div class="demo">
+  <canvas id="hero" style="height:260px" aria-label="Live engine. Drag a ball to throw it."></canvas>
+  <div class="try"><b>Try:</b> drag a ball and let go to throw it.</div>
+</div>
+<ol class="toc">
+  <li><a href="#s1">Split the screen into cells</a></li>
+  <li><a href="#s2">Measure how much a shape covers</a></li>
+  <li><a href="#s3">Turn brightness into a character</a></li>
+  <li><a href="#s4">Measure each character's ink</a></li>
+  <li><a href="#s5">Cut the darkness, dither the steps</a></li>
+  <li><a href="#s6">Shade each ball in colour</a></li>
+  <li><a href="#s7">Turn light into colour and characters</a></li>
+  <li><a href="#s8">Light the floor, cast shadows</a></li>
+  <li><a href="#s9">Move things in small steps</a></li>
+  <li><a href="#s10">Resolve collisions</a></li>
+  <li><a href="#s11">Test only nearby balls</a></li>
+  <li><a href="#s12">Add friction so balls roll</a></li>
+  <li><a href="#s13">Pull with a spring, not a leash</a></li>
+  <li><a href="#s14">Paint 24-bit colour fast</a></li>
+</ol>
+
+<section id="s1"><div class="num">01</div><div>
+<h2>Split the screen into character cells</h2>
+<p>Every character sits in a fixed box called a cell. A monospace font makes every cell the same size. Measure one character to get that size.</p>
+<p>Cells are roughly twice as tall as they are wide. So keep all physics in pixels, and convert to cells only when drawing. If you measure distances in cells, a circle comes out as a tall egg.</p>
+<div class="demo">
+  <canvas id="c1" style="height:230px" aria-label="Grid demo"></canvas>
+  <div class="readout" id="c1r">Tap a cell.</div>
+  <div class="try"><b>Try:</b> tap any cell to see its column and row. Both shapes use the same radius number.</div>
+</div>
+<pre data-code="s1"></pre>
+</div></section>
+
+<section id="s2"><div class="num">02</div><div>
+<h2>Measure how much of each cell a shape covers</h2>
+<p>Test a few points inside each cell against the shape. The share of points that land inside is the cell's coverage: 0 means empty, 1 means full.</p>
+<p>One point per cell gives jumpy, all-or-nothing edges. Four points in a 2×2 pattern (called supersampling) give in-between values, so edges look smooth. Only test the cells inside the ball's bounding box (the rectangle around it).</p>
+<div class="demo">
+  <canvas id="c2" style="height:300px" aria-label="Coverage sampling demo"></canvas>
+  <div class="ctrl"><button data-c2="1" aria-pressed="false">1 sample</button><button data-c2="4" aria-pressed="true">4 samples</button></div>
+  <div class="try"><b>Try:</b> drag the circle slowly. Switch to 1 sample and watch edge cells flip between empty and full.</div>
+</div>
+<pre data-code="s2"></pre>
+</div></section>
+
+<section id="s3"><div class="num">03</div><div>
+<h2>Turn brightness into a character</h2>
+<p>A ramp is a string of characters ordered from empty to dense. The simplest mapping: multiply the brightness (0 to 1) by the ramp's last index, then round. The result picks the character.</p>
+<p>This assumes each step along the ramp adds the same amount of ink. Step 4 shows that it doesn't, and fixes it.</p>
+<div class="demo">
+  <canvas id="c3" style="height:150px" aria-label="Character ramp demo"></canvas>
+  <div class="ctrl">
+    <button data-c3="classic" aria-pressed="true">classic</button><button data-c3="detailed" aria-pressed="false">detailed</button><button data-c3="blocks" aria-pressed="false">blocks</button>
+    <span class="sep"></span>
+    <label>Brightness <input id="c3v" type="range" min="0" max="1" step="0.01" value="0.62"></label>
+  </div>
+  <div class="readout" id="c3r"></div>
+</div>
+<pre data-code="s3"></pre>
+</div></section>
+
+<section id="s4"><div class="num">04</div><div>
+<h2>Measure how much ink each character really uses <span class="new">New in v0.3</span></h2>
+<p>Characters don't add ink in even steps. In the classic ramp, <code class="i">%</code> and <code class="i">@</code> carry far more ink than the characters before them. So equal steps in brightness give uneven steps on screen.</p>
+<p>Measure instead. Draw each character in white on a small hidden canvas and add up its pixels. The share of lit pixels is that character's ink. Then give each brightness the character whose ink is closest.</p>
+<p>Measure once per font size and keep the result. Each font, and each size, draws characters differently.</p>
+<div class="demo">
+  <canvas id="c4" style="height:230px" aria-label="Measured ink per character"></canvas>
+  <div class="ctrl"><button data-c4="classic" aria-pressed="true">classic</button><button data-c4="detailed" aria-pressed="false">detailed</button><button data-c4="blocks" aria-pressed="false">blocks</button></div>
+  <div class="readout" id="c4r"></div>
+  <div class="try"><b>Try:</b> compare the two rows against the smooth bar. The measured row brightens evenly; the position row jumps at the end.</div>
+</div>
+<pre data-code="s4"></pre>
+</div></section>
+
+<section id="s5"><div class="num">05</div><div>
+<h2>Cut the darkness and dither the steps <span class="new">New in v0.3</span></h2>
+<p>Very faint light turns into a haze of stray dots across the whole screen. Set a black cutoff: any cell darker than it stays blank. Then stretch the remaining range, so the dimmest visible cell starts at the first character.</p>
+<p>A ramp has only about ten steps, so a smooth gradient shows bands. Dithering hides them. Before picking the character, add a small offset that follows a fixed 4×4 pattern (a Bayer matrix, the numbers 0 to 15 arranged so neighbours differ). Nearby cells then alternate between two characters, and your eye blends them into the tone between.</p>
+<div class="demo">
+  <canvas id="c5" style="height:260px" aria-label="Black cutoff and dithering demo. Drag to move the lamp."></canvas>
+  <div class="ctrl">
+    <button id="c5d" aria-pressed="false">Dither</button>
+    <label>Black cutoff <input id="c5b" type="range" min="0" max="0.4" step="0.01" value="0.15"></label>
+  </div>
+  <div class="try"><b>Try:</b> set the cutoff to 0 to see the haze. Turn dither on and look at the edge of the light pool.</div>
+</div>
+<pre data-code="s5"></pre>
+</div></section>
+
+<section id="s6"><div class="num">06</div><div>
+<h2>Shade each ball as a lit sphere, in colour</h2>
+<p>Treat each flat circle as the top of a sphere. At a point (dx, dy) inside the circle, measured in radii, the sphere's height is <code class="i">nz = √(1 − dx² − dy²)</code>. The arrow (dx, dy, nz) is the surface normal: the direction that bit of surface faces.</p>
+<p>Work out light separately for red, green and blue. Each ball has an albedo: the share of each colour it reflects. Diffuse light (how directly the surface faces the lamp) is tinted by the albedo. The highlight is a mirror bounce, so it takes the lamp's colour, not the ball's. That is why steel's highlight matches the lamp.</p>
+<p>Light fades with the square of distance, so a ball twice as far away gets a quarter of the light.</p>
+<div class="demo">
+  <canvas id="c6" style="height:300px" aria-label="Sphere shading demo. Drag to move the lamp."></canvas>
+  <div class="ctrl">
+    <button data-c6m="foam" aria-pressed="false">foam</button><button data-c6m="rubber" aria-pressed="false">rubber</button><button data-c6m="steel" aria-pressed="true">steel</button>
+    <span class="sep"></span>
+    <button id="c6d" aria-pressed="true">Diffuse</button><button id="c6s" aria-pressed="true">Highlight</button>
+    <span class="sep"></span>
+    <span>Lamp</span>
+    <button class="swatch" data-c6c="#FFD9A0" aria-pressed="true" aria-label="warm" style="background:#FFD9A0"></button>
+    <button class="swatch" data-c6c="#FFFFFF" aria-pressed="false" aria-label="white" style="background:#FFFFFF"></button>
+    <button class="swatch" data-c6c="#8FB4FF" aria-pressed="false" aria-label="blue" style="background:#8FB4FF"></button>
+    <button class="swatch" data-c6c="#FF6A4D" aria-pressed="false" aria-label="red" style="background:#FF6A4D"></button>
+    <label>Height <input id="c6z" type="range" min="0.6" max="6" step="0.1" value="3"></label>
+  </div>
+  <div class="try"><b>Try:</b> drag to move the lamp. Pick the blue lamp with the rubber ball, then with foam. Turn diffuse off to see the highlight alone.</div>
+</div>
+<pre data-code="s6"></pre>
+</div></section>
+
+<section id="s7"><div class="num">07</div><div>
+<h2>Turn light into colour and characters <span class="new">New in v0.3</span></h2>
+<p>Light adds up, so keep it as plain numbers that are allowed to go above 1. This is called linear light. Convert it to what the screen can show only at the very end, in three moves.</p>
+<p>First, tone map. <code class="i">1 − e^(−light × exposure)</code> squeezes any amount of light into 0 to 1. Very bright light rolls off gently instead of clipping to flat white. Exposure works like a camera's: higher is brighter.</p>
+<p>Second, gamma-encode: raise each value to the power 1 ÷ gamma, with gamma 2.2 by default. Screens don't show light in even steps, and without this step, shadows come out too dark.</p>
+<p>Third, split the brightness between the character and its colour. On screen, a cell looks as bright as its character's ink × its colour's brightness. With the tone split at 0, the character's density carries all the shading and colours stay at full strength. At 1, every lit cell uses the densest character and the colour carries all the shading. Values in between share the work.</p>
+<div class="demo">
+  <canvas id="c7" style="height:280px" aria-label="Tone mapping demo. Tap a cell to inspect it."></canvas>
+  <div class="ctrl">
+    <label>Exposure <input id="c7e" type="range" min="0.3" max="3" step="0.05" value="1.3"></label>
+    <label>Gamma <input id="c7g" type="range" min="1" max="3" step="0.05" value="2.2"></label>
+    <label>Tone split <input id="c7s" type="range" min="0" max="1" step="0.05" value="0.2"></label>
+  </div>
+  <div class="readout" id="c7r">Tap a cell to follow its light through each step.</div>
+  <div class="try"><b>Try:</b> tap the ball's highlight, then its dark edge. Move the tone split from 0 to 1 and watch the characters and colours trade places.</div>
+</div>
+<pre data-code="s7"></pre>
+</div></section>
+
+<section id="s8"><div class="num">08</div><div>
+<h2>Light the floor and cast shadows</h2>
+<p>The background is a floor at height 0. The lamp hangs above it at height z. A floor point at distance d from the lamp receives light in proportion to (z ÷ d)³. That combines the inverse-square fade with the tilt of the light hitting the floor at an angle.</p>
+<p>To find shadows, draw a straight line from the floor point up to the lamp. If the line passes through a ball, the point is in shadow. Each ball is a sphere resting on the floor, so its centre sits at height r. Fade the shadow where the line only grazes the ball. That fade gives a soft edge.</p>
+<div class="demo">
+  <canvas id="c8" style="height:300px" aria-label="Floor lighting and shadow demo"></canvas>
+  <div class="ctrl"><button id="c8s" aria-pressed="true">Shadows</button></div>
+  <div class="readout" id="c8r">Tap the floor to test a point.</div>
+  <div class="try"><b>Try:</b> drag the lamp or the ball. Tap the floor to draw the line to the lamp; it turns pink when a ball blocks it.</div>
+</div>
+<pre data-code="s8"></pre>
+</div></section>
+
+<section id="s9"><div class="num">09</div><div>
+<h2>Move things in small steps</h2>
+<p>Each step, add acceleration to velocity, then add velocity to position. Updating velocity first keeps the simulation stable (this order is called semi-implicit Euler).</p>
+<p>Split each frame into several substeps. Otherwise a fast ball can jump clean past a thin wall in one big step, without ever overlapping it. This is called tunnelling. Smaller steps make each jump shorter than the ball is wide.</p>
+<div class="demo">
+  <canvas id="c9" style="height:220px" aria-label="Substep tunnelling demo"></canvas>
+  <div class="ctrl">
+    <button data-c9="1" aria-pressed="true">1 substep</button><button data-c9="2" aria-pressed="false">2</button><button data-c9="4" aria-pressed="false">4</button><button data-c9="8" aria-pressed="false">8</button>
+    <button class="go" id="c9f">Fire</button>
+  </div>
+  <div class="readout" id="c9r">Fire a few shots at each setting.</div>
+  <div class="try"><b>Try:</b> fire 5 shots with 1 substep and count how many pass through. Then do the same with 4. Dots mark where the ball was checked.</div>
+</div>
+<pre data-code="s9"></pre>
+</div></section>
+
+<section id="s10"><div class="num">10</div><div>
+<h2>Resolve collisions without losing momentum</h2>
+<p>Two balls collide when the distance between their centres is less than the sum of their radii. Fix each collision in two moves.</p>
+<p>First, push the balls apart so they stop overlapping. The lighter ball moves further. Second, change their velocities with an impulse (a sudden push) along the line between the centres. Give both balls the same impulse in opposite directions. That keeps total momentum (mass × velocity, added up) unchanged.</p>
+<p>Restitution, written e, sets how much speed comes back: 1 is a perfect bounce, 0 means the balls stick.</p>
+<div class="demo">
+  <canvas id="c10" style="height:170px" aria-label="Collision and momentum demo"></canvas>
+  <div class="ctrl">
+    <span>Left</span><button data-c10l="foam" aria-pressed="false">foam</button><button data-c10l="rubber" aria-pressed="false">rubber</button><button data-c10l="steel" aria-pressed="true">steel</button>
+    <span class="sep"></span>
+    <span>Right</span><button data-c10r="foam" aria-pressed="true">foam</button><button data-c10r="rubber" aria-pressed="false">rubber</button><button data-c10r="steel" aria-pressed="false">steel</button>
+    <button class="go" id="c10f">Fire</button>
+  </div>
+  <div class="readout" id="c10r">Pick two materials and fire.</div>
+</div>
+<pre data-code="s10"></pre>
+</div></section>
+
+<section id="s11"><div class="num">11</div><div>
+<h2>Only test balls that are near each other</h2>
+<p>Testing every pair costs n × (n − 1) ÷ 2 checks: 2,415 checks for 70 balls, every substep. Instead, drop each ball into a grid square as wide as the largest ball.</p>
+<p>Two balls can only touch if they sit in the same square or neighbouring squares. So each ball checks its own square plus the 8 around it. This cheap filter is called the broad phase. The exact circle test from step 10 is the narrow phase.</p>
+<div class="demo">
+  <canvas id="c11" style="height:280px" aria-label="Broad phase grid demo"></canvas>
+  <div class="ctrl"><button id="c11g" aria-pressed="true">Show squares</button></div>
+  <div class="readout" id="c11r"></div>
+  <div class="try"><b>Try:</b> follow the yellow ball. Only balls inside its shaded 3×3 block get tested against it.</div>
+</div>
+<pre data-code="s11"></pre>
+</div></section>
+
+<section id="s12"><div class="num">12</div><div>
+<h2>Add friction so balls roll</h2>
+<p>A ball on the floor touches it at one point, at the bottom. That point moves at the ball's speed plus the speed from its spin (spin × radius). If the point is moving, the ball is sliding.</p>
+<p>Friction pushes against the sliding. The same push slows the ball down and spins it up. Once the contact point stops moving, the ball rolls. Friction can never be stronger than grip (called mu) × how hard the ball presses on the floor.</p>
+<div class="demo">
+  <canvas id="c12" style="height:170px" aria-label="Friction and rolling demo"></canvas>
+  <div class="ctrl">
+    <span>Grip</span><button data-c12="0" aria-pressed="false">0</button><button data-c12="0.2" aria-pressed="false">0.2</button><button data-c12="0.8" aria-pressed="true">0.8</button>
+    <button class="go" id="c12f">Slide</button>
+  </div>
+  <div class="readout" id="c12r"></div>
+  <div class="try"><b>Try:</b> slide with grip 0: the ball skates and the stripe never turns. With 0.8 it starts rolling almost at once.</div>
+</div>
+<pre data-code="s12"></pre>
+</div></section>
+
+<section id="s13"><div class="num">13</div><div>
+<h2>Pull with a spring, not a leash</h2>
+<p>Don't teleport a held ball to your finger. Attach it with a spring instead. The spring pulls harder the further the ball is from your finger. A damper, a brake that grows with speed, stops endless wobbling.</p>
+<p>Acceleration is force ÷ mass. So the same spring snaps a foam ball into place but drags a steel ball, which lags, overshoots and sags under gravity. When you let go, the ball keeps the velocity the spring gave it. That is the throw.</p>
+<div class="demo">
+  <canvas id="c13" style="height:280px" aria-label="Spring grab demo. Drag to move the handle."></canvas>
+  <div class="readout" id="c13r"></div>
+  <div class="try"><b>Try:</b> drag anywhere. Both balls hang from springs attached to your finger. Move fast and stop suddenly.</div>
+</div>
+<pre data-code="s13"></pre>
+</div></section>
+
+<section id="s14"><div class="num">14</div><div>
+<h2>Paint 24-bit colour fast, then run the loop <span class="new">New in v0.3</span></h2>
+<p>Changing the fill colour for each of 3,000 cells, every frame, is slow. Paint in layers instead.</p>
+<p>First, write each cell's colour into a tiny image with one pixel per cell, for example 62 × 54 pixels. Second, draw every character in plain white on a hidden canvas, one call per row. Third, set the compositing mode to "source-in" and stretch the tiny image over the white text, with smoothing off. Only pixels that already hold text get painted, and each character takes its own cell's colour.</p>
+<p>That gives full 24-bit colour for about 60 text calls instead of thousands. For glow, stretch the tiny image again with smoothing on, faintly, behind the text. Each lit cell then bleeds soft light into its neighbours.</p>
+<div class="demo">
+  <canvas id="c14" style="height:260px" aria-label="Rendering layers demo. Drag a ball."></canvas>
+  <div class="ctrl">
+    <button data-c14="colour" aria-pressed="false">1. Colours</button><button data-c14="white" aria-pressed="false">2. White text</button><button data-c14="both" aria-pressed="false">3. Combined</button><button data-c14="glow" aria-pressed="true">4. + Glow</button>
+  </div>
+  <div class="readout" id="c14r"></div>
+  <div class="try"><b>Try:</b> step through the four layers. Drag a ball in each one.</div>
+</div>
+<pre data-code="s14"></pre>
+<p>Every frame runs the same layers in the same order. Cap the frame time at 1/30 s. A long pause, such as switching apps, would otherwise produce one giant step that throws balls through walls.</p>
+<div class="stack">input      →  finger positions, tools
+physics    →  steps 9 to 13
+light      →  floor and shadows (8), shaded balls (2, 6)
+tone       →  tone map, gamma, cutoff, split (5, 7)
+characters →  measured ink, dither (4, 5)
+paint      →  colour image + white text + glow (14)</div>
+<pre data-code="s15"></pre>
+<p style="margin-top:1.2rem">Everything above runs together in the full engine. Its Display settings panel exposes every control from steps 4, 5 and 7.</p>
+<a class="cta" href="https://claude.ai/artifact/G6a4oGVEWMNvFeT3ZYVbjf" target="_blank" rel="noopener">Open the engine</a>
+</div></section>
+</main>
