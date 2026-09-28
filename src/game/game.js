@@ -72,6 +72,62 @@ const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
 const partsCost = () => 3 + gun * 2;
 const cannonArt = () => [GUNS[gun].top, ...CANNON_BASE];
 
+/* ---------- sound ---------- */
+// Browsers only allow audio after a user gesture, so nothing is decoded until the first key or tap.
+const MUTE_KEY = "baseCommander.v1.muted";
+const VOL = { shoot: 0.35, laser: 0.3, bomb: 0.5, hit: 0.5, explode: 0.6, shield: 0.3, pickup: 0.8, upgrade: 0.9,
+  life: 0.9, death: 1, plane: 0.5, level_start: 0.7, wave_clear: 0.8, game_over: 0.9 };
+let unlocked = false, actx = null, master = null, musicBus = null, sfxBus = null, buffers = {}, lastPlayed = {};
+let song = "title", songNode = null, muted = false;
+try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e){}
+function unlockAudio(){
+  if (unlocked) return;
+  unlocked = true;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC){ console.warn("Base Commander: Web Audio not supported, playing silent"); return; }
+  actx = new AC();
+  master = actx.createGain(); master.gain.value = muted ? 0 : 1; master.connect(actx.destination);
+  musicBus = actx.createGain(); musicBus.gain.value = 0.5; musicBus.connect(master);
+  sfxBus = actx.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(master);
+  const decode = (key, b64) => actx.decodeAudioData(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer,
+    b => { buffers[key] = b; if (key === song) startSong(); },
+    e => console.warn("Base Commander: could not decode sound", key, e));
+  for (const [k, v] of Object.entries(AUDIO_DATA.sfx)) decode(k, v);
+  for (const [k, v] of Object.entries(AUDIO_DATA.music)) decode(k, v.data);
+}
+function sfx(name, pan){   // pan: sweep from -pan to +pan over the sound, for the plane flying across
+  const b = buffers[name]; if (!b || muted) return;
+  const now = actx.currentTime;
+  if (now - (lastPlayed[name] ?? -1) < 0.05) return;   // a volley from many enemies still makes one sound
+  lastPlayed[name] = now;
+  const src = actx.createBufferSource(), g = actx.createGain(); src.buffer = b; g.gain.value = VOL[name];
+  src.connect(g);
+  if (pan && actx.createStereoPanner){
+    const p = actx.createStereoPanner(); p.pan.setValueAtTime(-pan, now); p.pan.linearRampToValueAtTime(pan, now + b.duration);
+    g.connect(p); p.connect(sfxBus);
+  } else g.connect(sfxBus);
+  src.start();
+}
+function playSong(name){   // null stops the music
+  if (song === name) return;
+  song = name;
+  if (songNode){ songNode.g.gain.setTargetAtTime(0, actx.currentTime, 0.3); songNode.stop(actx.currentTime + 1.5); songNode = null; }
+  startSong();
+}
+function startSong(){
+  if (!actx || !song || songNode || !buffers[song]) return;
+  const M = AUDIO_DATA.music[song], src = actx.createBufferSource(), g = actx.createGain();
+  // loop points sit inside margins cut from the recording, so MP3 padding never lands in the loop
+  src.buffer = buffers[song]; src.loop = true; src.loopStart = M.loopStart; src.loopEnd = M.loopEnd;
+  src.connect(g); g.connect(musicBus); src.start(0, M.loopStart); src.g = g; songNode = src;
+}
+function toggleMute(){
+  unlockAudio(); muted = !muted;
+  if (master) master.gain.setTargetAtTime(muted ? 0 : 1, actx.currentTime, 0.02);
+  try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e){ console.warn("Base Commander: could not save sound setting", e); }
+  $("bSound").textContent = "Sound: " + (muted ? "off" : "on");
+}
+
 /* ---------- saved scores ---------- */
 function loadScores(){
   try { return JSON.parse(localStorage.getItem(STORE) || "[]"); }
@@ -151,13 +207,14 @@ function setupLevel(){
   fleet = { dir: 1, t: 0, every: lv.step };
   buildShields();
   cannon = world.add(-1e4, 0, screen.cw * 3.2, "peg"); cannon.hidden = true;   // invisible bumper so debris bounces off the cannon
+  sfx("level_start");
   flash("LEVEL " + level + (lv.fresh !== undefined ? "  NEW ENEMY: " + TYPES[lv.fresh].name : ""), 2.5);
 }
 function restart(){
   if (state === "clear"){ setupLevel(); state = "play"; return; }
   if (state !== "title") recordScore();   // a run abandoned with R still counts
   score = 0; level = 1; gun = 0; parts = 0; lives = DIFF[diffKey].lives; paused = false; recorded = false; rank = -1;
-  setupLevel(); state = "play";
+  setupLevel(); state = "play"; playSong("battle");
 }
 function flash(text, secs = 1.4){ msg = text; msgT = secs; }
 
@@ -180,7 +237,7 @@ function eachCell(sprite, x, y, fn){ sprite.forEach((row, dy) => { for (let dx =
 
 /* ---------- rules ---------- */
 function damage(s){
-  s.hp--; s.body.flash = 1; s.body.alb = SHIELD_RGB.map(v => v * (0.25 + 0.75 * s.hp / 3));
+  s.hp--; s.body.flash = 1; sfx("shield"); s.body.alb = SHIELD_RGB.map(v => v * (0.25 + 0.75 * s.hp / 3));
   if (s.hp > 0) return;
   world.bodies.splice(world.bodies.indexOf(s.body), 1); shields.splice(shields.indexOf(s), 1);
   burst(s.body.x, s.body.y, SHIELD_RGB, 2);
@@ -192,8 +249,8 @@ function hitAlien(x, y, shot){
     const T = TYPES[a.type], art = T.art[frame], dx = x - a.x, dy = y - a.y;
     if (dx < 0 || dx >= AW || dy < 0 || dy >= AH || art[dy][dx] === " ") continue;
     shot.hits.add(a); a.flash = 0.12;
-    if (--a.hp > 0){ score += 1; burst(cx(x), cy(y), T.rgb, 2, -150); return true; }
-    a.alive = false; score += T.pts + Math.floor((GH - a.y) / 4) + level;
+    if (--a.hp > 0){ sfx("hit"); score += 1; burst(cx(x), cy(y), T.rgb, 2, -150); return true; }
+    a.alive = false; sfx("explode"); score += T.pts + Math.floor((GH - a.y) / 4) + level;
     eachCell(art, a.x, a.y, (gx, gy) => burst(cx(gx), cy(gy), T.rgb, 1, -250));
     if (a.maxHp >= 3 && Math.random() < 0.35) dropCrate(cx(a.x + 3), cy(a.y + 2));   // armoured enemies may drop parts
     return true;
@@ -203,23 +260,24 @@ function hitAlien(x, y, shot){
 function inCannon(x, y){ const art = cannonArt(), dx = x - Math.round(px), dy = y - PY; return dy >= 0 && dy < 3 && dx >= 0 && dx < CW && art[dy][dx] !== " "; }
 function loseLife(){
   eachCell(cannonArt(), Math.round(px), PY, (gx, gy) => burst(cx(gx), cy(gy), CANNON_RGB, 2, -300));
-  lives--; shots = []; bombs = [];
-  if (lives <= 0){ state = "over"; recordScore(); return; }
+  lives--; shots = []; bombs = []; sfx("death");
+  if (lives <= 0){ state = "over"; recordScore(); playSong(null); setTimeout(() => sfx("game_over"), 900); return; }
   const lost = gun > 0; gun = Math.max(0, gun - 1);
   px = (GW - CW) / 2; state = "dead"; deadT = 1.2; flash(lost ? "SHIP LOST - GUN DOWN TO " + GUNS[gun].name : "SHIP LOST");
 }
 function collect(kind){
   burst(cannon.x, cannon.y - screen.ch * 2, DROPS[kind].rgb, 6, -300);
-  if (kind === "S"){ buildShields(); flash("SHIELDS REPAIRED"); return; }
-  if (kind === "L"){ lives++; flash("+1 LIFE"); return; }
+  if (kind === "S"){ buildShields(); sfx("pickup"); flash("SHIELDS REPAIRED"); return; }
+  if (kind === "L"){ lives++; sfx("life"); flash("+1 LIFE"); return; }
   parts++;
-  if (gun < GUNS.length - 1 && parts >= partsCost()){ parts -= partsCost(); gun++; flash("GUN UPGRADE: " + GUNS[gun].name, 2); }
-  else flash("+1 PARTS");
+  if (gun < GUNS.length - 1 && parts >= partsCost()){ parts -= partsCost(); gun++; sfx("upgrade"); flash("GUN UPGRADE: " + GUNS[gun].name, 2); }
+  else { sfx("pickup"); flash("+1 PARTS"); }
 }
 function fireAlien(a){
   const T = TYPES[a.type], x = a.x + 3, y = a.y + AH, sp = T.speed * lv.bombMul;
-  if (Math.random() < T.bomb) bombs.push({ kind: "bomb", x, y, sp: lv.bombMul, acc: 0 });
-  else for (const ox of T.twin ? [-2, 2] : [0]) bombs.push({ kind: "laser", x: x + ox, y, sp, acc: 0 });
+  if (Math.random() < T.bomb){ bombs.push({ kind: "bomb", x, y, sp: lv.bombMul, acc: 0 }); sfx("bomb"); return; }
+  sfx("laser");
+  for (const ox of T.twin ? [-2, 2] : [0]) bombs.push({ kind: "laser", x: x + ox, y, sp, acc: 0 });
 }
 function impact(s, y){   // an enemy shot lands on a shield or the floor; bombs hit a small area
   const r = WEAPONS[s.kind].blast ? 1 : 0;
@@ -234,7 +292,7 @@ function update(dt){
   if ((fireT -= dt) <= 0 && keys.fire){
     const G = GUNS[gun];
     for (const [ox, vx] of G.shots){ const x = Math.round(px) + 3 + ox; shots.push({ x, fx: x, y: PY - 1, vx, acc: 0, pierce: G.pierce || 1, hits: new Set() }); }
-    fireT = d.fire * G.delay;
+    fireT = d.fire * G.delay; sfx("shoot");
   }
   // bullets advance one cell at a time so nothing is skipped at low frame rates
   for (const s of shots){
@@ -248,7 +306,7 @@ function update(dt){
   shots = shots.filter(s => !s.dead);
 
   const alive = aliens.filter(a => a.alive);
-  if (!alive.length){ score += 50 * level; state = "clear"; level++; return; }
+  if (!alive.length){ score += 50 * level; state = "clear"; level++; sfx("wave_clear"); return; }
   for (const a of alive) a.flash -= dt;
   const gone = 1 - alive.length / aliens.length;
   if ((fleet.t += dt) >= Math.max(0.1, fleet.every - gone * 0.4)){
@@ -276,7 +334,7 @@ function update(dt){
       else if (shields.some(q => q.x === s.x && q.y === s.y)){ s.dead = true; impact(s, s.y); }
       else if (inCannon(s.x, s.y)) s.dead = hitMe = true;
       else { const p = shots.find(p => !p.dead && p.x === s.x && Math.abs(p.y - s.y) <= 1);
-        if (p){ p.dead = s.dead = true; score += 2; burst(cx(s.x), cy(s.y), [1, 0.7, 0.3], 2); } }
+        if (p){ p.dead = s.dead = true; score += 2; sfx("hit"); burst(cx(s.x), cy(s.y), [1, 0.7, 0.3], 2); } }
     }
   }
   bombs = bombs.filter(s => !s.dead); shots = shots.filter(s => !s.dead);
@@ -285,7 +343,7 @@ function update(dt){
   if (!plane && (dropT -= dt) <= 0){
     const dir = Math.random() < 0.5 ? 1 : -1;
     plane = { x: dir > 0 ? -8 : GW, dir, dropX: 6 + Math.floor(Math.random() * (GW - 12)), done: false };
-    dropT = 12 + Math.random() * 10;
+    dropT = 12 + Math.random() * 10; sfx("plane", dir);
   }
   if (plane){
     plane.x += plane.dir * PLANE_SPEED * dt;
@@ -332,12 +390,12 @@ function drawTitle(t){
   for (let i = 0; i < 7; i++) eachCell(TYPES[i].art[frame], 6 + fleetX + i * 13, 28, (gx, gy, code) => put(gx, gy, TYPES[i].rgb, 0.9, 2, code));
   if (titleT > 3){
     center(25, "~ DEFEND THE BASE ~", CANNON_RGB);
-    if ((t / 500 | 0) % 2) center(46, "PRESS SPACE OR TAP FIRE TO START", WHITE);
+    if ((t / 500 | 0) % 2) center(46, unlocked || muted ? "PRESS SPACE OR TAP FIRE TO START" : "PRESS ANY KEY OR TAP FOR SOUND", WHITE);
   }
   center(36, "HIGH SCORES", CANNON_RGB);
   if (!scores.length) center(38, "NO SCORES YET", DIM);
   scores.forEach((e, i) => center(38 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
-  center(52, "ARROWS/A D MOVE  SPACE FIRE  P PAUSE  R RESTART", DIM);
+  center(52, "ARROWS/A D MOVE  SPACE FIRE  P PAUSE  R RESTART  M SOUND", DIM);
   center(54, "CATCH AIRDROPS: [P] PARTS  [S] SHIELDS  [L] LIFE", DIM);
   center(56, "DIFFICULTY: " + diffKey.toUpperCase(), DIM);
 }
@@ -395,22 +453,32 @@ function drawBorder(){
 /* ---------- input ---------- */
 const keys = { left: false, right: false, fire: false };
 const KEYMAP = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right", " ": "fire" };
-function togglePause(){ if (state !== "play" && state !== "dead") return; paused = !paused; $("bPause").textContent = paused ? "Resume" : "Pause"; }
+function togglePause(){
+  if (state !== "play" && state !== "dead") return;
+  paused = !paused; $("bPause").textContent = paused ? "Resume" : "Pause";
+  if (actx) paused ? actx.suspend() : actx.resume();
+}
+// On the title, the first key or tap only turns the sound on (and starts the title music).
+function titlePress(){ if (!unlocked && !muted){ unlockAudio(); return; } unlockAudio(); restart(); }
 addEventListener("keydown", e => {
   const k = KEYMAP[e.key]; if (k){ e.preventDefault(); keys[k] = true; }
   if (e.repeat) return;
-  if (state === "title"){ if (e.key === " " || e.key === "Enter") restart(); return; }
+  if (e.key === "m" || e.key === "M"){ toggleMute(); return; }
+  if (state === "title"){ if (!unlocked && !muted) unlockAudio(); else if (e.key === " " || e.key === "Enter") titlePress(); return; }
+  unlockAudio();
   if (e.key === "p" || e.key === "P") togglePause();
   if (e.key === "r" || e.key === "R" || (e.key === "Enter" && (state === "over" || state === "clear"))) restart();
 });
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; });
 addEventListener("blur", () => { keys.left = keys.right = keys.fire = false; });
 document.querySelectorAll("[data-key]").forEach(b => {
-  const set = v => e => { e.preventDefault(); keys[b.dataset.key] = v; if (v && state === "title" && b.dataset.key === "fire") restart(); };
-  b.addEventListener("pointerdown", set(true));
+  const set = v => e => { e.preventDefault(); keys[b.dataset.key] = v; unlockAudio(); if (v && state === "title" && b.dataset.key === "fire") titlePress(); };
+  b.addEventListener("pointerdown", e => { if (state === "title" && !unlocked && !muted){ e.preventDefault(); unlockAudio(); return; } set(true)(e); });
   for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, set(false));
 });
-cv.addEventListener("pointerdown", () => { if (state === "title") restart(); });
+cv.addEventListener("pointerdown", () => { if (state === "title") titlePress(); else unlockAudio(); });
+$("bSound").addEventListener("click", toggleMute);
+$("bSound").textContent = "Sound: " + (muted ? "off" : "on");
 $("bPause").addEventListener("click", togglePause);
 $("bRestart").addEventListener("click", () => { $("bPause").textContent = "Pause"; restart(); });
 $("bDiff").addEventListener("click", e => {   // lives change on the next restart; level tuning on the next wave

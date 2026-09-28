@@ -14,6 +14,13 @@ Edit the files in `src/`, then run `./build.sh` to rebuild all pages.
 - `src/engine/`: engine page markup, styles and UI.
 - `src/tutorial/`: tutorial markup, code snippets shown on the page, helpers and demos.
 - `src/game/`: the Base Commander page markup and game rules.
+- `audio/`: game sound. `base-commander.rb` is the Sonic Pi source for all effects and music.
+
+## Game audio
+
+1. Open `audio/base-commander.rb` in Sonic Pi, set `piece`, then Rec, Run, Stop and save to `audio/raw/` (`sfx.wav`, `battle.wav`, `title.wav`). The raw WAVs are not tracked in git.
+2. Run `python3 audio/process.py` (needs ffmpeg and numpy). It splits and levels the effects, cuts seamless music loops, writes MP3s to `audio/sfx/` and `audio/music/`, and generates `src/game/audio-data.js`.
+3. Run `./build.sh`. The audio is embedded in `base-commander.html`, so the page still works offline as a single file (about 1 MB).
 
 A change to physics or rendering goes in `core.js`, so all pages stay in sync.
 
