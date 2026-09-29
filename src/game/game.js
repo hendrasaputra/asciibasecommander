@@ -390,12 +390,13 @@ function drawTitle(t){
   for (let i = 0; i < 7; i++) eachCell(TYPES[i].art[frame], 6 + fleetX + i * 13, 28, (gx, gy, code) => put(gx, gy, TYPES[i].rgb, 0.9, 2, code));
   if (titleT > 3){
     center(25, "~ DEFEND THE BASE ~", CANNON_RGB);
-    if ((t / 500 | 0) % 2) center(46, unlocked || muted ? "PRESS SPACE OR TAP FIRE TO START" : "PRESS ANY KEY OR TAP FOR SOUND", WHITE);
+    if ((t / 500 | 0) % 2) center(46, unlocked || muted ? (touchMode ? "PRESS START OR A TO BEGIN" : "PRESS SPACE TO START")
+      : (touchMode ? "TAP ANY BUTTON FOR SOUND" : "PRESS ANY KEY FOR SOUND"), WHITE);
   }
   center(36, "HIGH SCORES", CANNON_RGB);
   if (!scores.length) center(38, "NO SCORES YET", DIM);
   scores.forEach((e, i) => center(38 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
-  center(52, "ARROWS/A D MOVE  SPACE FIRE  P PAUSE  R RESTART  M SOUND", DIM);
+  center(52, touchMode ? "D-PAD MOVE  A/B FIRE  START PAUSE  SELECT SOUND" : "ARROWS/A D MOVE  SPACE FIRE  P PAUSE  R RESTART  M SOUND", DIM);
   center(54, "CATCH AIRDROPS: [P] PARTS  [S] SHIELDS  [L] LIFE", DIM);
   center(56, "DIFFICULTY: " + diffKey.toUpperCase(), DIM);
 }
@@ -433,11 +434,11 @@ function draw(t){
   const mid = GH >> 1;
   if (paused) center(mid, "  [ PAUSED ]  ", WHITE);
   else if (state === "over"){
-    center(mid, "  GAME OVER - press R  ", WHITE);
+    center(mid, "  GAME OVER - press " + (touchMode ? "START" : "R") + "  ", WHITE);
     if (rank >= 0) center(mid + 2, "  NEW HIGH SCORE - RANK " + (rank + 1) + "  ", CANNON_RGB);
   } else if (state === "clear"){
     const n = makeLevel(level);
-    center(mid, "  WAVE " + (level - 1) + " CLEARED - press R  ", WHITE);
+    center(mid, "  WAVE " + (level - 1) + " CLEARED - press " + (touchMode ? "START" : "R") + "  ", WHITE);
     center(mid + 2, "  NEXT: " + n.rows * n.cols + " ENEMIES" + (n.fresh !== undefined ? "  NEW: " + TYPES[n.fresh].name : "") + "  ", CANNON_RGB);
   }
   if (msgT > 0) center(4, " " + msg + " ", [1.6, 0.5, 0.35]);
@@ -471,10 +472,47 @@ addEventListener("keydown", e => {
 });
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; });
 addEventListener("blur", () => { keys.left = keys.right = keys.fire = false; });
-document.querySelectorAll("[data-key]").forEach(b => {
-  const set = v => e => { e.preventDefault(); keys[b.dataset.key] = v; unlockAudio(); if (v && state === "title" && b.dataset.key === "fire") titlePress(); };
-  b.addEventListener("pointerdown", e => { if (state === "title" && !unlocked && !muted){ e.preventDefault(); unlockAudio(); return; } set(true)(e); });
-  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, set(false));
+
+/* ---------- controls: keyboard or touch gamepad ---------- */
+const CTRL_KEY = "baseCommander.v1.controls";
+let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the Controls button overrides it
+try { const c = localStorage.getItem(CTRL_KEY); if (c) touchMode = c === "touch"; } catch (e){}
+function setControls(touch, save){
+  touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
+  $("bControls").textContent = "Controls: " + (touch ? "touch" : "keyboard");
+  if (save) try { localStorage.setItem(CTRL_KEY, touch ? "touch" : "keyboard"); } catch (e){ console.warn("Base Commander: could not save controls setting", e); }
+}
+setControls(touchMode, false);
+$("bControls").addEventListener("click", () => setControls(!touchMode, true));
+const buzz = () => navigator.vibrate && navigator.vibrate(8);   // a tick of feedback on phones that support it
+// The D-pad is one surface: the thumb's position picks the direction, so sliding across switches like a real pad.
+const dpad = $("dpad");
+function dpadAt(e){
+  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2);
+  const dir = Math.abs(dx) < r.width * 0.1 ? "" : dx < 0 ? "left" : "right";
+  if (dir !== (dpad.dataset.dir || "")){ dpad.dataset.dir = dir; if (dir) buzz(); }
+  keys.left = dir === "left"; keys.right = dir === "right";
+}
+dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); unlockAudio(); dpadAt(e); });
+dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadAt(e); });
+for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dpad.dataset.dir = ""; keys.left = keys.right = false; });
+function padStart(){   // START: begin, continue after a wave or game over, otherwise pause
+  if (state === "title") titlePress();
+  else if (state === "over" || state === "clear") restart();
+  else { unlockAudio(); togglePause(); }
+}
+const firing = new Set();   // A and B both fire; firing stops once neither is held
+document.querySelectorAll("[data-pad]").forEach(b => {
+  const id = b.dataset.pad;
+  b.addEventListener("pointerdown", e => {
+    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
+    if (id === "select") return toggleMute();
+    if (id === "start") return padStart();
+    if (state === "title") return titlePress();
+    unlockAudio(); firing.add(id); keys.fire = true;
+  });
+  const up = () => { b.classList.remove("on"); if (firing.delete(id)) keys.fire = firing.size > 0; };
+  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
 });
 cv.addEventListener("pointerdown", () => { if (state === "title") titlePress(); else unlockAudio(); });
 $("bSound").addEventListener("click", toggleMute);
@@ -483,7 +521,7 @@ $("bPause").addEventListener("click", togglePause);
 $("bRestart").addEventListener("click", () => { $("bPause").textContent = "Pause"; restart(); });
 $("bDiff").addEventListener("click", e => {   // lives change on the next restart; level tuning on the next wave
   const ks = Object.keys(DIFF); diffKey = ks[(ks.indexOf(diffKey) + 1) % ks.length];
-  e.target.textContent = "Difficulty: " + diffKey; if (state !== "title") flash("DIFFICULTY " + diffKey.toUpperCase() + " - press R");
+  e.target.textContent = "Difficulty: " + diffKey; if (state !== "title") flash("DIFFICULTY " + diffKey.toUpperCase() + " - APPLIES ON RESTART");
 });
 
 /* ---------- loop ---------- */
