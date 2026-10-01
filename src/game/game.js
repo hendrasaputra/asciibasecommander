@@ -560,6 +560,14 @@ function tick(t){
   if (screen && !(paused && pausedDrawn)){ draw(t); pausedDrawn = paused; }   // a paused screen is drawn once
 }
 layout();
-new ResizeObserver(() => { if (screen){ layout(); pausedDrawn = false; for (const s of shields){ s.body.x = cx(s.x); s.body.y = cy(s.y); } } }).observe(stage);
+// Re-fit only for real size changes (rotation, window resize). Mobile browsers also nudge the page height
+// as the address bar slides in and out; re-fitting then would make the game jump while you play.
+let fitted = stage.getBoundingClientRect();
+new ResizeObserver(() => {
+  const r = stage.getBoundingClientRect();
+  if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
+  fitted = r;
+  if (screen){ layout(); pausedDrawn = false; for (const s of shields){ s.body.x = cx(s.x); s.body.y = cy(s.y); } }
+}).observe(stage);
 requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
 })();
