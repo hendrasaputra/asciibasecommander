@@ -29,6 +29,7 @@ body{height:100%;margin:0;background:var(--ground);color:var(--ink);
   display:flex;flex-direction:column;overflow:hidden;-webkit-user-select:none;user-select:none}
 header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px;padding:10px 14px 6px}
 h1{font-size:17px;font-weight:650;margin:0;letter-spacing:-0.01em}
+h1 a{color:inherit;text-decoration:none}h1 a:hover{text-decoration:underline}
 #hud{font:12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted);white-space:nowrap}
 #stage{flex:1;position:relative;margin:0 8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:0;background:#0B0F16}
 #cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
@@ -60,7 +61,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 </head>
 <body>
 <header>
-  <h1>ASCII physics v0.3</h1>
+  <h1><a href="./" title="Back to the cartridge shelf">&#8249; ASCII physics v0.3</a></h1>
   <div id="hud">–</div>
 </header>
 <div id="stage">

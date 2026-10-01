@@ -1,5 +1,5 @@
-// Box physics checks for src/core.js. Run: node tests/boxes.js
-// Loads the engine without a browser (the physics needs no DOM) and checks that boxes settle sensibly.
+// Physics checks for src/core.js. Run: node tests/physics.js
+// Loads the engine without a browser (the physics needs no DOM) and checks boxes, terrain, sensors and an open top.
 const fs = require("fs"), vm = require("vm"), path = require("path");
 const src = fs.readFileSync(path.join(__dirname, "..", "src", "core.js"), "utf8");
 const { World, boxBox } = vm.runInNewContext(src + "\n;({ World, boxBox })", { Math, console });
@@ -39,5 +39,23 @@ const lowestCorner = b => b.y + Math.abs(Math.sin(b.a)) * b.hw + Math.abs(Math.c
   const avgSpeed = B.reduce((t, b) => t + Math.hypot(b.vx, b.vy), 0) / B.length;
   check("pile of 40 boxes and balls settles without blowing up", finite && inside && worst < 3 && avgSpeed < 20,
     `deepest box overlap ${worst.toFixed(2)} px, average speed ${avgSpeed.toFixed(2)}`); }
+
+// Terrain: a 60 x 40 grid of 10 px cells, solid from row 30 down, with a 3-cell hole at columns 20-22.
+function terrainWorld(){
+  const w = world(), cols = 60, rows = 40, solid = new Uint8Array(cols * rows);
+  for (let r = 30; r < rows; r++) for (let c = 0; c < cols; c++) solid[r * cols + c] = (c >= 20 && c <= 22 && r < 33) ? 0 : 1;
+  w.terrain = { cw: 10, ch: 10, cols, rows, solid, mat: { name: "brick", e: 0.2, mu: 0.8 } };
+  return w;
+}
+{ const w = terrainWorld(), ball = w.add(100, 100, 6, "rubber"), box = w.addBox(400, 100, 12, 6, "rubber"); box.a = 0; run(w, 4);
+  check("ball and box come to rest on terrain", Math.abs(ball.y - (300 - 6)) < 1.5 && Math.abs(box.y - (300 - 6)) < 1.5 && Math.hypot(box.vx, box.vy) < 2,
+    `ball y=${ball.y.toFixed(1)} box y=${box.y.toFixed(1)}, surface at 300`); }
+{ const w = terrainWorld(), ball = w.add(215, 100, 4, "steel"); run(w, 4);
+  check("ball drops into a hole in the terrain", ball.y > 300 && ball.y < 330 + 1 && Math.abs(ball.x - 215) < 12, `ball at (${ball.x.toFixed(1)}, ${ball.y.toFixed(1)})`); }
+{ const w = terrainWorld(), s = w.add(100, 100, 4, "steel"); s.sensor = true; run(w, 2);
+  check("sensor falls through terrain to the floor", s.y > 390, `y=${s.y.toFixed(1)}`); }
+{ const w = world(); w.openTop = true; const b = w.add(300, 50, 5, "steel"); b.vy = -500; let top = Infinity;
+  for (let i = 0; i < 180; i++){ w.step(1 / 60); top = Math.min(top, b.y); }
+  check("open top: a body flies above the screen and falls back", top < -50 && b.y > 300, `highest y=${top.toFixed(0)}, now y=${b.y.toFixed(0)}`); }
 
 process.exitCode = failed ? 1 : 0;

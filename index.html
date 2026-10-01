@@ -2,11 +2,136 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Base Commander</title>
-<meta http-equiv="refresh" content="0; url=base-commander.html">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cartridge Shelf</title>
+<meta name="description" content="Games built on an ASCII physics engine. Pick a cartridge to play.">
+<style>
+:root{
+  --room:#E7E4DC; --shelf:#B79268; --shelf-edge:#8C6A45; --ink:#2A2A30; --muted:#6B6A72;
+  --shell:#C9C7C2; --shell-hi:#E2E0DB; --shell-lo:#9E9C97; --recess:#8F8D88; --focus:#2F5BD3;
+  box-sizing:border-box;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --room:#14161C; --shelf:#4A3A2A; --shelf-edge:#2E241A; --ink:#E4E2DC; --muted:#8E8C95;
+    --shell:#7D7B80; --shell-hi:#98969B; --shell-lo:#545257; --recess:#4C4A4F; --focus:#8FB0FF;
+  }
+}
+:root[data-theme="dark"]{
+  --room:#14161C; --shelf:#4A3A2A; --shelf-edge:#2E241A; --ink:#E4E2DC; --muted:#8E8C95;
+  --shell:#7D7B80; --shell-hi:#98969B; --shell-lo:#545257; --recess:#4C4A4F; --focus:#8FB0FF;
+}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;min-height:100vh;background:var(--room);color:var(--ink);
+  font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  display:flex;flex-direction:column;align-items:center;padding:clamp(24px,6vw,56px) 16px 32px}
+header{text-align:center;margin-bottom:clamp(24px,5vw,44px)}
+h1{margin:0;font:700 clamp(22px,5vw,34px)/1.1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.06em}
+header p{margin:8px 0 0;color:var(--muted)}
+.shelf{width:min(100%,1060px);display:flex;flex-wrap:wrap;justify-content:center;gap:clamp(20px,4vw,40px);
+  padding:0 clamp(8px,3vw,28px) 26px;border-bottom:14px solid var(--shelf);
+  box-shadow:0 10px 0 var(--shelf-edge)}
+/* A cartridge: grey shell with a clipped top-right corner, grip ridges, a recessed label and an arrow */
+.cart{position:relative;display:block;width:200px;text-decoration:none;color:inherit;
+  background:linear-gradient(160deg,var(--shell-hi),var(--shell) 40%,var(--shell-lo));
+  clip-path:polygon(0 0,86% 0,100% 7%,100% 100%,0 100%);border-radius:0 0 12px 12px;
+  padding:30px 16px 34px;transition:transform .18s ease,filter .18s ease}
+.cart::before{content:"";position:absolute;top:8px;left:16px;right:30px;height:12px;
+  background:repeating-linear-gradient(90deg,var(--shell-lo) 0 2px,transparent 2px 7px);opacity:.7}
+.cart::after{content:"\25BC";position:absolute;bottom:9px;left:0;right:0;text-align:center;font-size:12px;color:var(--shell-lo)}
+.cart:hover{transform:translateY(-6px)}
+.cart:focus-visible{outline:none;filter:drop-shadow(0 0 0 var(--focus)) drop-shadow(0 0 3px var(--focus)) drop-shadow(0 0 3px var(--focus))}
+.cart.inserting{transform:translateY(60px) scale(.96);filter:brightness(.8);transition:transform .38s cubic-bezier(.5,0,.75,0),filter .38s}
+.label{background:var(--recess);padding:6px;border-radius:4px;box-shadow:inset 0 2px 3px rgba(0,0,0,.35)}
+.art{position:relative;aspect-ratio:1;border-radius:2px;overflow:hidden;background:#0B0F16;display:flex;align-items:center;justify-content:center}
+.art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.art pre{margin:0;font:600 11px/1.15 ui-monospace,"SF Mono",Menlo,Consolas,monospace;white-space:pre}
+.title{display:block;margin-top:8px;padding:6px 6px 5px;border-radius:2px;background:#0B0F16;color:#F2EFE6;text-align:center;
+  font:700 13px/1.15 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase}
+.tag{display:block;margin-top:10px;text-align:center;font-size:12px;color:var(--ink);opacity:.75}
+.slot{width:200px;align-self:stretch;display:grid;place-content:center;text-align:center;padding:16px;min-height:300px;
+  border:2px dashed var(--muted);border-radius:0 0 12px 12px;color:var(--muted);font:600 12px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.06em}
+footer{margin-top:40px;color:var(--muted);font-size:13px;text-align:center}
+footer a{color:inherit}
+@media (prefers-reduced-motion: reduce){ .cart,.cart.inserting{transition:none} .cart:hover{transform:none} }
+</style>
 </head>
 <body>
-<p><a href="base-commander.html">Play Base Commander</a> &middot; <a href="ascii-physics.html">ASCII physics engine</a> &middot; <a href="ascii-engine-tutorial.html">Engine tutorial</a></p>
+<header>
+  <h1>SELECT A CARTRIDGE</h1>
+  <p>Games built on an ASCII physics engine. Each one opens on its own page.</p>
+</header>
+
+<main class="shelf" aria-label="Cartridges">
+  <!-- Album art goes in cartridges/<id>.jpg (see CARTRIDGE_PROMPT.md); until then the ASCII label shows. -->
+  <a class="cart" href="base-commander.html" data-id="base-commander">
+    <div class="label">
+      <div class="art">
+        <pre aria-hidden="true"><span style="color:#FF5CC8">  (^)     (^) </span>
+<span style="color:#FF5CC8"> &lt;o_o&gt;   &lt;o_o&gt;</span>
+<span style="color:#58C8FF">~[===]~ ~[===]~</span>
+<span style="color:#FF6A50">   |        |  </span>
+<span style="color:#FF6A50">        |      </span>
+<span style="color:#5BE38A"> ##### #####  </span>
+<span style="color:#FFD36A">      /###\   </span></pre>
+        <img src="cartridges/base-commander.jpg" alt="" onerror="this.remove()">
+      </div>
+      <span class="title">Base Commander</span>
+    </div>
+    <span class="tag">Defend the base from alien waves</span>
+  </a>
+
+  <a class="cart" href="ascii-physics.html" data-id="physics-sandbox">
+    <div class="label">
+      <div class="art">
+        <pre aria-hidden="true"><span style="color:#FFD9A0">       *       </span>
+<span style="color:#7FA2FF">   .:=+=:.     </span>
+<span style="color:#7FA2FF">  :+#@@#+:  </span><span style="color:#F07FB8">[##]</span>
+<span style="color:#38D9B8">   ':=+=:'  </span><span style="color:#F07FB8">[##]</span>
+<span style="color:#C8CDD6">  .=#=.  .=#=. </span>
+<span style="color:#56617A">_______________</span></pre>
+        <img src="cartridges/physics-sandbox.jpg" alt="" onerror="this.remove()">
+      </div>
+      <span class="title">Physics Sandbox</span>
+    </div>
+    <span class="tag">Throw balls and boxes under a lamp</span>
+  </a>
+
+  <a class="cart" href="rooftop-rumble.html" data-id="rooftop-rumble">
+    <div class="label">
+      <div class="art">
+        <pre aria-hidden="true"><span style="color:#F2EFC8">       (o o)  </span>
+<span style="color:#FFE066">    .  .  (   </span>
+<span style="color:#F7B26A"> (..)      </span><span style="color:#7FD0FF">(..)</span>
+<span style="color:#6D7AB8">:##:  </span><span style="color:#B86A6A">::  </span><span style="color:#6D7AB8">:##:</span>
+<span style="color:#6D7AB8">:#:#  </span><span style="color:#B86A6A">:#:#</span><span style="color:#6D7AB8"> #:#:</span>
+<span style="color:#6D7AB8">:##:  </span><span style="color:#B86A6A">:##:</span><span style="color:#6D7AB8"> :##:</span></pre>
+        <img src="cartridges/rooftop-rumble.jpg" alt="" onerror="this.remove()">
+      </div>
+      <span class="title">Rooftop Rumble</span>
+    </div>
+    <span class="tag">Lob fruit across a night skyline</span>
+  </a>
+
+  <div class="slot" role="note">NEXT CARTRIDGE<br>IN DEVELOPMENT</div>
+</main>
+
+<footer>
+  <a href="ascii-engine-tutorial.html">Manual: how the engine works</a> &middot;
+  <a href="https://github.com/hendrasaputra/asciibasecommander">Source on GitHub</a>
+</footer>
+
+<script>
+// A plain click plays a short "insert" animation, then opens the game. Modified clicks (new tab, etc.) are left alone.
+const still = matchMedia("(prefers-reduced-motion: reduce)");
+document.querySelectorAll(".cart").forEach(cart => cart.addEventListener("click", e => {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || still.matches) return;
+  e.preventDefault();
+  cart.classList.add("inserting");
+  setTimeout(() => { location.href = cart.href; }, 380);
+}));
+// Coming back with the browser's back button can restore the page mid-animation; reset it.
+addEventListener("pageshow", () => document.querySelectorAll(".inserting").forEach(c => c.classList.remove("inserting")));
+</script>
 </body>
 </html>

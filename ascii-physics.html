@@ -29,6 +29,7 @@ body{height:100%;margin:0;background:var(--ground);color:var(--ink);
   display:flex;flex-direction:column;overflow:hidden;-webkit-user-select:none;user-select:none}
 header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px;padding:10px 14px 6px}
 h1{font-size:17px;font-weight:650;margin:0;letter-spacing:-0.01em}
+h1 a{color:inherit;text-decoration:none}h1 a:hover{text-decoration:underline}
 #hud{font:12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted);white-space:nowrap}
 #stage{flex:1;position:relative;margin:0 8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:0;background:#0B0F16}
 #cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
@@ -60,7 +61,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 </head>
 <body>
 <header>
-  <h1>ASCII physics v0.3</h1>
+  <h1><a href="./" title="Back to the cartridge shelf">&#8249; ASCII physics v0.3</a></h1>
   <div id="hud">–</div>
 </header>
 <div id="stage">
@@ -147,7 +148,10 @@ function defaultDisplay(){
 function hit(b, dv){ if (dv > 220) b.flash = Math.max(b.flash, Math.min(1, (dv - 220) / 1000)); }
 class World {
   constructor(){ this.bodies = []; this.forces = []; this.w = 300; this.h = 300; this.unit = 10; this.g = { x: 0, y: 0 };
-    this.substeps = 4; this.cell = 60; this.grid = new Map(); this.drag = 0; this.onSub = null; }
+    this.substeps = 4; this.cell = 60; this.grid = new Map(); this.drag = 0; this.onSub = null;
+    this.openTop = false;   // true: no ceiling, bodies can fly above y = 0 and fall back
+    this.terrain = null;    // optional grid of solid cells: { cw, ch, cols, rows, solid: Uint8Array, mat } (see collideTerrain)
+  }
   add(x, y, r, matName, alb, matOverride){
     const M = matOverride || MATS[matName], st = matName === "peg";
     const m = st ? 0 : M.density * (r / this.unit) ** 2;
@@ -191,15 +195,16 @@ class World {
       if (b.box){ this.boxWalls(b); continue; }
       if (b.x - b.r <= 0){ b.x = b.r; this.wall(b, -1, 0, h); }
       if (b.x + b.r >= w){ b.x = w - b.r; this.wall(b, 1, 0, h); }
-      if (b.y - b.r <= 0){ b.y = b.r; this.wall(b, 0, -1, h); }
+      if (!this.openTop && b.y - b.r <= 0){ b.y = b.r; this.wall(b, 0, -1, h); }
       if (b.y + b.r >= H){ b.y = H - b.r; this.wall(b, 0, 1, h); }
     }
     for (const b of this.bodies) b.touch = false;
     this.collide(); this.collide(false);   // second pass reuses the grid: positions only moved by sub-pixel corrections
+    if (this.terrain) this.collideTerrain();
     for (const b of this.bodies){
       if (b.static) continue;
       if (b.touch && !b.grab && b.vx * b.vx + b.vy * b.vy < 1600){ b.vx *= 0.9; b.vy *= 0.9; b.w *= 0.9; }
-      if (!b.box){ b.x = Math.min(w - b.r, Math.max(b.r, b.x)); b.y = Math.min(H - b.r, Math.max(b.r, b.y)); }
+      if (!b.box){ b.x = Math.min(w - b.r, Math.max(b.r, b.x)); b.y = Math.min(H - b.r, this.openTop ? b.y : Math.max(b.r, b.y)); }
     }
   }
   // Boxes meet walls at their corners: push back the deepest corner, then apply one impulse at the middle of the
@@ -208,6 +213,7 @@ class World {
     const c = Math.cos(b.a), s = Math.sin(b.a), ux = c * b.hw, uy = s * b.hw, vx = -s * b.hh, vy = c * b.hh;
     const P = [b.x + ux + vx, b.y + uy + vy, b.x - ux + vx, b.y - uy + vy, b.x - ux - vx, b.y - uy - vy, b.x + ux - vx, b.y + uy - vy];
     for (const [nx, ny, lim] of [[-1, 0, 0], [1, 0, this.w], [0, -1, 0], [0, 1, this.h]]){
+      if (ny < 0 && this.openTop) continue;
       let depth = 0, sx = 0, sy = 0, n = 0;
       for (let i = 0; i < 8; i += 2){
         const d = nx ? nx * (P[i] - lim) : ny * (P[i + 1] - lim);   // how far this corner is past the wall
@@ -240,6 +246,22 @@ class World {
     const jt = Math.max(-lim, Math.min(lim, -vt / (a.im + bim + rat * rat * a.iI + rbt * rbt * biI)));
     a.vx -= jt * tx * a.im; a.vy -= jt * ty * a.im; a.w -= jt * rat * a.iI;
     if (b){ b.vx += jt * tx * bim; b.vy += jt * ty * bim; b.w += jt * rbt * biI; }
+  }
+  // Terrain cells are not bodies: each moving body checks only the solid cells under its bounding box, each one
+  // treated as a fixed box. So a screen full of terrain costs nothing until something touches it.
+  collideTerrain(){
+    const T = this.terrain, cell = this.tcell || (this.tcell = { box: true, static: true, a: 0, im: 0, iI: 0, vx: 0, vy: 0, w: 0, flash: 0 });
+    cell.hw = T.cw / 2; cell.hh = T.ch / 2; cell.r = Math.hypot(cell.hw, cell.hh); cell.mat = T.mat;
+    for (const b of this.bodies){
+      if (b.static || b.sensor) continue;
+      const c0 = Math.max(0, Math.floor((b.x - b.r) / T.cw)), c1 = Math.min(T.cols - 1, Math.floor((b.x + b.r) / T.cw));
+      const r0 = Math.max(0, Math.floor((b.y - b.r) / T.ch)), r1 = Math.min(T.rows - 1, Math.floor((b.y + b.r) / T.ch));
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+        if (!T.solid[r * T.cols + c]) continue;
+        cell.x = (c + 0.5) * T.cw; cell.y = (r + 0.5) * T.ch;
+        this.resolve(cell, b);
+      }
+    }
   }
   resolveBox(a, b){
     const A = a.box ? a : b, B = A === a ? b : a;   // A is always a box
@@ -279,6 +301,7 @@ class World {
     }
   }
   resolve(a, b){
+    if (a.sensor || b.sensor) return;   // sensors fly through everything; the game checks their hits itself
     const dx = b.x - a.x, dy = b.y - a.y, rs = a.r + b.r, d2 = dx * dx + dy * dy;
     if (d2 >= rs * rs || d2 === 0) return;
     const wa = a.im, wb = b.im, ws = wa + wb; if (ws === 0) return;
