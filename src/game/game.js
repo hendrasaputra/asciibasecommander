@@ -93,8 +93,8 @@ function unlockAudio(){
   const decode = (key, b64) => actx.decodeAudioData(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer,
     b => { buffers[key] = b; if (key === song) startSong(); },
     e => console.warn("Base Commander: could not decode sound", key, e));
-  for (const [k, v] of Object.entries(AUDIO_DATA.sfx)) decode(k, v);
-  for (const [k, v] of Object.entries(AUDIO_DATA.music)) decode(k, v.data);
+  for (const [k, v] of Object.entries(SFX_DATA)) decode(k, v);
+  for (const [k, v] of Object.entries(MUSIC_DATA)) decode(k, v.data);
 }
 function sfx(name, pan){   // pan: sweep from -pan to +pan over the sound, for the plane flying across
   const b = buffers[name]; if (!b || muted) return;
@@ -117,7 +117,7 @@ function playSong(name){   // null stops the music
 }
 function startSong(){
   if (!actx || !song || songNode || !buffers[song]) return;
-  const M = AUDIO_DATA.music[song], src = actx.createBufferSource(), g = actx.createGain();
+  const M = MUSIC_DATA[song], src = actx.createBufferSource(), g = actx.createGain();
   // loop points sit inside margins cut from the recording, so MP3 padding never lands in the loop
   src.buffer = buffers[song]; src.loop = true; src.loopStart = M.loopStart; src.loopEnd = M.loopEnd;
   src.connect(g); g.connect(musicBus); src.start(0, M.loopStart); src.g = g; songNode = src;

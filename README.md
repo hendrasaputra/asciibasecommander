@@ -23,8 +23,8 @@ Edit the files in `src/`, then run `./build.sh` to rebuild all pages.
 ## Game audio
 
 1. Open `audio/base-commander.rb` in Sonic Pi, set `piece`, then Rec, Run, Stop and save to `audio/raw/` (`sfx.wav`, `battle.wav`, `title.wav`). The raw WAVs are not tracked in git.
-2. Run `python3 audio/process.py` (needs ffmpeg and numpy). It splits and levels the effects, cuts seamless music loops, writes MP3s to `audio/sfx/` and `audio/music/`, and generates `src/game/audio-data.js`.
-3. Run `./build.sh`. The audio is embedded in `base-commander.html`, so the page still works offline as a single file (about 1 MB).
+2. Run `python3 audio/process.py` (needs ffmpeg and numpy). It splits and levels the effects, cuts seamless music loops, writes MP3s to `audio/sfx/` and `audio/music/`, and generates `src/audio/sfx-data.js` (effects, used by both games) and `src/audio/music-data.js` (Base Commander's music).
+3. Run `./build.sh`. The audio is embedded in `base-commander.html`, so each page still works offline as a single file: Base Commander about 1 MB, Rooftop Rumble about 270 KB (effects only).
 
 A change to physics or rendering goes in `core.js`, so all pages stay in sync.
 

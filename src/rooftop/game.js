@@ -38,6 +38,35 @@ const isCpu = i => mode === "cpu" && i === 1;
 const name = i => isCpu(i) ? "COMPUTER" : "PLAYER " + (i + 1);
 const vmax = () => Math.sqrt(1.4 * world.w * world.g.y);   // full power at 45 degrees carries about 1.4 screens on flat ground
 
+/* ---------- sound: the shared effects from audio/ (SFX_DATA) ---------- */
+// Browsers only allow audio after a user gesture, so nothing is decoded until the first key or tap.
+const MUTE_KEY = "rooftopRumble.v1.muted";
+const VOL = { shoot: 0.45, bomb: 0.35, explode: 0.7, death: 1, hit: 0.5, level_start: 0.6, wave_clear: 0.8, game_over: 0.9 };
+let actx = null, sfxBus = null, buffers = {}, unlocked = false, muted = false, waiting = null;
+try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e){}
+function unlockAudio(){
+  if (unlocked) return;
+  unlocked = true;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC){ console.warn("Rooftop Rumble: Web Audio not supported, playing silent"); return; }
+  actx = new AC(); sfxBus = actx.createGain(); sfxBus.gain.value = muted ? 0 : 0.9; sfxBus.connect(actx.destination);
+  for (const [k, v] of Object.entries(SFX_DATA)) actx.decodeAudioData(Uint8Array.from(atob(v), c => c.charCodeAt(0)).buffer,
+    b => { buffers[k] = b; if (k === waiting){ waiting = null; sfx(k); } }, e => console.warn("Rooftop Rumble: could not decode sound", k, e));
+}
+function sfx(name){
+  if (muted) return;
+  const b = buffers[name];
+  if (!b){ if (actx) waiting = name; return; }   // the first tap starts the game before decoding finishes: play it once ready
+  const src = actx.createBufferSource(), g = actx.createGain(); src.buffer = b; g.gain.value = VOL[name] ?? 0.6;
+  src.connect(g); g.connect(sfxBus); src.start();
+}
+function toggleMute(){
+  unlockAudio(); muted = !muted;
+  if (sfxBus) sfxBus.gain.setTargetAtTime(muted ? 0 : 0.9, actx.currentTime, 0.02);
+  try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e){ console.warn("Rooftop Rumble: could not save sound setting", e); }
+  $("bSound").textContent = "Sound: " + (muted ? "off" : "on");
+}
+
 function layout(){
   const r = stage.getBoundingClientRect(); if (!r.width) return;
   const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -91,6 +120,7 @@ function newRound(){
   apes = [pick(1, 2), pick(B.length - 3, B.length - 2)].map(b => ({ x: b.x + ((b.w - AW) >> 1), y: b.top - AH, angle: 45, power: 50, pose: "idle", poseT: 0, dead: false, fallT: 0 }));
   cpu = null;
   turn = roundStarter; roundStarter ^= 1;
+  sfx("level_start");
   startTurn();
 }
 function startTurn(){
@@ -121,7 +151,7 @@ function throwFruit(i){
   fruit.sensor = true;   // flies through everything; checkFruit() decides what it hit
   fruit.vx = Math.cos(ang) * v * dir; fruit.vy = -Math.sin(ang) * v; fruit.w = 14 * dir; fruit.thrower = i; fruit.age = 0;
   A.pose = dir > 0 ? "throwR" : "throwL"; A.poseT = 0.35;
-  trail = []; state = "flight"; stateT = 0;
+  trail = []; state = "flight"; stateT = 0; sfx("shoot");
 }
 function inSprite(art, x, y, gx, gy){ const dx = gx - x, dy = gy - y; return dy >= 0 && dy < art.length && dx >= 0 && dx < art[0].length && art[dy][dx] !== " "; }
 // Runs after every physics substep, so a fast throw can't skip through a thin wall between frames.
@@ -131,7 +161,7 @@ function checkFruit(){
   if (b.x <= b.r + 1 || b.x >= world.w - b.r - 1) return endShot(b.x);   // off the side: a miss
   for (let i = 0; i < 2; i++) if (!apes[i].dead && (i !== b.thrower || b.age > 0.25) && inSprite(APE[apes[i].pose], apes[i].x, apes[i].y, gx, gy)) return apeHit(i, b.thrower);
   if (gy >= GH - 1 || (gy >= 0 && gx >= 0 && gx < GW && city.solid[gy * GW + gx])){ explode(b.x, b.y, 2.0); return endShot(b.x); }
-  if (inSprite(MOON.calm, MOON_X, MOON_Y, gx, gy)) moonShock = 1.5;   // the moon flinches; the throw carries on
+  if (inSprite(MOON.calm, MOON_X, MOON_Y, gx, gy)){ if (moonShock <= 0) sfx("hit"); moonShock = 1.5; }   // the moon flinches; the throw carries on
 }
 function removeFruit(){ if (fruit){ world.bodies.splice(world.bodies.indexOf(fruit), 1); fruit = null; } }
 function endShot(landX){
@@ -149,7 +179,7 @@ function endShot(landX){
 // Clears the terrain cells in the blast, turns some into tumbling rubble boxes, and shoves loose debris away.
 function explode(x, y, rRows){
   const R = rRows * screen.ch;
-  blasts.push({ x, y, t: 0.45 });
+  blasts.push({ x, y, t: 0.45 }); sfx("explode");
   const c0 = Math.max(0, Math.floor((x - R) / screen.cw)), c1 = Math.min(GW - 1, Math.floor((x + R) / screen.cw));
   const r0 = Math.max(0, Math.floor((y - R) / screen.ch)), r1 = Math.min(GH - 1, Math.floor((y + R) / screen.ch));
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
@@ -172,7 +202,7 @@ function apeHit(i, thrower){
     const a = Math.random() * 6.283, sp = 150 + Math.random() * 400, b = world.add(ax, ay, screen.cw * (0.5 + Math.random() * 0.3), "debris", PLAYER_RGB[i].map(v => v * 0.6), DEBRIS);
     b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp - 200; b.flash = 1; b.life = 3 + Math.random() * 2; b.r0 = b.r;
   }
-  A.dead = true;
+  A.dead = true; sfx("death");
   const winner = i === thrower ? 1 - i : thrower;
   score[winner]++;
   say(i === thrower ? "OOPS! " + name(i) + " HIT THEMSELF" : "DIRECT HIT!", 2.4);
@@ -199,12 +229,16 @@ function update(dt){
     A.angle += (plan.angle - A.angle) * k; A.power += (plan.power - A.power) * k;
     if (stateT > 1.3){ A.angle = plan.angle; A.power = plan.power; throwFruit(turn); }
   } else if (state === "flight"){
+    if (!fruit.falling && fruit.vy > 0){ fruit.falling = true; sfx("bomb"); }   // the whistle starts as it begins to drop
     fruit.age += dt; trail.push({ x: fruit.x, y: fruit.y }); if (trail.length > 400) trail.shift();
     if (stateT > 12) endShot(fruit.x);   // safety net: a throw that never lands
   } else if (state === "settle" && stateT > 0.7){ turn ^= 1; startTurn(); }
   else if (state === "hit"){
     const w = apes.findIndex(A => !A.dead); if (w >= 0){ apes[w].pose = (stateT * 3.5 | 0) % 2 ? "cheer" : "idle"; }
-    if (stateT > 2.4){ if (Math.max(...score) >= WIN_SCORE){ state = "over"; stateT = 0; } else newRound(); }
+    if (stateT > 2.4){
+      if (Math.max(...score) >= WIN_SCORE){ state = "over"; stateT = 0; sfx(isCpu(score[0] > score[1] ? 0 : 1) ? "game_over" : "wave_clear"); }
+      else newRound();
+    }
   }
 }
 
@@ -248,10 +282,10 @@ function drawTitle(){
   const blink = (performance.now() / 500 | 0) % 2;
   if (touchMode){
     center(27, "A  ONE PLAYER (VS COMPUTER)     B  TWO PLAYERS", blink ? WHITE : DIM);
-    center(29, "D-PAD: UP/DOWN ANGLE, LEFT/RIGHT POWER.  A OR B THROWS", DIM);
+    center(29, "D-PAD: UP/DOWN ANGLE, LEFT/RIGHT POWER.  A OR B THROWS.  SELECT SOUND", DIM);
   } else {
     center(27, "1  ONE PLAYER (VS COMPUTER)     2  TWO PLAYERS", blink ? WHITE : DIM);
-    center(29, "UP/DOWN ANGLE   LEFT/RIGHT POWER   SPACE THROWS   R NEW MATCH", DIM);
+    center(29, "UP/DOWN ANGLE  LEFT/RIGHT POWER  SPACE THROWS  R NEW MATCH  M SOUND", DIM);
   }
   center(31, "FIRST TO " + WIN_SCORE + " HITS WINS. MIND THE WIND.", DIM);
 }
@@ -303,6 +337,8 @@ addEventListener("keydown", e => {
   const k = KEYMAP[e.key]; if (k){ e.preventDefault(); keys[k] = true; }
   if (e.key === " ") e.preventDefault();
   if (e.repeat) return;
+  if (e.key === "m" || e.key === "M") return toggleMute();
+  unlockAudio();
   if (state === "title" && (e.key === "1" || e.key === "2")) return start(e.key === "1" ? "cpu" : "two");
   if (e.key === " " || e.key === "Enter") action();
   if (e.key === "r" || e.key === "R") start(mode);
@@ -320,8 +356,10 @@ function setControls(touch, save){
 }
 setControls(touchMode, false);
 $("bControls").addEventListener("click", () => setControls(!touchMode, true));
-$("bNew").addEventListener("click", () => start(mode));
-$("bMode").addEventListener("click", () => start(mode === "cpu" ? "two" : "cpu"));
+$("bNew").addEventListener("click", () => { unlockAudio(); start(mode); });
+$("bMode").addEventListener("click", () => { unlockAudio(); start(mode === "cpu" ? "two" : "cpu"); });
+$("bSound").addEventListener("click", toggleMute);
+$("bSound").textContent = "Sound: " + (muted ? "off" : "on");
 const buzz = () => navigator.vibrate && navigator.vibrate(8);
 // The D-pad is one surface; the thumb's offset from the centre picks the direction, so sliding switches it.
 const dpad = $("dpad");
@@ -331,21 +369,22 @@ function dpadAt(e){
   if (dir !== (dpad.dataset.dir || "")){ dpad.dataset.dir = dir; if (dir) buzz(); }
   for (const k in keys) keys[k] = k === dir;
 }
-dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); dpadAt(e); });
+dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); unlockAudio(); dpadAt(e); });
 dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadAt(e); });
 for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dpad.dataset.dir = ""; for (const k in keys) keys[k] = false; });
 document.querySelectorAll("[data-pad]").forEach(b => {
   const id = b.dataset.pad;
   b.addEventListener("pointerdown", e => {
     e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    if (id === "select"){ if (state === "title") mode = mode === "cpu" ? "two" : "cpu"; return; }
+    if (id === "select") return toggleMute();
+    unlockAudio();
     if (state === "title" && (id === "a" || id === "b")) return start(id === "a" ? "cpu" : "two");
     action();
   });
   const up = () => b.classList.remove("on");
   b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
 });
-cv.addEventListener("pointerdown", () => { if (state === "title" || state === "over") action(); });
+cv.addEventListener("pointerdown", () => { unlockAudio(); if (state === "title" || state === "over") action(); });
 
 /* ---------- loop ---------- */
 world.onSub = checkFruit;

@@ -77,7 +77,7 @@ body.touch #hud{display:none}
 <body>
 <header>
   <h1><a href="./" title="Back to the cartridge shelf">&#8249; Rooftop Rumble</a></h1>
-  <div id="hud">&uarr; &darr; angle &middot; &larr; &rarr; power &middot; Space throw &middot; R new match</div>
+  <div id="hud">&uarr; &darr; angle &middot; &larr; &rarr; power &middot; Space throw &middot; R new match &middot; M sound</div>
 </header>
 <div id="stage">
   <canvas id="cv" aria-label="Game screen. Up and down set the angle, left and right set the power, Space throws."></canvas>
@@ -85,12 +85,13 @@ body.touch #hud{display:none}
 <nav>
   <div id="gamepad" hidden>
     <div id="dpad" role="group" aria-label="Direction pad. Up and down set the angle, left and right set the power."><span class="l">&#9664;</span><span class="r">&#9654;</span><span class="u">&#9650;</span><span class="d">&#9660;</span></div>
-    <div class="mid"><button data-pad="select" data-label="SELECT" aria-label="Select: switch between one and two players"></button><button data-pad="start" data-label="START" aria-label="Start or continue"></button></div>
+    <div class="mid"><button data-pad="select" data-label="SELECT" aria-label="Select: sound on or off"></button><button data-pad="start" data-label="START" aria-label="Start or continue"></button></div>
     <div class="ab"><button data-pad="b" aria-label="B: throw">B</button><button data-pad="a" aria-label="A: throw">A</button></div>
   </div>
   <div class="row">
     <button id="bNew">New match</button>
     <button id="bMode">Mode: vs computer</button>
+    <button id="bSound">Sound: on</button>
     <button id="bControls">Controls: keyboard</button>
   </div>
 </nav>
