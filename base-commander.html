@@ -57,6 +57,18 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ab button:first-child{margin-top:30px}
 #gamepad button.on{transform:translateY(3px);box-shadow:0 2px 0 #0E0E12;filter:brightness(.85)}
 body.touch #hud{display:none}
+/* Phone on its side: D-pad on the left, A/B on the right, game in the middle, settings in a strip below it */
+@media (orientation: landscape) and (max-height: 600px){
+  body.touch{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:1fr auto}
+  body.touch header{display:none}
+  body.touch nav,body.touch #gamepad{display:contents}
+  body.touch #stage{grid-column:2;grid-row:1;margin:6px 0 4px}
+  body.touch #dpad{grid-column:1;grid-row:1 / 3;align-self:center;justify-self:center;margin:0 18px 70px}
+  body.touch .mid{grid-column:1;grid-row:1 / 3;align-self:end;justify-self:center;margin-bottom:46px}
+  body.touch .ab{grid-column:3;grid-row:1 / 3;align-self:center;margin:0 18px 0 10px}
+  body.touch nav .row{grid-column:2;grid-row:2;flex-wrap:nowrap;gap:4px;padding:0 0 6px}
+  body.touch nav .row button{min-height:32px;min-width:0;padding:4px 6px;font-size:12px}
+}
 </style>
 </head>
 <body>
@@ -649,11 +661,13 @@ function layout(){
   // largest font whose grid still fits the stage
   for (let f = Math.max(5, Math.ceil(Math.min(r.width / GW / 0.5, r.height / GH / 1.15))); ; f--){
     screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-    if ((screen.cols >= GW && screen.rows >= GH) || f <= 5) break;   // ponytail: below 5px the grid just overflows the stage
+    if ((screen.cols >= GW && screen.rows >= GH) || f <= 5) break;   // below 5px the text is unreadable: scale the canvas instead
   }
   const W = GW * screen.cw, H = GH * screen.ch;
   screen.fit(W, H, dpr);
   cv.style.width = W + "px"; cv.style.height = H + "px";
+  const k = Math.min(1, r.width / W, r.height / H);   // e.g. a phone on its side: shrink to fit rather than clip
+  cv.style.transform = "translate(-50%,-50%)" + (k < 1 ? " scale(" + k + ")" : "");
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   world.w = W; world.h = (GH - 1) * screen.ch; world.unit = screen.cw;
   world.g = { x: 0, y: world.h * 1.6 }; world.drag = 2e-4 * (600 / world.h) ** 2;

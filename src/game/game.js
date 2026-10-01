@@ -173,11 +173,13 @@ function layout(){
   // largest font whose grid still fits the stage
   for (let f = Math.max(5, Math.ceil(Math.min(r.width / GW / 0.5, r.height / GH / 1.15))); ; f--){
     screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-    if ((screen.cols >= GW && screen.rows >= GH) || f <= 5) break;   // ponytail: below 5px the grid just overflows the stage
+    if ((screen.cols >= GW && screen.rows >= GH) || f <= 5) break;   // below 5px the text is unreadable: scale the canvas instead
   }
   const W = GW * screen.cw, H = GH * screen.ch;
   screen.fit(W, H, dpr);
   cv.style.width = W + "px"; cv.style.height = H + "px";
+  const k = Math.min(1, r.width / W, r.height / H);   // e.g. a phone on its side: shrink to fit rather than clip
+  cv.style.transform = "translate(-50%,-50%)" + (k < 1 ? " scale(" + k + ")" : "");
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   world.w = W; world.h = (GH - 1) * screen.ch; world.unit = screen.cw;
   world.g = { x: 0, y: world.h * 1.6 }; world.drag = 2e-4 * (600 / world.h) ** 2;
