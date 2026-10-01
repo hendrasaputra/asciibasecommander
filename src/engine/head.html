@@ -64,18 +64,19 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   <div id="hud">–</div>
 </header>
 <div id="stage">
-  <canvas id="cv" aria-label="ASCII physics canvas. Drag to move balls."></canvas>
-  <div id="hint">Drag a ball and let go to throw it</div>
+  <canvas id="cv" aria-label="ASCII physics canvas. Drag to move balls and boxes."></canvas>
+  <div id="hint">Drag a body and let go to throw it</div>
 </div>
 <nav>
   <div class="row tools" role="group" aria-label="Touch tool">
     <button data-tool="grab" aria-pressed="true">Grab</button>
-    <button data-tool="spawn" aria-pressed="false">Add ball</button>
+    <button data-tool="spawn" aria-pressed="false">Add body</button>
     <button data-tool="push" aria-pressed="false">Push</button>
     <button data-tool="light" aria-pressed="false">Move lamp</button>
   </div>
   <div class="row">
-    <button id="bMat">Ball: mixed</button>
+    <button id="bMat">Material: mixed</button>
+    <button id="bShape">Shape: balls</button>
     <button id="bGrav">Gravity: down</button>
     <button id="bScene">Scene: pit</button>
   </div>

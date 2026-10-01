@@ -10,10 +10,11 @@ Three self-contained pages. Play online: https://games.hendrasaputra.com/ Open e
 
 Edit the files in `src/`, then run `./build.sh` to rebuild all pages.
 
-- `src/core.js`: shared by both pages. Physics (`World`), lighting, ink measurement (`measureInk`, `buildLUT`), and the 24-bit renderer (`Screen`).
+- `src/core.js`: shared by all pages. Physics (`World`: balls and boxes), lighting, ink measurement (`measureInk`, `buildLUT`), and the 24-bit renderer (`Screen`). Check the box physics with `node tests/boxes.js`.
 - `src/engine/`: engine page markup, styles and UI.
 - `src/tutorial/`: tutorial markup, code snippets shown on the page, helpers and demos.
 - `src/game/`: the Base Commander page markup and game rules.
+- `PLAN.md`: what to build next.
 - `audio/`: game sound. `base-commander.rb` is the Sonic Pi source for all effects and music.
 
 ## Game audio

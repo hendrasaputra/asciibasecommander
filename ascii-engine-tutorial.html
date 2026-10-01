@@ -564,6 +564,14 @@ class World {
     if (this.bodies.length > 260){ const i = this.bodies.findIndex(o => !o.static && !o.grab); if (i >= 0) this.bodies.splice(i, 1); }
     return b;
   }
+  // A box is a rotating rectangle with half-width hw and half-height hh. Its r is the bounding radius, which the
+  // broadphase grid uses; mass uses the same area rule as circles, so equal materials have equal density.
+  addBox(x, y, hw, hh, matName, alb, matOverride){
+    const b = this.add(x, y, Math.hypot(hw, hh), matName, alb, matOverride);
+    b.box = true; b.hw = hw; b.hh = hh;
+    if (!b.static){ b.m = b.mat.density * 4 * hw * hh / Math.PI / this.unit ** 2; b.im = 1 / b.m; b.iI = 3 / (b.m * (hw * hw + hh * hh)); }
+    return b;
+  }
   step(dt){
     let maxR = 1; for (const b of this.bodies) if (b.r > maxR) maxR = b.r;
     this.cell = maxR * 2 + 2;
@@ -587,6 +595,7 @@ class World {
       b.vx += ax * h; b.vy += ay * h;
       const s2 = Math.hypot(b.vx, b.vy); if (s2 > 4000){ b.vx *= 4000 / s2; b.vy *= 4000 / s2; }
       b.x += b.vx * h; b.y += b.vy * h; b.a += b.w * h; b.w *= 0.9997;
+      if (b.box){ this.boxWalls(b); continue; }
       if (b.x - b.r <= 0){ b.x = b.r; this.wall(b, -1, 0, h); }
       if (b.x + b.r >= w){ b.x = w - b.r; this.wall(b, 1, 0, h); }
       if (b.y - b.r <= 0){ b.y = b.r; this.wall(b, 0, -1, h); }
@@ -597,8 +606,56 @@ class World {
     for (const b of this.bodies){
       if (b.static) continue;
       if (b.touch && !b.grab && b.vx * b.vx + b.vy * b.vy < 1600){ b.vx *= 0.9; b.vy *= 0.9; b.w *= 0.9; }
-      b.x = Math.min(w - b.r, Math.max(b.r, b.x)); b.y = Math.min(H - b.r, Math.max(b.r, b.y));
+      if (!b.box){ b.x = Math.min(w - b.r, Math.max(b.r, b.x)); b.y = Math.min(H - b.r, Math.max(b.r, b.y)); }
     }
+  }
+  // Boxes meet walls at their corners: push back the deepest corner, then apply one impulse at the middle of the
+  // corners past the wall, so a box lying flat gets no spurious spin.
+  boxWalls(b){
+    const c = Math.cos(b.a), s = Math.sin(b.a), ux = c * b.hw, uy = s * b.hw, vx = -s * b.hh, vy = c * b.hh;
+    const P = [b.x + ux + vx, b.y + uy + vy, b.x - ux + vx, b.y - uy + vy, b.x - ux - vx, b.y - uy - vy, b.x + ux - vx, b.y + uy - vy];
+    for (const [nx, ny, lim] of [[-1, 0, 0], [1, 0, this.w], [0, -1, 0], [0, 1, this.h]]){
+      let depth = 0, sx = 0, sy = 0, n = 0;
+      for (let i = 0; i < 8; i += 2){
+        const d = nx ? nx * (P[i] - lim) : ny * (P[i + 1] - lim);   // how far this corner is past the wall
+        if (d > 0){ depth = Math.max(depth, d); sx += P[i]; sy += P[i + 1]; n++; }
+      }
+      if (!n) continue;
+      b.x -= nx * depth; b.y -= ny * depth;
+      for (let i = 0; i < 8; i += 2){ P[i] -= nx * depth; P[i + 1] -= ny * depth; }
+      b.touch = true;
+      this.impulse(b, null, sx / n - nx * depth, sy / n - ny * depth, nx, ny);
+    }
+  }
+  // Impulse at contact point (px, py) with normal n pointing from a towards b. b = null is an immovable wall.
+  // Includes rotation, so it works for any shape; circle pairs keep their own cheaper path in resolve().
+  impulse(a, b, px, py, nx, ny){
+    const rax = px - a.x, ray = py - a.y, rbx = b ? px - b.x : 0, rby = b ? py - b.y : 0;
+    const bim = b ? b.im : 0, biI = b ? b.iI : 0;
+    const rel = () => [(b ? b.vx - b.w * rby : 0) - (a.vx - a.w * ray), (b ? b.vy + b.w * rbx : 0) - (a.vy + a.w * rax)];
+    let [rvx, rvy] = rel();
+    const vn = rvx * nx + rvy * ny;
+    if (vn >= 0) return;
+    const ran = rax * ny - ray * nx, rbn = rbx * ny - rby * nx;
+    const e = -vn < 30 ? 0 : b ? (a.mat.e + b.mat.e) / 2 : a.mat.e;
+    const j = -(1 + e) * vn / (a.im + bim + ran * ran * a.iI + rbn * rbn * biI);
+    a.vx -= j * nx * a.im; a.vy -= j * ny * a.im; a.w -= j * ran * a.iI; hit(a, j * a.im);
+    if (b){ b.vx += j * nx * bim; b.vy += j * ny * bim; b.w += j * rbn * biI; hit(b, j * bim); }
+    [rvx, rvy] = rel();
+    const tx = -ny, ty = nx, vt = rvx * tx + rvy * ty, rat = rax * ty - ray * tx, rbt = rbx * ty - rby * tx;
+    const lim = (b ? Math.sqrt(a.mat.mu * b.mat.mu) : a.mat.mu) * j;
+    const jt = Math.max(-lim, Math.min(lim, -vt / (a.im + bim + rat * rat * a.iI + rbt * rbt * biI)));
+    a.vx -= jt * tx * a.im; a.vy -= jt * ty * a.im; a.w -= jt * rat * a.iI;
+    if (b){ b.vx += jt * tx * bim; b.vy += jt * ty * bim; b.w += jt * rbt * biI; }
+  }
+  resolveBox(a, b){
+    const A = a.box ? a : b, B = A === a ? b : a;   // A is always a box
+    const C = B.box ? boxBox(A, B) : boxCircle(A, B);
+    if (!C) return;
+    A.touch = B.touch = true;
+    const ws = A.im + B.im, corr = Math.max(0, C.depth - 0.3) / ws * 0.8;
+    A.x -= C.nx * corr * A.im; A.y -= C.ny * corr * A.im; B.x += C.nx * corr * B.im; B.y += C.ny * corr * B.im;
+    for (const [px, py] of C.pts) this.impulse(A, B, px, py, C.nx, C.ny);
   }
   wall(b, nx, ny, h){
     const M = b.mat; let jn; b.touch = true;
@@ -632,6 +689,7 @@ class World {
     const dx = b.x - a.x, dy = b.y - a.y, rs = a.r + b.r, d2 = dx * dx + dy * dy;
     if (d2 >= rs * rs || d2 === 0) return;
     const wa = a.im, wb = b.im, ws = wa + wb; if (ws === 0) return;
+    if (a.box || b.box) return this.resolveBox(a, b);
     const d = Math.sqrt(d2), nx = dx / d, ny = dy / d; a.touch = b.touch = true;
     const corr = Math.max(0, rs - d - 0.3) / ws * 0.8;
     a.x -= nx * corr * wa; a.y -= ny * corr * wa; b.x += nx * corr * wb; b.y += ny * corr * wb;
@@ -656,6 +714,66 @@ class World {
 function spawn(w, x, y, matName, rScale){
   const M = MATS[matName], k = rScale ?? (M.rMin + Math.random() * (M.rMax - M.rMin));
   return w.add(x, y, w.unit * k, matName, M.alt && Math.random() < 0.5 ? M.alt : M.alb);
+}
+// A box with the same area as the ball spawn() would make, stretched by up to 2:1.
+function spawnBox(w, x, y, matName){
+  const M = MATS[matName], r = w.unit * (M.rMin + Math.random() * (M.rMax - M.rMin)), k = Math.sqrt(1 + Math.random());
+  return w.addBox(x, y, 0.886 * r * k, 0.886 * r / k, matName, M.alt && Math.random() < 0.5 ? M.alt : M.alb);
+}
+
+/* ---------- box collision: contacts as { nx, ny, depth, pts }, normal pointing from the box A to B ---------- */
+// The two face directions of a box: normal, half-extent along it, and the face's half-length along its tangent.
+function boxFaces(b){
+  const c = Math.cos(b.a), s = Math.sin(b.a);
+  return [{ nx: c, ny: s, h: b.hw, side: b.hh }, { nx: -s, ny: c, h: b.hh, side: b.hw }];
+}
+function boxCircle(A, B){
+  const c = Math.cos(A.a), s = Math.sin(A.a), dx = B.x - A.x, dy = B.y - A.y;
+  const lx = dx * c + dy * s, ly = -dx * s + dy * c;   // circle centre in the box's own frame
+  let qx = Math.max(-A.hw, Math.min(A.hw, lx)), qy = Math.max(-A.hh, Math.min(A.hh, ly)), nlx, nly, depth;
+  if (qx === lx && qy === ly){   // centre inside the box: leave through the nearest face
+    const ex = A.hw - Math.abs(lx), ey = A.hh - Math.abs(ly);
+    if (ex < ey){ nlx = Math.sign(lx) || 1; nly = 0; qx = nlx * A.hw; depth = ex + B.r; }
+    else { nlx = 0; nly = Math.sign(ly) || 1; qy = nly * A.hh; depth = ey + B.r; }
+  } else {
+    const ox = lx - qx, oy = ly - qy, d = Math.hypot(ox, oy);
+    if (d >= B.r) return null;
+    nlx = ox / d; nly = oy / d; depth = B.r - d;
+  }
+  return { nx: nlx * c - nly * s, ny: nlx * s + nly * c, depth, pts: [[A.x + qx * c - qy * s, A.y + qx * s + qy * c]] };
+}
+function clipSegment(p, q, nx, ny, off){   // keep the part of segment pq where n . x <= off
+  const dp = nx * p[0] + ny * p[1] - off, dq = nx * q[0] + ny * q[1] - off, out = [];
+  if (dp <= 0) out.push(p);
+  if (dq <= 0) out.push(q);
+  if (dp * dq < 0){ const t = dp / (dp - dq); out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]); }
+  return out;
+}
+// Separating axes, then clip the other box's facing edge against the reference face (as in Box2D-lite),
+// which gives up to two contact points: enough for boxes to rest flat on each other.
+function boxBox(A, B){
+  const dx = B.x - A.x, dy = B.y - A.y, proj = (b, nx, ny) => boxFaces(b).reduce((t, f) => t + f.h * Math.abs(f.nx * nx + f.ny * ny), 0);
+  let best = null;
+  for (const [ref, other] of [[A, B], [B, A]]) for (const f of boxFaces(ref)){
+    const sep = Math.abs(dx * f.nx + dy * f.ny) - f.h - proj(other, f.nx, f.ny);
+    if (sep > 0) return null;
+    if (!best || sep > best.sep * 0.95 + 0.01 * f.h) best = { sep, ref, inc: other, f };   // slight preference for A's faces keeps contacts stable
+  }
+  const { ref, inc, f } = best, sg = (inc.x - ref.x) * f.nx + (inc.y - ref.y) * f.ny < 0 ? -1 : 1;
+  const nx = f.nx * sg, ny = f.ny * sg, rcx = ref.x + nx * f.h, rcy = ref.y + ny * f.h;   // reference face normal and centre
+  let ie = null, dmin = Infinity;   // incident edge: the other box's face pointing most against n
+  for (const g of boxFaces(inc)) for (const k of [1, -1]){
+    const d = (g.nx * nx + g.ny * ny) * k;
+    if (d < dmin){ dmin = d; ie = { cx: inc.x + g.nx * k * g.h, cy: inc.y + g.ny * k * g.h, tx: -g.ny, ty: g.nx, half: g.side }; }
+  }
+  let pts = [[ie.cx + ie.tx * ie.half, ie.cy + ie.ty * ie.half], [ie.cx - ie.tx * ie.half, ie.cy - ie.ty * ie.half]];
+  const tx = -ny, ty = nx, tc = tx * rcx + ty * rcy;
+  pts = clipSegment(pts[0], pts[1], tx, ty, tc + f.side); if (pts.length < 2) return null;
+  pts = clipSegment(pts[0], pts[1], -tx, -ty, -tc + f.side); if (pts.length < 2) return null;
+  const out = []; let depth = 0;
+  for (const p of pts){ const sp = (p[0] - rcx) * nx + (p[1] - rcy) * ny; if (sp <= 0){ out.push(p); depth = Math.max(depth, -sp); } }
+  if (!out.length) return null;
+  return ref === A ? { nx, ny, depth, pts: out } : { nx: -nx, ny: -ny, depth, pts: out };
 }
 
 /* ---------- ink measurement: how much of its cell each character actually fills ---------- */
@@ -704,10 +822,11 @@ function buildLUT(chars, fontPx, calibrate){
 
 /* ---------- lighting ---------- */
 // Returns diffuse and highlight strength for one point on a sphere.
-function lightTerms(b, dx, dy, nz, L, out){
-  const M = b.mat; let lx, ly, lz, att;
+function lightTerms(b, dx, dy, nz, L, out){ lightAt(b.mat, b.x + dx * b.r, b.y + dy * b.r, b.r * (1 + nz), dx, dy, nz, L, out); }
+// Same shading for any surface point (px, py, pz) with unit normal (dx, dy, nz); boxes use it for their faces.
+function lightAt(M, px, py, pz, dx, dy, nz, L, out){
+  let lx, ly, lz, att;
   if (L && L.on){
-    const px = b.x + dx * b.r, py = b.y + dy * b.r, pz = b.r * (1 + nz);
     lx = L.x - px; ly = L.y - py; lz = L.z - pz;
     const d2 = lx * lx + ly * ly + lz * lz, ld = Math.sqrt(d2) || 1;
     lx /= ld; ly /= ld; lz /= ld; att = Math.min(3, 2.5 * L.z * L.z / d2);   // inverse-square falloff
@@ -720,10 +839,11 @@ function shadowAt(fx, fy, B, L){
   const dx = L.x - fx, dy = L.y - fy, lz = L.z, d2 = dx * dx + dy * dy + lz * lz;
   let sh = 1;
   for (const b of B){
-    const cx = b.x - fx, cy = b.y - fy, cz = b.r, t = (cx * dx + cy * dy + cz * lz) / d2;
+    const r = b.box ? (b.hw + b.hh) / 2 : b.r;   // boxes cast a round shadow of their average size
+    const cx = b.x - fx, cy = b.y - fy, cz = r, t = (cx * dx + cy * dy + cz * lz) / d2;
     if (t <= 0 || t >= 1) continue;
     const qx = cx - t * dx, qy = cy - t * dy, qz = cz - t * lz;
-    const o = (b.r * 1.15 - Math.sqrt(qx * qx + qy * qy + qz * qz)) / (b.r * 0.45);
+    const o = (r * 1.15 - Math.sqrt(qx * qx + qy * qy + qz * qz)) / (r * 0.45);
     if (o <= 0) continue;
     sh *= 1 - 0.85 * Math.min(1, o); if (sh < 0.12) break;
   }
@@ -767,6 +887,7 @@ class Screen {
   }
   light(L){ return L && L.on ? this.D.lampRGB : [0.95, 0.95, 0.95]; }
   sphere(b, L, opt = {}){
+    if (b.box) return this.box(b, L, opt);
     const { cols, rows, cw, ch } = this, t = this.t, A = b.alb, LC = this.light(L), room = this.D.room;
     const dOn = opt.diffuse !== false, sOn = opt.spec !== false, stripe = opt.stripe !== false && !b.static;
     const c0 = Math.max(0, Math.floor((b.x - b.r) / cw)), c1 = Math.min(cols - 1, Math.floor((b.x + b.r) / cw));
@@ -785,6 +906,31 @@ class Screen {
         Bv += k * (A[2] * (AMB_RGB[2] * room + LC[2] * d) + LC[2] * s + FLASH_RGB[2] * fl);
       }
       if (cov) this.put(r * cols + c, R / 4, G / 4, Bv / 4, 2);
+    }
+  }
+  // A box is drawn as a raised slab: flat lit top, bevelled edges that tilt towards their side.
+  box(b, L, opt = {}){
+    const { cols, rows, cw, ch } = this, t = this.t, A = b.alb, LC = this.light(L), room = this.D.room;
+    const dOn = opt.diffuse !== false, sOn = opt.spec !== false, fl = b.flash * 0.8;
+    const c = Math.cos(b.a), s = Math.sin(b.a), bev = Math.min(b.hw, b.hh) * 0.35, top = Math.min(b.hw, b.hh) * 2;
+    const c0 = Math.max(0, Math.floor((b.x - b.r) / cw)), c1 = Math.min(cols - 1, Math.floor((b.x + b.r) / cw));
+    const r0 = Math.max(0, Math.floor((b.y - b.r) / ch)), r1 = Math.min(rows - 1, Math.floor((b.y + b.r) / ch));
+    for (let r = r0; r <= r1; r++) for (let col = c0; col <= c1; col++){
+      let R = 0, G = 0, Bv = 0, cov = 0;
+      for (const sy of SUB) for (const sx of SUB){
+        const wx = (col + sx) * cw, wy = (r + sy) * ch, dx = wx - b.x, dy = wy - b.y;
+        const lx = dx * c + dy * s, ly = -dx * s + dy * c;
+        if (Math.abs(lx) > b.hw || Math.abs(ly) > b.hh) continue;
+        cov++;
+        const ex = Math.sign(lx) * Math.max(0, 1 - (b.hw - Math.abs(lx)) / bev), ey = Math.sign(ly) * Math.max(0, 1 - (b.hh - Math.abs(ly)) / bev);
+        const k = 1 / Math.hypot(ex, ey, 1);
+        lightAt(b.mat, wx, wy, top, (ex * c - ey * s) * k, (ex * s + ey * c) * k, k, L, t);
+        const d = dOn ? t.d : 0, sp = sOn ? t.s : 0;
+        R += A[0] * (AMB_RGB[0] * room + LC[0] * d) + LC[0] * sp + FLASH_RGB[0] * fl;
+        G += A[1] * (AMB_RGB[1] * room + LC[1] * d) + LC[1] * sp + FLASH_RGB[1] * fl;
+        Bv += A[2] * (AMB_RGB[2] * room + LC[2] * d) + LC[2] * sp + FLASH_RGB[2] * fl;
+      }
+      if (cov) this.put(r * cols + col, R / 4, G / 4, Bv / 4, 2);
     }
   }
   floor(B, L, shadows = true){

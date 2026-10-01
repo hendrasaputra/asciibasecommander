@@ -32,18 +32,21 @@ function layout(){
   drawRampView();
 }
 function pickMat(){ const m = MAT_CYCLE[matIdx]; return m === "mixed" ? MIX[Math.floor(Math.random() * MIX.length)] : m; }
+const SHAPES = ["balls", "boxes", "mixed"]; let shapeIdx = 0;
+// Adds a ball or a box, following the Shape button.
+function make(x, y, mat){ const sh = SHAPES[shapeIdx]; return (sh === "boxes" || (sh === "mixed" && Math.random() < 0.5)) ? spawnBox(world, x, y, mat) : spawn(world, x, y, mat); }
 const GRAV = ["down", "off", "tilt"];
 function setGrav(mode){ gravMode = mode; world.g = mode === 0 ? { x: 0, y: world.h * 1.6 } : { x: 0, y: 0 }; document.getElementById("bGrav").textContent = "Gravity: " + GRAV[mode]; }
 const SCENES = [
-  { name: "pit", grav: 0, build(){ for (let i = 0; i < 28; i++) spawn(world, Math.random() * world.w, Math.random() * world.h * 0.5, MIX[i % MIX.length]); } },
+  { name: "pit", grav: 0, build(){ for (let i = 0; i < 28; i++) make(Math.random() * world.w, Math.random() * world.h * 0.5, MIX[i % MIX.length]); } },
   { name: "pegs", grav: 0, build(){
       const pr = Math.max(world.unit * 0.55, screen.cw * 0.9), gap = world.unit * 5.2; let row = 0;
       for (let y = world.h * 0.3; y < world.h * 0.8; y += gap * 0.8, row++)
         for (let x = (row % 2 ? gap / 2 : gap / 4); x < world.w; x += gap) world.add(x, y, pr, "peg");
-      for (let i = 0; i < 24; i++) spawn(world, Math.random() * world.w, Math.random() * world.h * 0.2, MIX[i % MIX.length]);
+      for (let i = 0; i < 24; i++) make(Math.random() * world.w, Math.random() * world.h * 0.2, MIX[i % MIX.length]);
   }},
-  { name: "space", grav: 1, build(){ for (let i = 0; i < 22; i++){ const b = spawn(world, Math.random() * world.w, Math.random() * world.h, MIX[i % MIX.length]); b.vx = (Math.random() - 0.5) * 500; b.vy = (Math.random() - 0.5) * 500; } } },
-  { name: "dark room", grav: 0, build(){ for (let i = 0; i < 14; i++) spawn(world, Math.random() * world.w, Math.random() * world.h * 0.5, MIX[i % MIX.length]); } },
+  { name: "space", grav: 1, build(){ for (let i = 0; i < 22; i++){ const b = make(Math.random() * world.w, Math.random() * world.h, MIX[i % MIX.length]); b.vx = (Math.random() - 0.5) * 500; b.vy = (Math.random() - 0.5) * 500; } } },
+  { name: "dark room", grav: 0, build(){ for (let i = 0; i < 14; i++) make(Math.random() * world.w, Math.random() * world.h * 0.5, MIX[i % MIX.length]); } },
   { name: "empty", grav: null, build(){} }
 ];
 let roomBeforeDark = null;
@@ -64,7 +67,7 @@ cv.addEventListener("pointerdown", e => {
   cv.setPointerCapture(e.pointerId);
   const p = local(e), ptr = { x: p.x, y: p.y, body: null, force: null, lamp: false };
   if (tool === "grab") ptr.body = world.pick(p.x, p.y, world.unit * 1.8);
-  else if (tool === "spawn") ptr.body = spawn(world, p.x, p.y, pickMat());
+  else if (tool === "spawn") ptr.body = make(p.x, p.y, pickMat());
   else if (tool === "push"){ ptr.force = { x: p.x, y: p.y, radius: world.unit * 9, strength: world.h * 30 }; world.forces.push(ptr.force); }
   else { ptr.lamp = true; lamp.x = p.x; lamp.y = p.y; if (!lamp.on){ lamp.on = true; syncSheet(); } }
   if (ptr.body) ptr.body.grab = ptr;
@@ -86,7 +89,7 @@ cv.addEventListener("pointerup", release); cv.addEventListener("pointercancel", 
 
 /* ---------- toolbar ---------- */
 function toast(msg){ toastEl.textContent = msg; toastEl.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove("show"), 2200); }
-const HINTS = { grab: "Drag a ball and let go to throw it", spawn: "Tap to add a ball, drag to throw it", push: "Hold to push balls away", light: "Drag to move the lamp" };
+const HINTS = { grab: "Drag a body and let go to throw it", spawn: "Tap to add a body, drag to throw it", push: "Hold to push bodies away", light: "Drag to move the lamp" };
 document.querySelectorAll("[data-tool]").forEach(btn => btn.addEventListener("click", () => {
   tool = btn.dataset.tool;
   document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
@@ -104,7 +107,8 @@ async function enableTilt(){
   } catch (e){ toast("Tilt is not available on this device."); }
 }
 document.getElementById("bGrav").addEventListener("click", async () => { setGrav((gravMode + 1) % 3); if (gravMode === 2) await enableTilt(); });
-document.getElementById("bMat").addEventListener("click", e => { matIdx = (matIdx + 1) % MAT_CYCLE.length; e.target.textContent = "Ball: " + MAT_CYCLE[matIdx]; });
+document.getElementById("bMat").addEventListener("click", e => { matIdx = (matIdx + 1) % MAT_CYCLE.length; e.target.textContent = "Material: " + MAT_CYCLE[matIdx]; });
+document.getElementById("bShape").addEventListener("click", e => { shapeIdx = (shapeIdx + 1) % SHAPES.length; e.target.textContent = "Shape: " + SHAPES[shapeIdx]; loadScene(); });
 document.getElementById("bScene").addEventListener("click", () => { sceneIdx = (sceneIdx + 1) % SCENES.length; loadScene(); });
 document.getElementById("bClear").addEventListener("click", loadScene);
 
@@ -174,7 +178,7 @@ function frame(t){
     screen.render(ctx, { grid: showGrid });
     fpsAcc += dt; fpsN++;
     if (t - hudT > 250){
-      let text = Math.round(fpsN / fpsAcc) + " fps  " + screen.cols + "\u00d7" + screen.rows + " @" + cellPx + "px  " + world.bodies.length + " balls";
+      let text = Math.round(fpsN / fpsAcc) + " fps  " + screen.cols + "\u00d7" + screen.rows + " @" + cellPx + "px  " + world.bodies.length + " bodies";
       for (const p of pointers.values()) if (p.body){ const b = p.body, v = Math.hypot(b.vx, b.vy) / (world.unit * 10); text = b.mat.name + " " + b.m.toFixed(1) + "kg " + v.toFixed(1) + "m/s p=" + (b.m * v).toFixed(1); break; }
       hud.textContent = text; fpsAcc = 0; fpsN = 0; hudT = t;
     }

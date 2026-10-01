@@ -22,10 +22,11 @@ const TYPES = [
   { name: "BOMBER",  from: 6, hp: 4, pts: 60, rate: 1,   speed: 1,   bomb: 0.6,  rgb: [1.0, 0.35, 0.3],
     art: [["__/^\\__", "[ OOO ]", " \\_v_/ ", "  | |  "], ["__/^\\__", "[ ooo ]", " \\_v_/ ", "  ! !  "]] }
 ];
-// Enemy fire is kept dim and emits no light: only the sun lights the scene, so attacks read as thin lines.
+// Enemy fire is the brightest thing on screen but emits no light: only the sun lights the scene, so attacks read
+// as sharp lines against the dimmed debris.
 const WEAPONS = {   // speed in cells per second
-  laser: { speed: 34, rgb: [1.0, 0.3, 0.25], glyph: 124 },
-  bomb:  { speed: 16, rgb: [1.0, 0.75, 0.3], glyph: 111, blast: true }
+  laser: { speed: 34, rgb: [3.0, 0.15, 0.1], glyph: 124 },   // very bright, low green and blue so it stays red after tone mapping
+  bomb:  { speed: 16, rgb: [2.4, 1.6, 0.4], glyph: 111, blast: true }
 };
 const GUNS = [   // shots: [x offset, sideways cells per row]; delay scales the difficulty's fire delay
   { name: "BLASTER", top: "   |   ", delay: 1,    shots: [[0, 0]] },
@@ -221,12 +222,14 @@ function restart(){
 function flash(text, secs = 1.4){ msg = text; msgT = secs; }
 
 /* ---------- physics effects ---------- */
-function burst(x, y, rgb, n, vy0 = 0){
+// In play, debris is dimmed and greyed so it never competes with enemy fire; vivid keeps full colour (title effects).
+function burst(x, y, rgb, n, vy0 = 0, vivid = false){
+  const alb = vivid ? rgb : rgb.map(v => 0.06 + 0.22 * Math.min(v, 1.2));
   for (let i = 0; i < n; i++){
     const a = Math.random() * 6.283, sp = 120 + Math.random() * 380, r = screen.cw * (0.55 + Math.random() * 0.35);
-    const b = world.add(x + (Math.random() - 0.5) * screen.cw, y + (Math.random() - 0.5) * screen.ch, r, "debris", rgb, DEBRIS);
+    const b = world.add(x + (Math.random() - 0.5) * screen.cw, y + (Math.random() - 0.5) * screen.ch, r, "debris", alb, DEBRIS);
     b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp + vy0; b.w = (Math.random() - 0.5) * 30;
-    b.flash = 1; b.life = 3 + Math.random() * 2; b.r0 = r;
+    b.flash = vivid ? 1 : 0.25; b.life = 3 + Math.random() * 2; b.r0 = r;
   }
 }
 // Airdrop crates are real bodies: they float down on a chute, then bounce off shields and debris.
@@ -380,7 +383,7 @@ function drawTitle(t){
     for (let i = 0; i < word.length; i++, k++){
       const p = Math.max(0, Math.min(1, (titleT - 0.15 * k) / 1.1)); if (!p) continue;
       const x = x0 + i * 8, y = Math.round(y0 - (1 - bounce(p)) * (y0 + 8));
-      if (p > 0.37 && !landed.has(k)){ landed.add(k); burst(cx(x + 3), cy(y0 + 7), hue(x / GW), 6, -150); }   // dust on first impact
+      if (p > 0.37 && !landed.has(k)){ landed.add(k); burst(cx(x + 3), cy(y0 + 7), hue(x / GW), 6, -150, true); }   // dust on first impact
       FONT[word[i]].forEach((row, dy) => { for (let dx = 0; dx < 7; dx++) if (row[dx] === "#"){
         const c = hue(t * 0.0002 + (x + dx) / GW * 0.6 + dy * 0.03);
         put(x + dx + 1, y + dy + 1, c, 0.12, 1, 46);   // drop shadow
@@ -542,7 +545,7 @@ function tick(t){
       titleT += dt; if ((animT += dt) >= 0.35){ animT = 0; frame ^= 1; }
       if (titleT > 3 && (fwT -= dt) <= 0){   // fireworks: debris bursts that rain onto the floor
         fwT = 0.6 + Math.random() * 0.8;
-        burst(cx(8 + Math.random() * (GW - 16)), cy(3 + Math.random() * 16), hue(Math.random()), 12, -100);
+        burst(cx(8 + Math.random() * (GW - 16)), cy(3 + Math.random() * 16), hue(Math.random()), 12, -100, true);
       }
     }
     msgT -= dt;
