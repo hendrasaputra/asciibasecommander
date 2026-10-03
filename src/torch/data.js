@@ -36,7 +36,6 @@ const MONSTERS = [
   { id: "troll", evil: true, name: "stone troll", glyph: "T", rgb: [0.6, 0.6, 0.6], depth: 10, rarity: 2, speed: 0, hp: "16d10", ac: 24, exp: 70,
     blows: [["1d10", "hits"], ["1d10", "hits"], ["2d6", "bites"]], drop: 0.5, desc: "Grey hide like weathered rock, and a club made from a stalactite." }
 ];
-const MONSTER = Object.fromEntries(MONSTERS.map(m => [m.id, m]));
 // Experience needed for each character level, and the depth in feet shown to the player.
 const expFor = lvl => Math.round(8 * Math.pow(lvl - 1, 2.1));
 const feet = depth => depth * 50;

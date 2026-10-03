@@ -15,7 +15,7 @@ const CAT = {   // per category: glyph, colour, slot, and whether its kinds are 
   wand: { glyph: "-", flavour: true }, staff: { glyph: "_", flavour: true }, rod: { glyph: "-", flavour: true },
   ring: { glyph: "=", flavour: true, slot: "ring" }, amulet: { glyph: "\"", flavour: true, slot: "neck" }
 };
-const ARMOUR_CATS = ["body", "shield", "head", "hands", "feet", "cloak"], WEAR_CATS = ["weapon", "bow", ...ARMOUR_CATS, "light", "ring", "amulet"];
+const ARMOUR_CATS = ["body", "shield", "head", "hands", "feet", "cloak"];
 const I = (cat, id, name, depth, rarity, wt, cost, o = {}) => ({ cat, id, name, depth, rarity, wt, cost, ...o });
 const ITEMS = [
   // swords, hafted weapons, polearms and axes: [dice]

@@ -6,9 +6,10 @@
 <title>Torchlight Dungeons</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
+/* Shared by the game pages: page layout, the touch gamepad, and the landscape phone layout. Built into each page. */
 :root{
   --ground:#E9EDF1; --ink:#20304A; --muted:#5E6A7D; --line:#C9D1DB;
-  --btn:#DCE2E9; --btn-on:#20304A; --btn-on-ink:#F4F6F8; --accent:#2F5BD3;
+  --btn:#DCE2E9; --accent:#2F5BD3;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
@@ -16,12 +17,12 @@
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --ground:#151B26; --ink:#D9E1EC; --muted:#8792A3; --line:#2A3445;
-    --btn:#222B3A; --btn-on:#D9E1EC; --btn-on-ink:#151B26; --accent:#7FA2FF;
+    --btn:#222B3A; --accent:#7FA2FF;
   }
 }
 :root[data-theme="dark"]{
   --ground:#151B26; --ink:#D9E1EC; --muted:#8792A3; --line:#2A3445;
-  --btn:#222B3A; --btn-on:#D9E1EC; --btn-on-ink:#151B26; --accent:#7FA2FF;
+  --btn:#222B3A; --accent:#7FA2FF;
 }
 *,*::before,*::after{box-sizing:inherit}
 html{height:100%;overscroll-behavior:none}
@@ -36,7 +37,6 @@ h1 a{color:inherit;text-decoration:none}h1 a:hover{text-decoration:underline}
 #cv{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;touch-action:none}
 nav{padding:8px 8px 10px;display:flex;flex-direction:column;gap:6px}
 button{flex:1 1 auto;min-width:60px;min-height:40px;padding:6px 8px;border:0;border-radius:8px;background:var(--btn);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;touch-action:none}
-button[aria-pressed="true"]{background:var(--btn-on);color:var(--btn-on-ink);font-weight:600}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* Touch gamepad, styled after a handheld console: cross-shaped D-pad, slanted A/B, pill SELECT/START */
 #gamepad{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"dpad . ab" "mid mid mid";align-items:center;row-gap:4px;padding:4px 12px 20px;touch-action:none}
@@ -526,6 +526,13 @@ class Screen {
     const k = 3 * i; this.rad[k] = r; this.rad[k + 1] = g; this.rad[k + 2] = b;
     this.lum[i] = L; lay[i] = layer; this.over[i] = glyph || 0;
   }
+  // Game-side drawing on the character grid: one cell (colour rgb times k), a line of text, a sprite (an array of
+  // strings; spaces are see-through). Cells off the grid are skipped. Text sits on TEXT_LAYER, so it stays letters
+  // in pixel mode.
+  cell(gx, gy, rgb, k, layer, glyph){ if (gx >= 0 && gy >= 0 && gx < this.cols && gy < this.rows) this.put(gy * this.cols + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, glyph); }
+  text(gx, gy, s, rgb, layer = TEXT_LAYER){ for (let i = 0; i < s.length; i++) this.cell(gx + i, gy, rgb, 1, layer, s.charCodeAt(i)); }
+  center(gy, s, rgb){ this.text(Math.floor((this.cols - s.length) / 2), gy, s, rgb); }
+  sprite(art, x, y, rgb, k, layer){ art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") this.cell(x + dx, y + dy, rgb, k, layer, row.charCodeAt(dx)); }); }
   add(i, r, g, b){   // light adds up: used for floor light, glows and halos
     if (this.lay[i] > 0) return;
     const k = 3 * i; this.rad[k] += r; this.rad[k + 1] += g; this.rad[k + 2] += b;
@@ -748,8 +755,8 @@ class Screen {
   }
 }
 /* ---------- in-game pause menu, shared by the games ---------- */
-// Drawn into the game's own screen through a text() writer the game passes in (on MENU_LAYER, above game text),
-// so it matches ASCII or pixel mode and stays readable.
+// Drawn into the game's own screen on MENU_LAYER, above the game's text, so it matches ASCII or pixel mode and
+// stays readable.
 // The game supplies the rows as a function (labels and values can change): each row is
 // { label, value?: () => string, change?: dir => void, select?: () => void }.
 // Keys while open: up/down move, left/right change a value, Enter/Space choose, Esc/P close.
@@ -782,7 +789,8 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     if (i >= 0 && i < b.n){ m.at = b.first + i; m.choose(); }
     return true;
   };
-  m.draw = ({ text, GW, GH, accent, normal, dim, title = "PAUSED", note = "" }) => {
+  m.draw = (screen, { accent, normal, dim, title = "PAUSED", note = "" }) => {
+    const GW = screen.cols, GH = screen.rows, text = (x, y, s, rgb) => screen.text(x, y, s, rgb, MENU_LAYER);
     const R = rows(); m.at = Math.min(m.at, R.length - 1);
     // a list longer than the screen shows a window around the chosen row, with ^ and v marks
     const n = Math.min(R.length, Math.max(3, GH - 8 - (note ? 1 : 0))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
@@ -812,6 +820,190 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
 function gridAt(e, canvas, GW, GH){
   const r = canvas.getBoundingClientRect();
   return [Math.floor((e.clientX - r.left) / r.width * GW), Math.floor((e.clientY - r.top) / r.height * GH)];
+}
+/* ---------- shared by the game pages: saved settings, sound, the touch gamepad, fitting the canvas, the loop ---------- */
+// Built into every cartridge after core.js and menu.js. Each game keeps only its own rules and drawing.
+
+// Saved settings for one game, under "<prefix><key>" in localStorage. Values are strings; *JSON for anything else.
+function prefs(prefix, label){
+  return {
+    get(k, d = null){ try { const v = localStorage.getItem(prefix + k); return v === null ? d : v; } catch (e){ return d; } },
+    set(k, v){ try { localStorage.setItem(prefix + k, v); return true; } catch (e){ console.warn(label + ": could not save " + k, e); return false; } },
+    getJSON(k, d){ const v = this.get(k); if (v === null) return d; try { return JSON.parse(v); } catch (e){ console.warn(label + ": saved " + k + " unreadable, using defaults", e); return d; } },
+    setJSON(k, v){ return this.set(k, JSON.stringify(v)); }
+  };
+}
+// A saved top-n list. add() returns the new entry's rank (0 is best) and whether saving worked.
+function scoreTable(store, n = 5, key = "scores", better = (a, b) => b.score - a.score){
+  const list = store.getJSON(key, []);
+  return { list, add(entry){ list.push(entry); list.sort(better); list.length = Math.min(list.length, n); return { rank: list.indexOf(entry), saved: store.setJSON(key, list) }; } };
+}
+
+// Sound from base64 MP3s. Browsers only allow audio after a user gesture, so nothing is decoded until unlock().
+// sounds: { name: base64 }; music: { name: { data, loopStart, loopEnd } }, looped between margins cut from the
+// recording so MP3 padding never lands inside the loop. vol: per-sound gain (volume for the rest). minGap: seconds within which a
+// sound plays only once (a volley from many enemies still makes one sound). The mute choice is saved.
+function createAudio({ label, store, sounds, music = {}, vol = {}, volume = 0.6, sfxGain = 0.9, musicGain = 0.5, minGap = 0 }){
+  let ctx = null, master = null, sfxBus = null, musicBus = null, unlocked = false, waiting = null, song = null, songNode = null;
+  let muted = store.get("muted") === "1";
+  const buffers = {}, lastPlayed = {};
+  function startSong(){
+    const b = song && buffers["music:" + song]; if (!ctx || !b || songNode) return;
+    const M = music[song], src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = b; src.loop = true; src.loopStart = M.loopStart; src.loopEnd = M.loopEnd;
+    src.connect(g); g.connect(musicBus); src.start(0, M.loopStart); src.g = g; songNode = src;
+  }
+  const A = {
+    get unlocked(){ return unlocked; }, get muted(){ return muted; },
+    unlock(){
+      if (unlocked) return;
+      unlocked = true;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC){ console.warn(label + ": Web Audio not supported, playing silent"); return; }
+      ctx = new AC();
+      master = ctx.createGain(); master.gain.value = muted ? 0 : 1; master.connect(ctx.destination);
+      sfxBus = ctx.createGain(); sfxBus.gain.value = sfxGain; sfxBus.connect(master);
+      musicBus = ctx.createGain(); musicBus.gain.value = musicGain; musicBus.connect(master);
+      const decode = (key, b64, done) => ctx.decodeAudioData(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer,
+        b => { buffers[key] = b; done(); }, e => console.warn(label + ": could not decode sound", key, e));
+      for (const [k, v] of Object.entries(sounds)) decode(k, v, () => { if (k === waiting){ waiting = null; A.play(k); } });   // the first tap may start a sound before it is decoded
+      for (const [k, v] of Object.entries(music)) decode("music:" + k, v.data, () => { if (k === song) startSong(); });
+    },
+    play(name, pan){   // pan: sweep from -pan to +pan over the sound
+      if (muted || !ctx) return;
+      const b = buffers[name]; if (!b){ waiting = name; return; }
+      const now = ctx.currentTime;
+      if (minGap && now - (lastPlayed[name] ?? -1) < minGap) return;
+      lastPlayed[name] = now;
+      const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = b; g.gain.value = vol[name] ?? volume;
+      src.connect(g);
+      if (pan && ctx.createStereoPanner){
+        const p = ctx.createStereoPanner(); p.pan.setValueAtTime(-pan, now); p.pan.linearRampToValueAtTime(pan, now + b.duration);
+        g.connect(p); p.connect(sfxBus);
+      } else g.connect(sfxBus);
+      src.start();
+    },
+    music(name){   // switch to a song (fading the old one out); null stops the music
+      if (song === name) return;
+      song = name;
+      if (songNode){ songNode.g.gain.setTargetAtTime(0, ctx.currentTime, 0.3); songNode.stop(ctx.currentTime + 1.5); songNode = null; }
+      startSong();
+    },
+    toggleMute(){
+      A.unlock(); muted = !muted;
+      if (master) master.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.02);
+      store.set("muted", muted ? "1" : "0");
+    },
+    pause(){ if (ctx) ctx.suspend(); }, resume(){ if (ctx) ctx.resume(); }
+  };
+  return A;
+}
+
+// The handheld-style touch gamepad (#gamepad, #dpad and [data-pad] buttons in the page), or the keyboard.
+// The D-pad is one surface: the thumb's angle from its centre picks the direction, so sliding across switches.
+// axis: "x" (left and right only), 4, or 8 directions. While menu() returns an open menu, the D-pad moves through
+// it and A chooses (any other button closes it). Otherwise onDir(dir) hears every change ("" when let go),
+// onPress(id) and onRelease(id) the buttons, and onAny() any touch at all (games unlock their sound with it).
+function createPad({ store, axis = 4, menu = () => null, onDir = () => {}, onPress = () => {}, onRelease = () => {}, onAny = () => {} }){
+  const pad = document.getElementById("gamepad"), dpad = document.getElementById("dpad");
+  let touch = matchMedia("(pointer: coarse)").matches;   // default follows the device; the menu's Controls row overrides it
+  const saved = store.get("controls"); if (saved) touch = saved === "touch";
+  const buzz = () => navigator.vibrate && navigator.vibrate(8);   // a tick of feedback on phones that support it
+  const P = {
+    get touch(){ return touch; },
+    set(t, save){ touch = t; document.body.classList.toggle("touch", t); pad.hidden = !t; if (save) store.set("controls", t ? "touch" : "keyboard"); },
+    toggle(){ P.set(!touch, true); }
+  };
+  P.set(touch, false);
+  const NAMES8 = ["right", "downright", "down", "downleft", "left", "upleft", "up", "upright"];
+  function dirAt(e, mode){
+    const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    if (mode === "x") return Math.abs(dx) < r.width * 0.1 ? "" : dx < 0 ? "left" : "right";
+    if (Math.hypot(dx, dy) < r.width * 0.1) return "";
+    if (mode === 8) return NAMES8[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
+    return Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+  }
+  let dir = "";
+  function at(e){
+    const m = menu(), d = dirAt(e, m ? 4 : axis);
+    if (d === dir) return;
+    dir = d; dpad.dataset.dir = d.includes("left") ? "left" : d.includes("right") ? "right" : d;
+    if (d) buzz();
+    if (m){ if (d) d === "up" ? m.move(-1) : d === "down" ? m.move(1) : m.change(d === "left" ? -1 : 1); return; }   // in a menu: one step per push
+    onDir(d);
+  }
+  dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); onAny(); at(e); });
+  dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) at(e); });
+  for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dir = ""; dpad.dataset.dir = ""; if (!menu()) onDir(""); });
+  document.querySelectorAll("[data-pad]").forEach(b => {
+    const id = b.dataset.pad;
+    b.addEventListener("pointerdown", e => {
+      e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz(); onAny();
+      const m = menu();
+      if (m){ id === "a" ? m.choose() : m.hide(); return; }
+      onPress(id);
+    });
+    const up = () => { b.classList.remove("on"); onRelease(id); };
+    b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+  });
+  return P;
+}
+
+// The short names every game draws with, on whichever screen get() returns (it changes when the page is re-fitted).
+function pen(get){
+  return { put: (gx, gy, rgb, k, layer, glyph) => get().cell(gx, gy, rgb, k, layer, glyph), text: (gx, gy, s, rgb) => get().text(gx, gy, s, rgb),
+    center: (gy, s, rgb) => get().center(gy, s, rgb), sprite: (art, x, y, rgb, k, layer) => get().sprite(art, x, y, rgb, k, layer) };
+}
+// Sizes the canvas to w x h CSS pixels (scaled down by k < 1 if it must shrink to fit) and the drawing to the device.
+function sizeCanvas(cv, ctx, w, h, dpr, k = 1){
+  cv.style.width = w + "px"; cv.style.height = h + "px";
+  cv.style.transform = "translate(-50%,-50%)" + (k < 1 ? " scale(" + k + ")" : "");
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+// A screen for a game whose rules run on a fixed gw x gh grid: the largest font whose grid fits the stage. Below 5px
+// text is unreadable, so a tiny stage (a phone on its side) scales the canvas down instead. null if the stage is hidden.
+function fitGrid(stage, cv, ctx, D, gw, gh){
+  const r = stage.getBoundingClientRect(); if (!r.width) return null;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  let screen;
+  for (let f = Math.max(5, Math.ceil(Math.min(r.width / gw / 0.5, r.height / gh / 1.15))); ; f--){
+    screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
+    if ((screen.cols >= gw && screen.rows >= gh) || f <= 5) break;
+  }
+  const W = gw * screen.cw, H = gh * screen.ch;
+  screen.fit(W, H, dpr);
+  sizeCanvas(cv, ctx, W, H, dpr, Math.min(1, r.width / W, r.height / H));
+  return screen;
+}
+// After a re-fit, bodies keep their place on the grid: scale them by the change in cell size.
+function rescaleBodies(world, old, screen){
+  if (!old) return;
+  const kx = screen.cw / old.cw, ky = screen.ch / old.ch;
+  for (const b of world.bodies){ b.x *= kx; b.y *= ky; b.r *= kx; if (b.box){ b.hw *= kx; b.hh *= kx; if (b.hw0){ b.hw0 *= kx; b.hh0 *= kx; } } if (b.r0) b.r0 *= kx; }
+}
+// Calls fn after real size changes (rotation, window resize), not the mobile address bar sliding in and out,
+// which would make the game jump while you play.
+function onResize(stage, fn){
+  let fitted = stage.getBoundingClientRect();
+  new ResizeObserver(() => {
+    const r = stage.getBoundingClientRect();
+    if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
+    fitted = r; fn();
+  }).observe(stage);
+}
+// The frame loop: step(dt, t) at most ~60 times a second (120 Hz displays call more often than a game needs),
+// with dt capped at 1/30 s so a stall never makes things jump.
+function startLoop(step){
+  const FRAME_MS = 1000 / 60;
+  let last = 0, next = 0;
+  function tick(t){
+    requestAnimationFrame(tick);
+    if (t < next - 1) return;
+    next = t - next > FRAME_MS ? t + FRAME_MS : next + FRAME_MS;
+    const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+    step(dt, t);
+  }
+  requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
 }
 /* ---------- Torchlight Dungeons: seeded random numbers ---------- */
 // One small generator (mulberry32), so a level or a whole game can be replayed from its seed, and its state saved.
@@ -1009,7 +1201,6 @@ const MONSTERS = [
   { id: "troll", evil: true, name: "stone troll", glyph: "T", rgb: [0.6, 0.6, 0.6], depth: 10, rarity: 2, speed: 0, hp: "16d10", ac: 24, exp: 70,
     blows: [["1d10", "hits"], ["1d10", "hits"], ["2d6", "bites"]], drop: 0.5, desc: "Grey hide like weathered rock, and a club made from a stalactite." }
 ];
-const MONSTER = Object.fromEntries(MONSTERS.map(m => [m.id, m]));
 // Experience needed for each character level, and the depth in feet shown to the player.
 const expFor = lvl => Math.round(8 * Math.pow(lvl - 1, 2.1));
 const feet = depth => depth * 50;
@@ -1030,7 +1221,7 @@ const CAT = {   // per category: glyph, colour, slot, and whether its kinds are 
   wand: { glyph: "-", flavour: true }, staff: { glyph: "_", flavour: true }, rod: { glyph: "-", flavour: true },
   ring: { glyph: "=", flavour: true, slot: "ring" }, amulet: { glyph: "\"", flavour: true, slot: "neck" }
 };
-const ARMOUR_CATS = ["body", "shield", "head", "hands", "feet", "cloak"], WEAR_CATS = ["weapon", "bow", ...ARMOUR_CATS, "light", "ring", "amulet"];
+const ARMOUR_CATS = ["body", "shield", "head", "hands", "feet", "cloak"];
 const I = (cat, id, name, depth, rarity, wt, cost, o = {}) => ({ cat, id, name, depth, rarity, wt, cost, ...o });
 const ITEMS = [
   // swords, hafted weapons, polearms and axes: [dice]
@@ -1447,10 +1638,8 @@ const sensed = m => seesMon(m) || m.det === turnNo;   // seen, or found by detec
 const theName = m => seesMon(m) ? "the " + m.K.name : "it";
 
 /* ---------- saved preferences and high scores ---------- */
-const PREFIX = "torchlightDungeons.v1.";
-const load = (k, d) => { try { const v = localStorage.getItem(PREFIX + k); return v === null ? d : JSON.parse(v); } catch (e){ return d; } };
-const store = (k, v) => { try { localStorage.setItem(PREFIX + k, JSON.stringify(v)); } catch (e){ console.warn("Torchlight Dungeons: could not save", k, e); } };
-let keySet = load("keys", "original"), scores = load("scores", []);
+const store = prefs("torchlightDungeons.v1.", "Torchlight Dungeons"), scores = scoreTable(store);   // src/arcade.js
+let keySet = store.getJSON("keys", "original");
 
 /* ---------- items: names, carrying, and what worn things add ---------- */
 const nameOf = (it, n) => itemName(it, player.know, n);
@@ -1943,7 +2132,7 @@ function nearestTarget(){
   for (const m of mons) if (m.K && seesMon(m) && (!best || dist(m.x, m.y, player.x, player.y) < dist(best.x, best.y, player.x, player.y))) best = m;
   return best;
 }
-function aim(prompt, fn){ aiming = fn; oldMsgs = []; msgs = []; say(prompt + " Direction? (" + (touchMode ? "D-pad, A nearest, B cancel" : "a direction key, ' or t for nearest, Esc") + ")"); }
+function aim(prompt, fn){ aiming = fn; oldMsgs = []; msgs = []; say(prompt + " Direction? (" + (pad.touch ? "D-pad, A nearest, B cancel" : "a direction key, ' or t for nearest, Esc") + ")"); }
 function aimAt(dx, dy){ const f = aiming; aiming = null; act(() => f(player.x + dx * 20, player.y + dy * 20)); }
 function aimNearest(){
   if (!aiming) return;
@@ -2081,8 +2270,7 @@ function hurt(n, by){
 function die(){
   state = "dead"; stateT = 0; aiming = null;
   const p = player, entry = { score: Math.floor(p.exp) + 100 * p.maxDepth, name: p.name, race: race().name, cls: cls().name, lvl: p.lvl, depth: feet(p.maxDepth), killer };
-  scores.push(entry); scores.sort((a, b) => b.score - a.score); scores = scores.slice(0, 5); store("scores", scores);
-  tomb = { ...entry, best: scores[0] === entry, at: feet(depth) };
+  tomb = { ...entry, best: scores.add(entry).rank === 0, at: feet(depth) };
   say("You die.");
 }
 function monsterTurn(m){
@@ -2251,16 +2439,14 @@ function drawCreate(){
     text(x1, y++, "Hit points " + firstHp(p) + (C.realm ? "   Mana " + maxMana(p) : ""), WHITE);
     for (const k of SKILLS){ const v = skillOf(p, k); text(x1, y++, SKILL_NAMES[k].padEnd(15) + (k === "stealth" ? stealthWord(v) : skillWord(v)), DIM); }
     if (cr.step === 2 && cr.mode === "buy") { y++; text(x1, y++, "Points left: " + (BUY_POINTS - buySpent(cr.buy)) + " of " + BUY_POINTS, ACCENT); }
-    if (cr.step === 3){ y++; para(touchMode ? "A begins; B goes back." : "Type to change the name. Enter begins; Esc goes back.", DIM); }
+    if (cr.step === 3){ y++; para(pad.touch ? "A begins; B goes back." : "Type to change the name. Enter begins; Esc goes back.", DIM); }
   }
-  const hint = touchMode ? "D-PAD CHOOSE   A SELECT   B BACK" : "ARROWS CHOOSE   ENTER SELECT   ESC BACK";
+  const hint = pad.touch ? "D-PAD CHOOSE   A SELECT   B BACK" : "ARROWS CHOOSE   ENTER SELECT   ESC BACK";
   text(x0, GH - 1, hint, DIM);
 }
 
 /* ---------- drawing ---------- */
-function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
-function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
-const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
+const { put, text, center } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
 function drawMap(t){
   computeLight(lightNow, t);
   for (let r = 0; r < VH; r++) for (let c = 0; c < GW; c++){
@@ -2306,7 +2492,7 @@ function drawUI(){
   const T0 = p.t, st = [[T0.fast, "Fast", GREEN], [T0.hero, "Hero", GREEN], [T0.berserk, "Berserk", GREEN], [T0.bless, "Blessed", GREEN],
     [T0.poison, "Poisoned", RED], [T0.confused, "Confused", RED], [T0.blind, "Blind", RED], [T0.asleep, "Asleep", RED], [p.bonus.burden, "Burdened", RED]];
   for (const [on, label, rgb] of st) if (on && x + label.length < GW - 24) seg2(label, rgb);
-  const hint = touchMode ? "B COMMANDS  START MENU" : "? HELP  ESC MENU";
+  const hint = pad.touch ? "B COMMANDS  START MENU" : "? HELP  ESC MENU";
   if (x + hint.length <= GW) text(GW - hint.length, GH - 1, hint, DIM);
 }
 function drawTitle(t){
@@ -2325,16 +2511,16 @@ function drawTitle(t){
   center(top, "T O R C H L I G H T", ACCENT); center(top + 1, "D U N G E O N S", ACCENT);
   center(top + 3, "A dungeon crawl after Moria", DIM);
   const blink = (performance.now() / 500 | 0) % 2;
-  center(top + 5, touchMode ? "PRESS A OR START TO BEGIN" : "PRESS SPACE TO BEGIN", blink ? WHITE : DIM);
+  center(top + 5, pad.touch ? "PRESS A OR START TO BEGIN" : "PRESS SPACE TO BEGIN", blink ? WHITE : DIM);
   center(top + 6, "Early version: no saves yet.", DIM);
-  if (scores.length){
+  if (scores.list.length){
     center(top + 9, "HALL OF FAME", ACCENT);
-    scores.forEach((s, k) => center(top + 10 + k, `${String(s.score).padStart(6)}  ${s.name || ""} ${s.race || ""} ${s.cls || "Fighter"}  LV ${s.lvl}  ${s.depth} ft  ${s.killer}`.replace(/  +/g, "  ").slice(0, GW - 2), k ? DIM : WHITE));
+    scores.list.forEach((s, k) => center(top + 10 + k, `${String(s.score).padStart(6)}  ${s.name || ""} ${s.race || ""} ${s.cls || "Fighter"}  LV ${s.lvl}  ${s.depth} ft  ${s.killer}`.replace(/  +/g, "  ").slice(0, GW - 2), k ? DIM : WHITE));
   }
 }
 function drawTomb(){
   const T0 = tomb, lines = ["R.I.P.", "", T0.name, "the " + T0.race + " " + T0.cls, "of level " + T0.lvl, "killed by " + T0.killer, "at " + T0.at + " ft", "", "Score " + T0.score + (T0.best ? "  (best!)" : ""), "",
-    touchMode ? "Press A for the title" : "Press Space for the title"];
+    pad.touch ? "Press A for the title" : "Press Space for the title"];
   const w = 34, top = Math.max(2, (GH >> 1) - 8), x0 = (GW - w) >> 1;
   for (let r = 0; r < lines.length + 4; r++) text(x0, top + r, r === 0 || r === lines.length + 3 ? "+" + "-".repeat(w - 2) + "+" : "|" + " ".repeat(w - 2) + "|", DIM);
   lines.forEach((s, k) => text(x0 + ((w - s.length) >> 1), top + 2 + k, s, k === 0 ? ACCENT : WHITE));
@@ -2344,7 +2530,7 @@ function draw(t){
   if (state === "title") drawTitle(t);
   else if (state === "create") drawCreate();
   else { drawMap(t); drawUI(); if (state === "dead" && stateT > 1) drawTomb(); }
-  const mt = (m, title, note) => { if (m.open) m.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: ACCENT, normal: WHITE, dim: DIM, title, note }); };
+  const mt = (m, title, note) => { if (m.open) m.draw(screen, { accent: ACCENT, normal: WHITE, dim: DIM, title, note }); };
   mt(list, listTitle, listNote); mt(menu, state === "title" ? "MENU" : "PAUSED", "THIS EARLY VERSION DOES NOT SAVE");
   screen.render(ctx);
 }
@@ -2485,8 +2671,8 @@ function helpList(){
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
   { label: state === "play" ? "NEW CHARACTER" : "START", select: () => { menu.hide(); startCreate(); } },
-  { label: "KEYS", value: () => keySet === "roguelike" ? "ROGUELIKE" : "ORIGINAL", change: () => { keySet = keySet === "roguelike" ? "original" : "roguelike"; store("keys", keySet); } },
-  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: "KEYS", value: () => keySet === "roguelike" ? "ROGUELIKE" : "ORIGINAL", change: () => { keySet = keySet === "roguelike" ? "original" : "roguelike"; store.setJSON("keys", keySet); } },
+  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "HELP", select: () => { menu.hide(); helpList(); } },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
@@ -2568,55 +2754,27 @@ addEventListener("keydown", onKey);
 function toTitle(){ state = "title"; L = null; cr = null; aiming = null; world.bodies.length = 0; }
 addEventListener("beforeunload", e => { if (state === "play"){ e.preventDefault(); e.returnValue = ""; } });   // nothing is saved yet
 
-const CTRL_KEY = "controls";
-let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the menu's Controls row overrides it
-{ const c = load(CTRL_KEY, null); if (c) touchMode = c === "touch"; }
-function setControls(touch, save){
-  touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
-  if (save) store(CTRL_KEY, touch ? "touch" : "keyboard");
-}
-setControls(touchMode, false);
-const buzz = () => navigator.vibrate && navigator.vibrate(8);
-// The D-pad picks one of eight directions from the angle of the thumb; holding it keeps walking.
-const dpad = $("dpad");
+// The shared gamepad (src/arcade.js), with eight directions; holding the D-pad keeps walking.
+const DIR8 = { up: 8, down: 2, left: 4, right: 6, upleft: 7, upright: 9, downleft: 1, downright: 3 };
 let holdDir = 0, holdT = 0;
-function dpadAt(e){
-  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  if (Math.hypot(dx, dy) < r.width * 0.1) return 0;
-  const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));   // 0 east, 2 south, -2 north, 4 / -4 west
-  return { 0: 6, 1: 3, 2: 2, 3: 1, 4: 4, [-4]: 4, [-3]: 7, [-2]: 8, [-1]: 9 }[a];
-}
-function dpadPress(d){
-  const was = holdDir; holdDir = d;
-  dpad.dataset.dir = !d ? "" : d === 8 ? "up" : d === 2 ? "down" : [1, 4, 7].includes(d) ? "left" : "right";
-  if (!d || d === was) return;
-  buzz();
-  if (list.open || menu.open){ const m = list.open ? list : menu; d === 8 ? m.move(-1) : d === 2 ? m.move(1) : d === 4 ? m.change(-1) : d === 6 ? m.change(1) : 0; holdDir = 0; return; }
-  if (state === "create"){ holdDir = 0; if ([8, 2, 4, 6].includes(d)) crKey({ 8: "up", 2: "down", 4: "left", 6: "right" }[d]); return; }
-  if (state !== "play") return;
-  if (aiming){ holdDir = 0; return aimAt(...DIRS[d]); }
-  disturbed = false; holdT = 0.3;   // a short pause before walking on
-  act(() => tryMove(...DIRS[d]));
-}
-dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); dpadPress(dpadAt(e)); });
-dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadPress(dpadAt(e)); });
-for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { holdDir = 0; dpad.dataset.dir = ""; });
-document.querySelectorAll("[data-pad]").forEach(b => {
-  const id = b.dataset.pad;
-  b.addEventListener("pointerdown", e => {
-    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    if (list.open){ id === "a" ? list.choose() : list.hide(); return; }   // in a list: A chooses, any other button closes
-    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }
+const pad = createPad({ store, axis: 8, menu: () => (list.open && list) || (menu.open && menu),
+  onDir: d => {
+    const n = DIR8[d] || 0, was = holdDir; holdDir = n;
+    if (!n || n === was) return;
+    if (state === "create"){ holdDir = 0; if ([8, 2, 4, 6].includes(n)) crKey({ 8: "up", 2: "down", 4: "left", 6: "right" }[n]); return; }
+    if (state !== "play") return;
+    if (aiming){ holdDir = 0; return aimAt(...DIRS[n]); }
+    disturbed = false; holdT = 0.3;   // a short pause before walking on
+    act(() => tryMove(...DIRS[n]));
+  },
+  onPress: id => {
     if (state === "title"){ if (id === "a" || id === "start") startCreate(); else if (id === "select") menu.show(); return; }
     if (state === "create"){ if (id === "a" || id === "start") crChoose(); else if (id === "b") crBack(); else menu.show(); return; }
     if (state === "dead"){ if (stateT > 1 && (id === "a" || id === "start")) toTitle(); return; }
     if (aiming){ if (id === "a") aimNearest(); else { aiming = null; oldMsgs = []; msgs = []; say("Never mind."); } return; }
     if (id === "start" || id === "select") return menu.show();
     if (id === "a") contextAction(); else commandList();
-  });
-  const up = () => b.classList.remove("on");
-  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
-});
+  } });
 cv.addEventListener("pointerdown", e => {
   const [gx, gy] = gridAt(e, cv, GW, GH);
   if (list.open) return list.tap(gx, gy);
@@ -2625,7 +2783,7 @@ cv.addEventListener("pointerdown", e => {
   if (state === "create"){ const i = gy - 4; if (i >= 0 && i < crRows().length){ cr.at = i; crChoose(); } return; }
   if (state === "dead"){ if (stateT > 1) toTitle(); return; }
   if (aiming) return aimNearest();
-  if (!touchMode) commandList();   // a click opens the commands
+  if (!pad.touch) commandList();   // a click opens the commands
 });
 
 /* ---------- layout and loop ---------- */
@@ -2637,21 +2795,13 @@ function layout(){
   screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
   GW = Math.min(screen.cols, MW); GH = Math.min(screen.rows, MH + VY + 2); VH = GH - VY - 2;
   const W = GW * screen.cw, H = GH * screen.ch;
-  screen.fit(W, H, dpr);
-  cv.style.width = W + "px"; cv.style.height = H + "px"; cv.style.transform = "translate(-50%,-50%)";
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  screen.fit(W, H, dpr); sizeCanvas(cv, ctx, W, H, dpr);
   world.w = W; world.h = H; world.unit = screen.cw; world.g = { x: 0, y: H * 1.2 };
   if (old) world.bodies.length = 0;
   if (player) centerCamera(true);
   rebuildTerrain();
 }
-let last = performance.now(), nextFrame = 0;
-const FRAME_MS = 1000 / 60;
-function tick(t){
-  requestAnimationFrame(tick);
-  if (t < nextFrame - 1) return;   // run at most ~60 times a second, even on faster displays
-  nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
-  const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+function tick(dt, t){
   if (!screen) return;
   stateT += dt;
   if (holdDir && state === "play" && !aiming && !list.open && !menu.open && (holdT -= dt) <= 0){   // keep walking while the D-pad is held
@@ -2670,13 +2820,8 @@ function tick(t){
   draw(t);
 }
 layout();
-let fitted = stage.getBoundingClientRect();
-new ResizeObserver(() => {   // re-fit only for real size changes, not the mobile address bar sliding in and out
-  const r = stage.getBoundingClientRect();
-  if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
-  fitted = r; layout();
-}).observe(stage);
-requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
+onResize(stage, layout);
+startLoop(tick);
 })();
 </script>
 </body></html>

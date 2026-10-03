@@ -42,67 +42,19 @@ const bx = () => sc + Math.floor(bxs());   // the rover's left world column
 const letter = k => String.fromCharCode(65 + k % 26);
 const postX = k => k * SEC + POST;
 
-/* ---------- high scores ---------- */
-const SCORES_KEY = "roverPatrol.v1.scores";
-let scores = [];
-try { scores = JSON.parse(localStorage.getItem(SCORES_KEY)) || []; } catch (e){}
-function saveScore(){
-  const entry = { score, point: letter(reached) + (reached >= 26 ? "+" : "") };
-  scores.push(entry); scores.sort((a, b) => b.score - a.score); scores = scores.slice(0, 5);
-  best = score > 0 && scores[0] === entry;
-  try { localStorage.setItem(SCORES_KEY, JSON.stringify(scores)); } catch (e){ console.warn("Rover Patrol: could not save scores", e); }
-}
-
-/* ---------- sound: effects and music from audio/rover-sfx.py (ROVER_SFX, ROVER_MUSIC) ---------- */
-// Browsers only allow audio after a user gesture, so nothing is decoded until the first key or tap.
-const MUTE_KEY = "roverPatrol.v1.muted";
-let actx = null, master = null, buffers = {}, unlocked = false, muted = false, song = null;
-try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e){}
-function unlockAudio(){
-  if (unlocked) return;
-  unlocked = true;
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC){ console.warn("Rover Patrol: Web Audio not supported, playing silent"); return; }
-  actx = new AC(); master = actx.createGain(); master.gain.value = muted ? 0 : 0.9; master.connect(actx.destination);
-  const decode = (k, v) => actx.decodeAudioData(Uint8Array.from(atob(v), c => c.charCodeAt(0)).buffer,
-    b => { buffers[k] = b; if (k === "music" && (state === "play" || state === "dead")) playMusic(true); }, e => console.warn("Rover Patrol: could not decode sound", k, e));
-  for (const [k, v] of Object.entries(ROVER_SFX)) decode(k, v);
-  decode("music", ROVER_MUSIC.data);
-}
-function sfx(name){
-  const b = buffers[name]; if (!b || muted) return;
-  const src = actx.createBufferSource(); src.buffer = b; src.connect(master); src.start();
-}
-function playMusic(on){
-  if (song){ song.stop(); song = null; }
-  if (!on || !buffers.music) return;
-  const g = actx.createGain(); g.gain.value = 0.3; g.connect(master);
-  song = actx.createBufferSource(); song.buffer = buffers.music; song.loop = true;
-  song.loopStart = ROVER_MUSIC.loopStart; song.loopEnd = ROVER_MUSIC.loopEnd;
-  song.connect(g); song.start(0, ROVER_MUSIC.loopStart);
-}
-function toggleMute(){
-  unlockAudio(); muted = !muted;
-  if (master) master.gain.setTargetAtTime(muted ? 0 : 0.9, actx.currentTime, 0.02);
-  try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e){ console.warn("Rover Patrol: could not save sound setting", e); }
-}
+/* ---------- saved settings, high scores and sound (src/arcade.js) ---------- */
+const store = prefs("roverPatrol.v1.", "Rover Patrol"), scores = scoreTable(store);
+function saveScore(){ best = score > 0 && scores.add({ score, point: letter(reached) + (reached >= 26 ? "+" : "") }).rank === 0; }
+// effects and an original music loop, made by audio/rover-sfx.py
+const audio = createAudio({ label: "Rover Patrol", store, sounds: ROVER_SFX, music: { music: ROVER_MUSIC }, volume: 1, musicGain: 0.27 });
+const sfx = name => audio.play(name), playMusic = on => audio.music(on ? "music" : null);
 
 function layout(){
-  const r = stage.getBoundingClientRect(); if (!r.width) return;
-  const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
-  for (let f = Math.max(5, Math.ceil(Math.min(r.width / GW / 0.5, r.height / GH / 1.15))); ; f--){
-    screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-    if ((screen.cols >= GW && screen.rows >= GH) || f <= 5) break;   // below 5px the text is unreadable: scale the canvas instead
-  }
+  const old = screen; screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old) return;
   const W = GW * screen.cw, H = GH * screen.ch;
-  screen.fit(W, H, dpr);
-  cv.style.width = W + "px"; cv.style.height = H + "px";
-  const k = Math.min(1, r.width / W, r.height / H);
-  cv.style.transform = "translate(-50%,-50%)" + (k < 1 ? " scale(" + k + ")" : "");
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   world.w = W; world.h = H; world.unit = screen.cw; world.drag = 2e-4 * (600 / H) ** 2; world.g = { x: 0, y: H * 1.2 };
   sun.x = W * 0.08; sun.y = -H * 0.25; sun.z = H * 0.9;
-  if (old){ const kx = screen.cw / old.cw, ky = screen.ch / old.ch; for (const b of world.bodies){ b.x *= kx; b.y *= ky; b.r *= kx; if (b.box){ b.hw *= kx; b.hh *= kx; } } }
+  rescaleBodies(world, old, screen);
   stars = Array.from({ length: 110 }, () => ({ x: Math.floor(Math.random() * GW), y: 2 + Math.floor(Math.random() * 22), ph: Math.random() * 6.283 }));
 }
 
@@ -322,10 +274,7 @@ function updateUfos(dt, x){
 }
 
 /* ---------- drawing ---------- */
-function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
-function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
-const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
-function sprite(art, x, y, rgb, k, layer){ art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") put(x + dx, y + dy, rgb, k, layer, row.charCodeAt(dx)); }); }
+const { put, text, center, sprite } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
 const ball = { a: 0, w: 0, flash: 0, mat: ROCK };
 function litBall(px, py, r, alb, mat = ROCK){ ball.x = px; ball.y = py; ball.r = r; ball.alb = alb; ball.mat = mat; screen.sphere(ball, sun, { stripe: false }); }
 function flashAt(gx, gy){
@@ -384,12 +333,12 @@ function drawTitle(){
       for (const k of [0, 1]) put(x0 + li * 12 + dx * 2 + k, y0 + dy, wi ? ROVER_RGB : UFO_RGB.saucer, 1.2, 3, 35); }));
   });
   const blink = (performance.now() / 500 | 0) % 2;
-  center(21, touchMode ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
-  center(23, touchMode ? "D-PAD LEFT/RIGHT SPEED   A OR UP JUMP   B FIRE   SELECT MENU" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP   X FIRE   ESC MENU", DIM);
+  center(21, pad.touch ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
+  center(23, pad.touch ? "D-PAD LEFT/RIGHT SPEED   A OR UP JUMP   B FIRE   SELECT MENU" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP   X FIRE   ESC MENU", DIM);
   center(24, "JUMP CRATERS AND MINES. SHOOT ROCKS AHEAD AND UFOS ABOVE.", DIM);
-  if (scores.length){
+  if (scores.list.length){
     center(27, "HIGH SCORES", ACCENT);
-    scores.forEach((s, i) => center(28 + i, `${i + 1}. ${String(s.score).padStart(7)}   POINT ${s.point.padEnd(2)}`, i ? DIM : WHITE));
+    scores.list.forEach((s, i) => center(28 + i, `${i + 1}. ${String(s.score).padStart(7)}   POINT ${s.point.padEnd(2)}`, i ? DIM : WHITE));
   }
 }
 function draw(t){
@@ -405,7 +354,7 @@ function draw(t){
   for (const s of uShots) put(s.x - sc, Math.round(s.y), SHOT_RGB, 1, 3, 124);
   // HUD: score and lives on the left, the course A..Z in the middle, time on the right
   text(1, 0, "SCORE " + String(score).padStart(6, "0"), WHITE);
-  text(1, 1, "HI    " + String(Math.max(score, scores[0] ? scores[0].score : 0)).padStart(6, "0"), DIM);
+  text(1, 1, "HI    " + String(Math.max(score, scores.list[0] ? scores.list[0].score : 0)).padStart(6, "0"), DIM);
   text(GW - 18, 0, "LIVES " + "^".repeat(Math.max(0, lives - (state === "dead" ? 1 : 0))), ROVER_RGB);
   text(GW - 18, 1, "TIME  " + String(Math.floor(pointT)).padStart(3), DIM);
   const x0 = Math.floor((GW - 51) / 2), here = reached % 26;
@@ -414,16 +363,16 @@ function draw(t){
     center(16, "  GAME OVER  ", WHITE);
     center(18, `  ${score} POINTS  `, ACCENT);
     if (best) center(20, "  NEW HIGH SCORE!  ", ACCENT);
-    if (stateT > 1) center(22, touchMode ? "  PRESS START  " : "  PRESS SPACE  ", DIM);
+    if (stateT > 1) center(22, pad.touch ? "  PRESS START  " : "  PRESS SPACE  ", DIM);
   } else if (msgT > 0) center(4, "  " + msg + "  ", WHITE);
-  const hint = touchMode ? " SELECT MENU " : " ESC MENU ";
+  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
   text(GW - 1 - hint.length, GH - 1, hint, DIM);
   drawMenu();
   screen.render(ctx);
 }
 function drawMenu(){
   // the menu writes on its own layer, above the game's text, so nothing shows through its box
-  if (menu.open) menu.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED" });
+  if (menu.open) menu.draw(screen, { accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED" });
 }
 
 /* ---------- input ---------- */
@@ -438,14 +387,14 @@ function action(){   // start from the title; back to the title from game over
 function toTitle(){ state = "title"; features = []; world.bodies.length = 0; ufos = []; bombs = []; speed = CRUISE; }
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
-  { label: state === "title" ? "START GAME" : "RESTART", select: () => { menu.hide(); unlockAudio(); newGame(); } },
-  { label: "SOUND", value: () => muted ? "OFF" : "ON", change: () => toggleMute() },
-  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: state === "title" ? "START GAME" : "RESTART", select: () => { menu.hide(); audio.unlock(); newGame(); } },
+  { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
+  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
-  onOpen: () => { for (const k in keys) keys[k] = false; fireHeld = false; if (actx) actx.suspend(); },
-  onClose: () => { if (actx) actx.resume(); }
+  onOpen: () => { for (const k in keys) keys[k] = false; fireHeld = false; audio.pause(); },
+  onClose: () => { audio.resume(); }
 });
 addEventListener("keydown", e => {
   if (menu.key(e)){ e.preventDefault(); return; }
@@ -453,9 +402,9 @@ addEventListener("keydown", e => {
   if (JUMP_KEYS.has(e.key) || FIRE_KEYS.has(e.key)) e.preventDefault();
   if (FIRE_KEYS.has(e.key)) fireHeld = true;
   if (e.repeat) return;
-  unlockAudio();
+  audio.unlock();
   if (e.key === "Escape" || e.key === "p" || e.key === "P") return menu.show();
-  if (e.key === "m" || e.key === "M") return toggleMute();
+  if (e.key === "m" || e.key === "M") return audio.toggleMute();
   if (e.key === "r" || e.key === "R") return newGame();
   if (state !== "play"){ if (e.key === " " || e.key === "Enter") action(); return; }
   if (JUMP_KEYS.has(e.key)) jumpQueued = true;
@@ -463,58 +412,24 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; if (FIRE_KEYS.has(e.key)) fireHeld = false; });
 addEventListener("blur", () => { for (const k in keys) keys[k] = false; fireHeld = false; });
 
-const CTRL_KEY = "roverPatrol.v1.controls";
-let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the menu's Controls row overrides it
-try { const c = localStorage.getItem(CTRL_KEY); if (c) touchMode = c === "touch"; } catch (e){}
-function setControls(touch, save){
-  touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
-  if (save) try { localStorage.setItem(CTRL_KEY, touch ? "touch" : "keyboard"); } catch (e){ console.warn("Rover Patrol: could not save controls setting", e); }
-}
-setControls(touchMode, false);
-const buzz = () => navigator.vibrate && navigator.vibrate(8);
-// The D-pad is one surface; the thumb's offset from the centre picks the direction, so sliding switches it.
-const dpad = $("dpad");
-function dpadAt(e){
-  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  const dir = Math.hypot(dx, dy) < r.width * 0.1 ? "" : Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-  const changed = dir !== (dpad.dataset.dir || "");
-  if (changed){ dpad.dataset.dir = dir; if (dir) buzz(); }
-  if (menu.open){ if (changed && dir) dir === "up" ? menu.move(-1) : dir === "down" ? menu.move(1) : menu.change(dir === "left" ? -1 : 1); return; }   // in the menu: one step per push
-  if (changed && dir === "up" && state === "play") jumpQueued = true;
-  for (const k in keys) keys[k] = k === dir;
-}
-dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); unlockAudio(); dpadAt(e); });
-dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadAt(e); });
-for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dpad.dataset.dir = ""; for (const k in keys) keys[k] = false; });
-document.querySelectorAll("[data-pad]").forEach(b => {
-  const id = b.dataset.pad;
-  b.addEventListener("pointerdown", e => {
-    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    unlockAudio();
-    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }   // in the menu: A chooses, any other button closes
+const pad = createPad({ store, menu: () => menu.open && menu, onAny: () => audio.unlock(),
+  onDir: d => { if (d === "up" && state === "play") jumpQueued = true; keys.left = d === "left"; keys.right = d === "right"; },
+  onPress: id => {
     if (id === "select") return menu.show();
     if (state === "title" || state === "over"){ if (id === "a" || id === "start") action(); return; }
     if (id === "start") return menu.show();
     if (id === "a") jumpQueued = true; else fireHeld = true;
-  });
-  const up = () => { b.classList.remove("on"); if (id === "b") fireHeld = false; };
-  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
-});
+  },
+  onRelease: id => { if (id === "b") fireHeld = false; } });
 cv.addEventListener("pointerdown", e => {
-  unlockAudio();
+  audio.unlock();
   if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
   if (state === "title" || state === "over") action();
-  else if (!touchMode) menu.show();   // a mouse click during play opens the menu
+  else if (!pad.touch) menu.show();   // a mouse click during play opens the menu
 });
 
 /* ---------- loop ---------- */
-let last = performance.now(), nextFrame = 0;
-const FRAME_MS = 1000 / 60;
-function tick(t){
-  requestAnimationFrame(tick);
-  if (t < nextFrame - 1) return;   // run at most ~60 times a second, even on faster displays
-  nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
-  const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+function tick(dt, t){
   if (screen && !menu.open){   // the open menu pauses everything
     if (state === "title"){   // the rover drives along an empty course behind the title
       scrollBy(10 * dt); for (let i = 0; i < 3; i++) wy[i] += (groundAt(bx() + WHEELS[i]) - 1 - wy[i]) * Math.min(1, dt * 30);
@@ -529,11 +444,6 @@ function tick(t){
 }
 layout();
 computeGround(); for (let i = 0; i < 3; i++) wy[i] = groundAt(bx() + WHEELS[i]) - 1;
-let fitted = stage.getBoundingClientRect();
-new ResizeObserver(() => {   // re-fit only for real size changes, not the mobile address bar sliding in and out
-  const r = stage.getBoundingClientRect();
-  if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
-  fitted = r; if (screen){ layout(); computeGround(); }
-}).observe(stage);
-requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
+onResize(stage, () => { layout(); computeGround(); });
+startLoop(tick);
 })();

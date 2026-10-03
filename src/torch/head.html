@@ -5,72 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Torchlight Dungeons</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<style>
-:root{
-  --ground:#E9EDF1; --ink:#20304A; --muted:#5E6A7D; --line:#C9D1DB;
-  --btn:#DCE2E9; --btn-on:#20304A; --btn-on-ink:#F4F6F8; --accent:#2F5BD3;
-  box-sizing:border-box;
-  padding-top:env(safe-area-inset-top,0px);
-  padding-bottom:env(safe-area-inset-bottom,0px);
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --ground:#151B26; --ink:#D9E1EC; --muted:#8792A3; --line:#2A3445;
-    --btn:#222B3A; --btn-on:#D9E1EC; --btn-on-ink:#151B26; --accent:#7FA2FF;
-  }
-}
-:root[data-theme="dark"]{
-  --ground:#151B26; --ink:#D9E1EC; --muted:#8792A3; --line:#2A3445;
-  --btn:#222B3A; --btn-on:#D9E1EC; --btn-on-ink:#151B26; --accent:#7FA2FF;
-}
-*,*::before,*::after{box-sizing:inherit}
-html{height:100%;overscroll-behavior:none}
-body{height:100%;height:100svh;margin:0;touch-action:manipulation;overscroll-behavior:none;-webkit-touch-callout:none;background:var(--ground);color:var(--ink);
-  font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  display:flex;flex-direction:column;overflow:hidden;-webkit-user-select:none;user-select:none}
-header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px;padding:10px 14px 6px}
-h1{font-size:17px;font-weight:650;margin:0;letter-spacing:-0.01em}
-h1 a{color:inherit;text-decoration:none}h1 a:hover{text-decoration:underline}
-#hud{font:12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted);white-space:nowrap}
-#stage{flex:1;position:relative;touch-action:none;margin:0 8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:0;background:#0B0F16}
-#cv{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;touch-action:none}
-nav{padding:8px 8px 10px;display:flex;flex-direction:column;gap:6px}
-button{flex:1 1 auto;min-width:60px;min-height:40px;padding:6px 8px;border:0;border-radius:8px;background:var(--btn);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;touch-action:none}
-button[aria-pressed="true"]{background:var(--btn-on);color:var(--btn-on-ink);font-weight:600}
-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-/* Touch gamepad, styled after a handheld console: cross-shaped D-pad, slanted A/B, pill SELECT/START */
-#gamepad{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"dpad . ab" "mid mid mid";align-items:center;row-gap:4px;padding:4px 12px 20px;touch-action:none}
-#gamepad[hidden]{display:none}
-#dpad{grid-area:dpad;position:relative;width:120px;height:120px;touch-action:none;cursor:pointer}
-#dpad::before,#dpad::after{content:"";position:absolute;background:#2A2A31;border-radius:7px;box-shadow:0 4px 0 #0E0E12}
-#dpad::before{left:0;right:0;top:40px;height:40px}
-#dpad::after{top:0;bottom:0;left:40px;width:40px}
-#dpad span{position:absolute;z-index:1;color:#6E6E78;font-size:13px;line-height:1;pointer-events:none;transition:color .05s}
-#dpad .l{left:11px;top:53px}#dpad .r{right:11px;top:53px}#dpad .u{left:54px;top:11px}#dpad .d{left:54px;bottom:11px}
-#dpad[data-dir="left"] .l,#dpad[data-dir="right"] .r,#dpad[data-dir="up"] .u,#dpad[data-dir="down"] .d{color:#F4F4F8}
-#dpad[data-dir="left"]{transform:perspective(300px) rotateY(-8deg)}
-#dpad[data-dir="right"]{transform:perspective(300px) rotateY(8deg)}
-#dpad[data-dir="up"]{transform:perspective(300px) rotateX(8deg)}
-#dpad[data-dir="down"]{transform:perspective(300px) rotateX(-8deg)}
-.mid{grid-area:mid;justify-self:center;display:flex;gap:18px;transform:rotate(-22deg)}
-.mid button{min-width:0;min-height:0;width:52px;height:16px;padding:0;border-radius:8px;background:#8D8C94;box-shadow:0 3px 0 #55545B;font-size:0;position:relative}
-.mid button::after{content:attr(data-label);position:absolute;top:22px;left:50%;transform:translateX(-50%);font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;color:var(--muted)}
-.ab{grid-area:ab;display:flex;gap:14px;transform:rotate(-22deg)}
-.ab button{min-width:0;min-height:0;width:60px;height:60px;padding:0;border-radius:50%;background:#A3245C;color:#F7D7E6;font:700 19px/1 ui-monospace,Menlo,monospace;box-shadow:0 5px 0 #5E1233}
-.ab button:first-child{margin-top:30px}
-#gamepad button.on{transform:translateY(3px);box-shadow:0 2px 0 #0E0E12;filter:brightness(.85)}
-body.touch #hud{display:none}
-/* Phone on its side: D-pad on the left, A/B on the right, game in the middle */
-@media (orientation: landscape) and (max-height: 600px){
-  body.touch{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:1fr auto}
-  body.touch header{display:none}
-  body.touch nav,body.touch #gamepad{display:contents}
-  body.touch #stage{grid-column:2;grid-row:1;margin:6px 0 4px}
-  body.touch #dpad{grid-column:1;grid-row:1 / 3;align-self:center;justify-self:center;margin:0 18px 70px}
-  body.touch .mid{grid-column:1;grid-row:1 / 3;align-self:end;justify-self:center;margin-bottom:46px}
-  body.touch .ab{grid-column:3;grid-row:1 / 3;align-self:center;margin:0 18px 0 10px}
-}
-</style>
+<!-- src/arcade/pad.css goes here (build.sh) -->
 </head>
 <body>
 <header>

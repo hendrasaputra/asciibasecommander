@@ -43,10 +43,8 @@ const sensed = m => seesMon(m) || m.det === turnNo;   // seen, or found by detec
 const theName = m => seesMon(m) ? "the " + m.K.name : "it";
 
 /* ---------- saved preferences and high scores ---------- */
-const PREFIX = "torchlightDungeons.v1.";
-const load = (k, d) => { try { const v = localStorage.getItem(PREFIX + k); return v === null ? d : JSON.parse(v); } catch (e){ return d; } };
-const store = (k, v) => { try { localStorage.setItem(PREFIX + k, JSON.stringify(v)); } catch (e){ console.warn("Torchlight Dungeons: could not save", k, e); } };
-let keySet = load("keys", "original"), scores = load("scores", []);
+const store = prefs("torchlightDungeons.v1.", "Torchlight Dungeons"), scores = scoreTable(store);   // src/arcade.js
+let keySet = store.getJSON("keys", "original");
 
 /* ---------- items: names, carrying, and what worn things add ---------- */
 const nameOf = (it, n) => itemName(it, player.know, n);
@@ -539,7 +537,7 @@ function nearestTarget(){
   for (const m of mons) if (m.K && seesMon(m) && (!best || dist(m.x, m.y, player.x, player.y) < dist(best.x, best.y, player.x, player.y))) best = m;
   return best;
 }
-function aim(prompt, fn){ aiming = fn; oldMsgs = []; msgs = []; say(prompt + " Direction? (" + (touchMode ? "D-pad, A nearest, B cancel" : "a direction key, ' or t for nearest, Esc") + ")"); }
+function aim(prompt, fn){ aiming = fn; oldMsgs = []; msgs = []; say(prompt + " Direction? (" + (pad.touch ? "D-pad, A nearest, B cancel" : "a direction key, ' or t for nearest, Esc") + ")"); }
 function aimAt(dx, dy){ const f = aiming; aiming = null; act(() => f(player.x + dx * 20, player.y + dy * 20)); }
 function aimNearest(){
   if (!aiming) return;
@@ -677,8 +675,7 @@ function hurt(n, by){
 function die(){
   state = "dead"; stateT = 0; aiming = null;
   const p = player, entry = { score: Math.floor(p.exp) + 100 * p.maxDepth, name: p.name, race: race().name, cls: cls().name, lvl: p.lvl, depth: feet(p.maxDepth), killer };
-  scores.push(entry); scores.sort((a, b) => b.score - a.score); scores = scores.slice(0, 5); store("scores", scores);
-  tomb = { ...entry, best: scores[0] === entry, at: feet(depth) };
+  tomb = { ...entry, best: scores.add(entry).rank === 0, at: feet(depth) };
   say("You die.");
 }
 function monsterTurn(m){
@@ -847,16 +844,14 @@ function drawCreate(){
     text(x1, y++, "Hit points " + firstHp(p) + (C.realm ? "   Mana " + maxMana(p) : ""), WHITE);
     for (const k of SKILLS){ const v = skillOf(p, k); text(x1, y++, SKILL_NAMES[k].padEnd(15) + (k === "stealth" ? stealthWord(v) : skillWord(v)), DIM); }
     if (cr.step === 2 && cr.mode === "buy") { y++; text(x1, y++, "Points left: " + (BUY_POINTS - buySpent(cr.buy)) + " of " + BUY_POINTS, ACCENT); }
-    if (cr.step === 3){ y++; para(touchMode ? "A begins; B goes back." : "Type to change the name. Enter begins; Esc goes back.", DIM); }
+    if (cr.step === 3){ y++; para(pad.touch ? "A begins; B goes back." : "Type to change the name. Enter begins; Esc goes back.", DIM); }
   }
-  const hint = touchMode ? "D-PAD CHOOSE   A SELECT   B BACK" : "ARROWS CHOOSE   ENTER SELECT   ESC BACK";
+  const hint = pad.touch ? "D-PAD CHOOSE   A SELECT   B BACK" : "ARROWS CHOOSE   ENTER SELECT   ESC BACK";
   text(x0, GH - 1, hint, DIM);
 }
 
 /* ---------- drawing ---------- */
-function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
-function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
-const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
+const { put, text, center } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
 function drawMap(t){
   computeLight(lightNow, t);
   for (let r = 0; r < VH; r++) for (let c = 0; c < GW; c++){
@@ -902,7 +897,7 @@ function drawUI(){
   const T0 = p.t, st = [[T0.fast, "Fast", GREEN], [T0.hero, "Hero", GREEN], [T0.berserk, "Berserk", GREEN], [T0.bless, "Blessed", GREEN],
     [T0.poison, "Poisoned", RED], [T0.confused, "Confused", RED], [T0.blind, "Blind", RED], [T0.asleep, "Asleep", RED], [p.bonus.burden, "Burdened", RED]];
   for (const [on, label, rgb] of st) if (on && x + label.length < GW - 24) seg2(label, rgb);
-  const hint = touchMode ? "B COMMANDS  START MENU" : "? HELP  ESC MENU";
+  const hint = pad.touch ? "B COMMANDS  START MENU" : "? HELP  ESC MENU";
   if (x + hint.length <= GW) text(GW - hint.length, GH - 1, hint, DIM);
 }
 function drawTitle(t){
@@ -921,16 +916,16 @@ function drawTitle(t){
   center(top, "T O R C H L I G H T", ACCENT); center(top + 1, "D U N G E O N S", ACCENT);
   center(top + 3, "A dungeon crawl after Moria", DIM);
   const blink = (performance.now() / 500 | 0) % 2;
-  center(top + 5, touchMode ? "PRESS A OR START TO BEGIN" : "PRESS SPACE TO BEGIN", blink ? WHITE : DIM);
+  center(top + 5, pad.touch ? "PRESS A OR START TO BEGIN" : "PRESS SPACE TO BEGIN", blink ? WHITE : DIM);
   center(top + 6, "Early version: no saves yet.", DIM);
-  if (scores.length){
+  if (scores.list.length){
     center(top + 9, "HALL OF FAME", ACCENT);
-    scores.forEach((s, k) => center(top + 10 + k, `${String(s.score).padStart(6)}  ${s.name || ""} ${s.race || ""} ${s.cls || "Fighter"}  LV ${s.lvl}  ${s.depth} ft  ${s.killer}`.replace(/  +/g, "  ").slice(0, GW - 2), k ? DIM : WHITE));
+    scores.list.forEach((s, k) => center(top + 10 + k, `${String(s.score).padStart(6)}  ${s.name || ""} ${s.race || ""} ${s.cls || "Fighter"}  LV ${s.lvl}  ${s.depth} ft  ${s.killer}`.replace(/  +/g, "  ").slice(0, GW - 2), k ? DIM : WHITE));
   }
 }
 function drawTomb(){
   const T0 = tomb, lines = ["R.I.P.", "", T0.name, "the " + T0.race + " " + T0.cls, "of level " + T0.lvl, "killed by " + T0.killer, "at " + T0.at + " ft", "", "Score " + T0.score + (T0.best ? "  (best!)" : ""), "",
-    touchMode ? "Press A for the title" : "Press Space for the title"];
+    pad.touch ? "Press A for the title" : "Press Space for the title"];
   const w = 34, top = Math.max(2, (GH >> 1) - 8), x0 = (GW - w) >> 1;
   for (let r = 0; r < lines.length + 4; r++) text(x0, top + r, r === 0 || r === lines.length + 3 ? "+" + "-".repeat(w - 2) + "+" : "|" + " ".repeat(w - 2) + "|", DIM);
   lines.forEach((s, k) => text(x0 + ((w - s.length) >> 1), top + 2 + k, s, k === 0 ? ACCENT : WHITE));
@@ -940,7 +935,7 @@ function draw(t){
   if (state === "title") drawTitle(t);
   else if (state === "create") drawCreate();
   else { drawMap(t); drawUI(); if (state === "dead" && stateT > 1) drawTomb(); }
-  const mt = (m, title, note) => { if (m.open) m.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: ACCENT, normal: WHITE, dim: DIM, title, note }); };
+  const mt = (m, title, note) => { if (m.open) m.draw(screen, { accent: ACCENT, normal: WHITE, dim: DIM, title, note }); };
   mt(list, listTitle, listNote); mt(menu, state === "title" ? "MENU" : "PAUSED", "THIS EARLY VERSION DOES NOT SAVE");
   screen.render(ctx);
 }
@@ -1081,8 +1076,8 @@ function helpList(){
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
   { label: state === "play" ? "NEW CHARACTER" : "START", select: () => { menu.hide(); startCreate(); } },
-  { label: "KEYS", value: () => keySet === "roguelike" ? "ROGUELIKE" : "ORIGINAL", change: () => { keySet = keySet === "roguelike" ? "original" : "roguelike"; store("keys", keySet); } },
-  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: "KEYS", value: () => keySet === "roguelike" ? "ROGUELIKE" : "ORIGINAL", change: () => { keySet = keySet === "roguelike" ? "original" : "roguelike"; store.setJSON("keys", keySet); } },
+  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "HELP", select: () => { menu.hide(); helpList(); } },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
@@ -1164,55 +1159,27 @@ addEventListener("keydown", onKey);
 function toTitle(){ state = "title"; L = null; cr = null; aiming = null; world.bodies.length = 0; }
 addEventListener("beforeunload", e => { if (state === "play"){ e.preventDefault(); e.returnValue = ""; } });   // nothing is saved yet
 
-const CTRL_KEY = "controls";
-let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the menu's Controls row overrides it
-{ const c = load(CTRL_KEY, null); if (c) touchMode = c === "touch"; }
-function setControls(touch, save){
-  touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
-  if (save) store(CTRL_KEY, touch ? "touch" : "keyboard");
-}
-setControls(touchMode, false);
-const buzz = () => navigator.vibrate && navigator.vibrate(8);
-// The D-pad picks one of eight directions from the angle of the thumb; holding it keeps walking.
-const dpad = $("dpad");
+// The shared gamepad (src/arcade.js), with eight directions; holding the D-pad keeps walking.
+const DIR8 = { up: 8, down: 2, left: 4, right: 6, upleft: 7, upright: 9, downleft: 1, downright: 3 };
 let holdDir = 0, holdT = 0;
-function dpadAt(e){
-  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  if (Math.hypot(dx, dy) < r.width * 0.1) return 0;
-  const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));   // 0 east, 2 south, -2 north, 4 / -4 west
-  return { 0: 6, 1: 3, 2: 2, 3: 1, 4: 4, [-4]: 4, [-3]: 7, [-2]: 8, [-1]: 9 }[a];
-}
-function dpadPress(d){
-  const was = holdDir; holdDir = d;
-  dpad.dataset.dir = !d ? "" : d === 8 ? "up" : d === 2 ? "down" : [1, 4, 7].includes(d) ? "left" : "right";
-  if (!d || d === was) return;
-  buzz();
-  if (list.open || menu.open){ const m = list.open ? list : menu; d === 8 ? m.move(-1) : d === 2 ? m.move(1) : d === 4 ? m.change(-1) : d === 6 ? m.change(1) : 0; holdDir = 0; return; }
-  if (state === "create"){ holdDir = 0; if ([8, 2, 4, 6].includes(d)) crKey({ 8: "up", 2: "down", 4: "left", 6: "right" }[d]); return; }
-  if (state !== "play") return;
-  if (aiming){ holdDir = 0; return aimAt(...DIRS[d]); }
-  disturbed = false; holdT = 0.3;   // a short pause before walking on
-  act(() => tryMove(...DIRS[d]));
-}
-dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); dpadPress(dpadAt(e)); });
-dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadPress(dpadAt(e)); });
-for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { holdDir = 0; dpad.dataset.dir = ""; });
-document.querySelectorAll("[data-pad]").forEach(b => {
-  const id = b.dataset.pad;
-  b.addEventListener("pointerdown", e => {
-    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    if (list.open){ id === "a" ? list.choose() : list.hide(); return; }   // in a list: A chooses, any other button closes
-    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }
+const pad = createPad({ store, axis: 8, menu: () => (list.open && list) || (menu.open && menu),
+  onDir: d => {
+    const n = DIR8[d] || 0, was = holdDir; holdDir = n;
+    if (!n || n === was) return;
+    if (state === "create"){ holdDir = 0; if ([8, 2, 4, 6].includes(n)) crKey({ 8: "up", 2: "down", 4: "left", 6: "right" }[n]); return; }
+    if (state !== "play") return;
+    if (aiming){ holdDir = 0; return aimAt(...DIRS[n]); }
+    disturbed = false; holdT = 0.3;   // a short pause before walking on
+    act(() => tryMove(...DIRS[n]));
+  },
+  onPress: id => {
     if (state === "title"){ if (id === "a" || id === "start") startCreate(); else if (id === "select") menu.show(); return; }
     if (state === "create"){ if (id === "a" || id === "start") crChoose(); else if (id === "b") crBack(); else menu.show(); return; }
     if (state === "dead"){ if (stateT > 1 && (id === "a" || id === "start")) toTitle(); return; }
     if (aiming){ if (id === "a") aimNearest(); else { aiming = null; oldMsgs = []; msgs = []; say("Never mind."); } return; }
     if (id === "start" || id === "select") return menu.show();
     if (id === "a") contextAction(); else commandList();
-  });
-  const up = () => b.classList.remove("on");
-  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
-});
+  } });
 cv.addEventListener("pointerdown", e => {
   const [gx, gy] = gridAt(e, cv, GW, GH);
   if (list.open) return list.tap(gx, gy);
@@ -1221,7 +1188,7 @@ cv.addEventListener("pointerdown", e => {
   if (state === "create"){ const i = gy - 4; if (i >= 0 && i < crRows().length){ cr.at = i; crChoose(); } return; }
   if (state === "dead"){ if (stateT > 1) toTitle(); return; }
   if (aiming) return aimNearest();
-  if (!touchMode) commandList();   // a click opens the commands
+  if (!pad.touch) commandList();   // a click opens the commands
 });
 
 /* ---------- layout and loop ---------- */
@@ -1233,21 +1200,13 @@ function layout(){
   screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
   GW = Math.min(screen.cols, MW); GH = Math.min(screen.rows, MH + VY + 2); VH = GH - VY - 2;
   const W = GW * screen.cw, H = GH * screen.ch;
-  screen.fit(W, H, dpr);
-  cv.style.width = W + "px"; cv.style.height = H + "px"; cv.style.transform = "translate(-50%,-50%)";
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  screen.fit(W, H, dpr); sizeCanvas(cv, ctx, W, H, dpr);
   world.w = W; world.h = H; world.unit = screen.cw; world.g = { x: 0, y: H * 1.2 };
   if (old) world.bodies.length = 0;
   if (player) centerCamera(true);
   rebuildTerrain();
 }
-let last = performance.now(), nextFrame = 0;
-const FRAME_MS = 1000 / 60;
-function tick(t){
-  requestAnimationFrame(tick);
-  if (t < nextFrame - 1) return;   // run at most ~60 times a second, even on faster displays
-  nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
-  const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+function tick(dt, t){
   if (!screen) return;
   stateT += dt;
   if (holdDir && state === "play" && !aiming && !list.open && !menu.open && (holdT -= dt) <= 0){   // keep walking while the D-pad is held
@@ -1266,11 +1225,6 @@ function tick(t){
   draw(t);
 }
 layout();
-let fitted = stage.getBoundingClientRect();
-new ResizeObserver(() => {   // re-fit only for real size changes, not the mobile address bar sliding in and out
-  const r = stage.getBoundingClientRect();
-  if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
-  fitted = r; layout();
-}).observe(stage);
-requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
+onResize(stage, layout);
+startLoop(tick);
 })();

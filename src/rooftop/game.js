@@ -13,7 +13,7 @@ const APE = {   // 6 x 3 sprites
 const AW = 6, AH = 3;
 const PLAYER_RGB = [[1.5, 0.85, 0.4], [0.5, 1.0, 1.5]];
 const MOON = { calm: [" .---. ", "/ o o \\", "\\ \\_/ /", " '---' "], shock: [" .---. ", "/ O O \\", "\\  o  /", " '---' "] };
-const MW = 7, MH = 4, MOON_X = (GW - 7) >> 1, MOON_Y = 3;
+const MOON_X = (GW - 7) >> 1, MOON_Y = 3;
 const BUILDING_RGB = [[0.30, 0.34, 0.55], [0.55, 0.30, 0.30], [0.28, 0.46, 0.46]];
 const WINDOW_RGB = [1.6, 1.2, 0.55], FRUIT_RGB = [1.8, 1.6, 0.3], FLASH = [1.8, 0.9, 0.4], WHITE = [1.6, 1.6, 1.6], DIM = [0.4, 0.45, 0.6];
 const BRICK = { name: "brick", density: 1.2, e: 0.2, mu: 0.8, kd: 0.9, ks: 0.15, shine: 8 };
@@ -30,7 +30,7 @@ const D = defaultDisplay(); D.room = 0.25; D.glow = 0.25; D.lampRGB = [0.55, 0.6
 applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
 const world = new World(); world.openTop = true;   // high throws arc above the screen and come back down
 const moonLight = { x: 0, y: 0, z: 0, on: true };
-let screen = null, stars = [], mode = "cpu", state = "title", stateT = 0, t0 = 0;
+let screen = null, stars = [], mode = "cpu", state = "title", stateT = 0;
 let city = null, apes = [], turn = 0, score = [0, 0], wind = 0, fruit = null, trail = [], lastTrail = [[], []];
 let blasts = [], moonShock = 0, roundStarter = 0, msg = "", msgT = 0, cpu = null, plan = null;
 // Power comes from holding the throw button: the meter runs 0 -> 100 -> 0 while held, and letting go throws.
@@ -42,53 +42,22 @@ const isCpu = i => mode === "cpu" && i === 1;
 const name = i => isCpu(i) ? "COMPUTER" : "PLAYER " + (i + 1);
 const vmax = () => Math.sqrt(1.4 * world.w * world.g.y);   // full power at 45 degrees carries about 1.4 screens on flat ground
 
-/* ---------- sound: the shared effects from audio/ (SFX_DATA) ---------- */
-// Browsers only allow audio after a user gesture, so nothing is decoded until the first key or tap.
-const MUTE_KEY = "rooftopRumble.v1.muted";
+/* ---------- saved settings and sound (src/arcade.js) ---------- */
+const store = prefs("rooftopRumble.v1.", "Rooftop Rumble");
+// the effects shared with Base Commander (SFX_DATA, from audio/), at their own volumes here
 const VOL = { shoot: 0.45, bomb: 0.35, explode: 0.7, death: 1, hit: 0.5, level_start: 0.6, wave_clear: 0.8, game_over: 0.9 };
-let actx = null, sfxBus = null, buffers = {}, unlocked = false, muted = false, waiting = null;
-try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e){}
-function unlockAudio(){
-  if (unlocked) return;
-  unlocked = true;
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC){ console.warn("Rooftop Rumble: Web Audio not supported, playing silent"); return; }
-  actx = new AC(); sfxBus = actx.createGain(); sfxBus.gain.value = muted ? 0 : 0.9; sfxBus.connect(actx.destination);
-  for (const [k, v] of Object.entries(SFX_DATA)) actx.decodeAudioData(Uint8Array.from(atob(v), c => c.charCodeAt(0)).buffer,
-    b => { buffers[k] = b; if (k === waiting){ waiting = null; sfx(k); } }, e => console.warn("Rooftop Rumble: could not decode sound", k, e));
-}
-function sfx(name){
-  if (muted) return;
-  const b = buffers[name];
-  if (!b){ if (actx) waiting = name; return; }   // the first tap starts the game before decoding finishes: play it once ready
-  const src = actx.createBufferSource(), g = actx.createGain(); src.buffer = b; g.gain.value = VOL[name] ?? 0.6;
-  src.connect(g); g.connect(sfxBus); src.start();
-}
-function toggleMute(){
-  unlockAudio(); muted = !muted;
-  if (sfxBus) sfxBus.gain.setTargetAtTime(muted ? 0 : 0.9, actx.currentTime, 0.02);
-  try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e){ console.warn("Rooftop Rumble: could not save sound setting", e); }
-}
+const audio = createAudio({ label: "Rooftop Rumble", store, sounds: SFX_DATA, vol: VOL });
+const sfx = name => audio.play(name);
 
 function layout(){
-  const r = stage.getBoundingClientRect(); if (!r.width) return;
-  const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
-  for (let f = Math.max(5, Math.ceil(Math.min(r.width / GW / 0.5, r.height / GH / 1.15))); ; f--){
-    screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-    if ((screen.cols >= GW && screen.rows >= GH) || f <= 5) break;   // below 5px the text is unreadable: scale the canvas instead
-  }
+  const old = screen; screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old) return;
   const W = GW * screen.cw, H = GH * screen.ch;
-  screen.fit(W, H, dpr);
-  cv.style.width = W + "px"; cv.style.height = H + "px";
-  const k = Math.min(1, r.width / W, r.height / H);
-  cv.style.transform = "translate(-50%,-50%)" + (k < 1 ? " scale(" + k + ")" : "");
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   world.w = W; world.h = H; world.unit = screen.cw; world.drag = 2e-4 * (600 / H) ** 2;
   world.g = { x: wind * H * 0.012, y: H * 0.9 };
   if (world.terrain){ world.terrain.cw = screen.cw; world.terrain.ch = screen.ch; }
   moonLight.x = cx(MOON_X + 3); moonLight.y = cy(MOON_Y + 1); moonLight.z = screen.ch * 30;
-  if (old){ const kx = screen.cw / old.cw, ky = screen.ch / old.ch; for (const b of world.bodies){ b.x *= kx; b.y *= ky; b.r *= kx; if (b.box){ b.hw *= kx; b.hh *= kx; } }
-    for (const p of [...trail, ...lastTrail[0], ...lastTrail[1]]){ p.x *= kx; p.y *= ky; } }
+  rescaleBodies(world, old, screen);
+  if (old){ const kx = screen.cw / old.cw, ky = screen.ch / old.ch; for (const p of [...trail, ...lastTrail[0], ...lastTrail[1]]){ p.x *= kx; p.y *= ky; } }
   stars = Array.from({ length: 90 }, () => ({ x: 1 + Math.floor(Math.random() * (GW - 2)), y: 1 + Math.floor(Math.random() * 24), ph: Math.random() * 6.283 }));
 }
 
@@ -246,10 +215,7 @@ function update(dt){
 }
 
 /* ---------- drawing ---------- */
-function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
-function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
-const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
-function sprite(art, x, y, rgb, k, layer){ art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") put(x + dx, y + dy, rgb, k, layer, row.charCodeAt(dx)); }); }
+const { put, text, center, sprite } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
 function blastLight(gx, gy){   // warm light from recent blasts, falling off with distance
   let v = 0;
   for (const B of blasts){ const d = Math.hypot(cx(gx) - B.x, (cy(gy) - B.y) * 0.8) / (screen.ch * 12); if (d < 1) v += (B.t / 0.45) * (1 - d) * 1.4; }
@@ -283,7 +249,7 @@ function drawTitle(){
       for (const k of [0, 1]) put(x0 + li * 12 + dx * 2 + k, y0 + dy, wi ? PLAYER_RGB[1] : PLAYER_RGB[0], 1.3, 3, 35); }));
   });
   const blink = (performance.now() / 500 | 0) % 2;
-  if (touchMode){
+  if (pad.touch){
     center(27, "A  ONE PLAYER (VS COMPUTER)     B  TWO PLAYERS", blink ? WHITE : DIM);
     center(29, "D-PAD UP/DOWN ANGLE.  HOLD A OR B FOR POWER, LET GO TO THROW", DIM);
   } else {
@@ -326,23 +292,23 @@ function draw(t){
       put(x0 + 6 + k, 2, mark ? WHITE : PLAYER_RGB[turn], k < fill ? 1.2 : mark ? 0.9 : 0.25, 3, mark ? 124 : k < fill ? 35 : 46);
     }
     text(x0 + 7 + W, 2, String(Math.round(A.power)).padStart(3), PLAYER_RGB[turn]);
-    if (state === "aim" && charge === null && msgT <= 0) center(3, touchMode ? "HOLD A OR B FOR POWER, LET GO TO THROW" : "HOLD SPACE FOR POWER, LET GO TO THROW", DIM);
+    if (state === "aim" && charge === null && msgT <= 0) center(3, pad.touch ? "HOLD A OR B FOR POWER, LET GO TO THROW" : "HOLD SPACE FOR POWER, LET GO TO THROW", DIM);
   }
   const arrows = wind === 0 ? "CALM" : (wind < 0 ? "<".repeat(Math.min(5, Math.ceil(-wind / 2))) + " " + -wind : wind + " " + ">".repeat(Math.min(5, Math.ceil(wind / 2))));
   center(1, "WIND " + arrows, WHITE);
   if (state === "over"){
     const w = score[0] > score[1] ? 0 : 1;
     center(8, `  ${name(w)} WINS ${score[w]}-${score[1 - w]}  `, PLAYER_RGB[w]);
-    center(10, touchMode ? "  PRESS START FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
+    center(10, pad.touch ? "  PRESS START FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
   } else if (msgT > 0) center(8, "  " + msg + "  ", WHITE);
-  const hint = touchMode ? " SELECT MENU " : " ESC MENU ";
+  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
   text(GW - 1 - hint.length, GH - 1, hint, DIM);
   drawMenu();
   screen.render(ctx);
 }
 function drawMenu(){
   // the menu writes on its own layer, above the game's text, so nothing shows through its box
-  if (menu.open) menu.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: FRUIT_RGB, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "MODE APPLIES TO THE NEXT MATCH" });
+  if (menu.open) menu.draw(screen, { accent: FRUIT_RGB, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "MODE APPLIES TO THE NEXT MATCH" });
 }
 
 /* ---------- input ---------- */
@@ -362,24 +328,24 @@ function release(){   // Space, A, B up: throw with the power on the meter
 // The pause menu (src/menu.js) holds what the old button row did. Open it with Esc or P, SELECT, or a mouse click.
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
-  { label: "NEW MATCH", select: () => { menu.hide(); unlockAudio(); start(nextMode); } },
+  { label: "NEW MATCH", select: () => { menu.hide(); audio.unlock(); start(nextMode); } },
   { label: "MODE", value: () => nextMode === "cpu" ? "VS COMPUTER" : "TWO PLAYERS", change: () => { nextMode = nextMode === "cpu" ? "two" : "cpu"; } },
-  { label: "SOUND", value: () => muted ? "OFF" : "ON", change: () => toggleMute() },
-  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
+  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
-  onOpen: () => { charge = null; for (const k in keys) keys[k] = false; if (actx) actx.suspend(); },   // opening cancels a charge
-  onClose: () => { if (actx) actx.resume(); }
+  onOpen: () => { charge = null; for (const k in keys) keys[k] = false; audio.pause(); },   // opening cancels a charge
+  onClose: () => { audio.resume(); }
 });
 addEventListener("keydown", e => {
   if (menu.key(e)){ e.preventDefault(); return; }
   const k = KEYMAP[e.key]; if (k){ e.preventDefault(); keys[k] = true; }
   if (e.key === " ") e.preventDefault();
   if (e.repeat) return;
-  if (e.key === "Escape" || e.key === "p" || e.key === "P"){ unlockAudio(); return menu.show(); }
-  if (e.key === "m" || e.key === "M") return toggleMute();
-  unlockAudio();
+  if (e.key === "Escape" || e.key === "p" || e.key === "P"){ audio.unlock(); return menu.show(); }
+  if (e.key === "m" || e.key === "M") return audio.toggleMute();
+  audio.unlock();
   if (state === "title" && (e.key === "1" || e.key === "2")) return start(e.key === "1" ? "cpu" : "two");
   if (e.key === " " || e.key === "Enter") press();
   if (e.key === "r" || e.key === "R") start(nextMode);
@@ -387,58 +353,25 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; if (e.key === " " || e.key === "Enter") release(); });
 addEventListener("blur", () => { for (const k in keys) keys[k] = false; charge = null; });   // leaving the window cancels a charge
 
-const CTRL_KEY = "rooftopRumble.v1.controls";
-let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the Controls button overrides it
-try { const c = localStorage.getItem(CTRL_KEY); if (c) touchMode = c === "touch"; } catch (e){}
-function setControls(touch, save){
-  touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
-  if (save) try { localStorage.setItem(CTRL_KEY, touch ? "touch" : "keyboard"); } catch (e){ console.warn("Rooftop Rumble: could not save controls setting", e); }
-}
-setControls(touchMode, false);
-const buzz = () => navigator.vibrate && navigator.vibrate(8);
-// The D-pad is one surface; the thumb's offset from the centre picks the direction, so sliding switches it.
-const dpad = $("dpad");
-function dpadAt(e){
-  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  const dir = Math.hypot(dx, dy) < r.width * 0.1 ? "" : Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-  const changed = dir !== (dpad.dataset.dir || "");
-  if (changed){ dpad.dataset.dir = dir; if (dir) buzz(); }
-  if (menu.open){ if (changed && dir) dir === "up" ? menu.move(-1) : dir === "down" ? menu.move(1) : menu.change(dir === "left" ? -1 : 1); return; }   // in the menu: one step per push
-  for (const k in keys) keys[k] = k === dir;
-}
-dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); unlockAudio(); dpadAt(e); });
-dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadAt(e); });
-for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dpad.dataset.dir = ""; for (const k in keys) keys[k] = false; });
-document.querySelectorAll("[data-pad]").forEach(b => {
-  const id = b.dataset.pad;
-  b.addEventListener("pointerdown", e => {
-    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    unlockAudio();
-    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }   // in the menu: A chooses, any other button closes
+const pad = createPad({ store, menu: () => menu.open && menu, onAny: () => audio.unlock(),
+  onDir: d => { for (const k in keys) keys[k] = k === d; },
+  onPress: id => {
     if (id === "select") return menu.show();
     if (state === "title" && (id === "a" || id === "b")) return start(id === "a" ? "cpu" : "two");
     if (id === "start") return state === "title" || state === "over" ? action() : menu.show();
     press();
-  });
-  const up = () => { b.classList.remove("on"); if (id === "a" || id === "b") release(); };
-  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
-});
+  },
+  onRelease: id => { if (id === "a" || id === "b") release(); } });
 cv.addEventListener("pointerdown", e => {
-  unlockAudio();
+  audio.unlock();
   if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
   if (state === "title" || state === "over") action();
-  else if (!touchMode) menu.show();   // a mouse click during play opens the menu
+  else if (!pad.touch) menu.show();   // a mouse click during play opens the menu
 });
 
 /* ---------- loop ---------- */
 world.onSub = checkFruit;
-let last = performance.now(), nextFrame = 0;
-const FRAME_MS = 1000 / 60;
-function tick(t){
-  requestAnimationFrame(tick);
-  if (t < nextFrame - 1) return;   // run at most ~60 times a second, even on faster displays
-  nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
-  const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+function tick(dt, t){
   if (screen && !menu.open){   // the open menu pauses everything
     if (state !== "title" && state !== "over") update(dt);
     for (const B of blasts) B.t -= dt;
@@ -454,11 +387,6 @@ function tick(t){
 layout();
 city = makeCity();   // a skyline behind the title screen
 world.terrain = { cw: screen.cw, ch: screen.ch, cols: GW, rows: GH, solid: city.solid, mat: BRICK };
-let fitted = stage.getBoundingClientRect();
-new ResizeObserver(() => {   // re-fit only for real size changes, not the mobile address bar sliding in and out
-  const r = stage.getBoundingClientRect();
-  if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
-  fitted = r; if (screen) layout();
-}).observe(stage);
-requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
+onResize(stage, layout);
+startLoop(tick);
 })();

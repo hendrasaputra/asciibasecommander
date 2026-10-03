@@ -47,7 +47,6 @@ const DIFF = {   // shot: alien shots per alien per second on level 1; step: sec
 const DEBRIS = { name: "debris", density: 0.5, e: 0.5, mu: 0.5, kd: 0.9, ks: 0.6, shine: 24 };
 const CRATE = { name: "crate", density: 1.5, e: 0.3, mu: 0.8, kd: 0.9, ks: 0.3, shine: 10 };
 const SHOT_SPEED = 75, CANNON_SPEED = 33, PLANE_SPEED = 21;   // cells per second
-const STORE = "baseCommander.v1.scores";
 const FONT = {   // 7x7 block letters for the launch screen
   B: ["######.", "##...##", "##...##", "######.", "##...##", "##...##", "######."],
   A: [".#####.", "##...##", "##...##", "#######", "##...##", "##...##", "##...##"],
@@ -69,78 +68,27 @@ let screen = null, stars = [], diffKey = "normal", score = 0, lives = 3, level =
 let state = "title", titleT = 0, fwT = 0, landed = new Set(), paused = false, deadT = 0, msg = "", msgT = 0;
 let px = 0, fireT = 0, gun = 0, parts = 0, shots = [], bombs = [], aliens = [], shields = [], cannon = null, plane = null, dropT = 0;
 let fleet = { dir: 1, t: 0, every: 0.7 }, frame = 0, animT = 0, chewT = 0;
-let scores = loadScores(), recorded = false, rank = -1;
+let recorded = false, rank = -1;
 const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
 const partsCost = () => 3 + gun * 2;
 const cannonArt = () => [GUNS[gun].top, ...CANNON_BASE];
 
-/* ---------- sound ---------- */
-// Browsers only allow audio after a user gesture, so nothing is decoded until the first key or tap.
-const MUTE_KEY = "baseCommander.v1.muted";
+/* ---------- saved settings, sound and scores (src/arcade.js) ---------- */
+const store = prefs("baseCommander.v1.", "Base Commander");
 const VOL = { shoot: 0.35, laser: 0.3, bomb: 0.5, hit: 0.5, explode: 0.6, shield: 0.3, pickup: 0.8, upgrade: 0.9,
   life: 0.9, death: 1, plane: 0.5, level_start: 0.7, wave_clear: 0.8, game_over: 0.9 };
-let unlocked = false, actx = null, master = null, musicBus = null, sfxBus = null, buffers = {}, lastPlayed = {};
-let song = "title", songNode = null, muted = false;
-try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e){}
-function unlockAudio(){
-  if (unlocked) return;
-  unlocked = true;
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC){ console.warn("Base Commander: Web Audio not supported, playing silent"); return; }
-  actx = new AC();
-  master = actx.createGain(); master.gain.value = muted ? 0 : 1; master.connect(actx.destination);
-  musicBus = actx.createGain(); musicBus.gain.value = 0.5; musicBus.connect(master);
-  sfxBus = actx.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(master);
-  const decode = (key, b64) => actx.decodeAudioData(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer,
-    b => { buffers[key] = b; if (key === song) startSong(); },
-    e => console.warn("Base Commander: could not decode sound", key, e));
-  for (const [k, v] of Object.entries(SFX_DATA)) decode(k, v);
-  for (const [k, v] of Object.entries(MUSIC_DATA)) decode(k, v.data);
-}
-function sfx(name, pan){   // pan: sweep from -pan to +pan over the sound, for the plane flying across
-  const b = buffers[name]; if (!b || muted) return;
-  const now = actx.currentTime;
-  if (now - (lastPlayed[name] ?? -1) < 0.05) return;   // a volley from many enemies still makes one sound
-  lastPlayed[name] = now;
-  const src = actx.createBufferSource(), g = actx.createGain(); src.buffer = b; g.gain.value = VOL[name];
-  src.connect(g);
-  if (pan && actx.createStereoPanner){
-    const p = actx.createStereoPanner(); p.pan.setValueAtTime(-pan, now); p.pan.linearRampToValueAtTime(pan, now + b.duration);
-    g.connect(p); p.connect(sfxBus);
-  } else g.connect(sfxBus);
-  src.start();
-}
-function playSong(name){   // null stops the music
-  if (song === name) return;
-  song = name;
-  if (songNode){ songNode.g.gain.setTargetAtTime(0, actx.currentTime, 0.3); songNode.stop(actx.currentTime + 1.5); songNode = null; }
-  startSong();
-}
-function startSong(){
-  if (!actx || !song || songNode || !buffers[song]) return;
-  const M = MUSIC_DATA[song], src = actx.createBufferSource(), g = actx.createGain();
-  // loop points sit inside margins cut from the recording, so MP3 padding never lands in the loop
-  src.buffer = buffers[song]; src.loop = true; src.loopStart = M.loopStart; src.loopEnd = M.loopEnd;
-  src.connect(g); g.connect(musicBus); src.start(0, M.loopStart); src.g = g; songNode = src;
-}
-function toggleMute(){
-  unlockAudio(); muted = !muted;
-  if (master) master.gain.setTargetAtTime(muted ? 0 : 1, actx.currentTime, 0.02);
-  try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e){ console.warn("Base Commander: could not save sound setting", e); }
-}
-
-/* ---------- saved scores ---------- */
-function loadScores(){
-  try { return JSON.parse(localStorage.getItem(STORE) || "[]"); }
-  catch (e){ console.warn("Base Commander: saved scores unreadable, starting fresh", e); return []; }
-}
+// the Sonic Pi effects and music (audio/base-commander.rb, processed by audio/process.py); a volley from many
+// enemies at once still makes one sound
+const audio = createAudio({ label: "Base Commander", store, sounds: SFX_DATA, music: MUSIC_DATA, vol: VOL, minGap: 0.05 });
+const sfx = (name, pan) => audio.play(name, pan), playSong = name => audio.music(name);
+playSong("title");   // starts once the first key or tap turns the sound on
+const scores = scoreTable(store, 5, "scores", (a, b) => b.s - a.s);
 function recordScore(){
   if (recorded || !score) return;
   recorded = true;
-  const entry = { s: score, l: level, d: diffKey, t: Date.now() };
-  scores = [...scores, entry].sort((a, b) => b.s - a.s).slice(0, 5); rank = scores.indexOf(entry);
-  try { localStorage.setItem(STORE, JSON.stringify(scores)); }
-  catch (e){ console.warn("Base Commander: could not save score", e); flash("SCORE NOT SAVED (STORAGE BLOCKED)", 3); }
+  const r = scores.add({ s: score, l: level, d: diffKey, t: Date.now() });
+  rank = r.rank;
+  if (!r.saved) flash("SCORE NOT SAVED (STORAGE BLOCKED)", 3);
 }
 
 /* ---------- levels ---------- */
@@ -169,22 +117,11 @@ for (const T of TYPES) for (const f of T.art) console.assert(f.length === AH && 
 for (const G of GUNS) console.assert(G.top.length === CW, "Base Commander: bad cannon top", G.name);
 
 function layout(){
-  const r = stage.getBoundingClientRect(); if (!r.width) return;
-  const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
-  // largest font whose grid still fits the stage
-  for (let f = Math.max(5, Math.ceil(Math.min(r.width / GW / 0.5, r.height / GH / 1.15))); ; f--){
-    screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-    if ((screen.cols >= GW && screen.rows >= GH) || f <= 5) break;   // below 5px the text is unreadable: scale the canvas instead
-  }
-  const W = GW * screen.cw, H = GH * screen.ch;
-  screen.fit(W, H, dpr);
-  cv.style.width = W + "px"; cv.style.height = H + "px";
-  const k = Math.min(1, r.width / W, r.height / H);   // e.g. a phone on its side: shrink to fit rather than clip
-  cv.style.transform = "translate(-50%,-50%)" + (k < 1 ? " scale(" + k + ")" : "");
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const old = screen; screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old) return;
+  const W = GW * screen.cw;
   world.w = W; world.h = (GH - 1) * screen.ch; world.unit = screen.cw;
   world.g = { x: 0, y: world.h * 1.6 }; world.drag = 2e-4 * (600 / world.h) ** 2;
-    if (old){ const kx = screen.cw / old.cw, ky = screen.ch / old.ch; for (const b of world.bodies){ b.x *= kx; b.y *= ky; b.r *= kx; } }
+  rescaleBodies(world, old, screen);
   stars = Array.from({ length: 140 }, () => ({ i: (1 + Math.floor(Math.random() * (GH - 2))) * GW + 1 + Math.floor(Math.random() * (GW - 2)), ph: Math.random() * 6.283 }));
 }
 
@@ -364,9 +301,7 @@ function update(dt){
 }
 
 /* ---------- drawing ---------- */
-function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
-function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
-const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
+const { put, text, center } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
 const SHOT_RGB = [0.5, 1.1, 1.6], LANCE_RGB = [1.6, 0.6, 1.4], WHITE = [1.6, 1.6, 1.6], DIM = [0.35, 0.4, 0.55], BORDER_RGB = [0.12, 0.16, 0.28];
 function bounce(p){   // ease-out bounce: a letter dropping onto the floor
   const n = 7.5625, d = 2.75;
@@ -395,13 +330,13 @@ function drawTitle(t){
   for (let i = 0; i < 7; i++) eachCell(TYPES[i].art[frame], 6 + fleetX + i * 13, 28, (gx, gy, code) => put(gx, gy, TYPES[i].rgb, 0.9, 2, code));
   if (titleT > 3){
     center(25, "~ DEFEND THE BASE ~", CANNON_RGB);
-    if ((t / 500 | 0) % 2) center(46, unlocked || muted ? (touchMode ? "PRESS START OR A TO BEGIN" : "PRESS SPACE TO START")
-      : (touchMode ? "TAP ANY BUTTON FOR SOUND" : "PRESS ANY KEY FOR SOUND"), WHITE);
+    if ((t / 500 | 0) % 2) center(46, audio.unlocked || audio.muted ? (pad.touch ? "PRESS START OR A TO BEGIN" : "PRESS SPACE TO START")
+      : (pad.touch ? "TAP ANY BUTTON FOR SOUND" : "PRESS ANY KEY FOR SOUND"), WHITE);
   }
   center(36, "HIGH SCORES", CANNON_RGB);
-  if (!scores.length) center(38, "NO SCORES YET", DIM);
-  scores.forEach((e, i) => center(38 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
-  center(52, touchMode ? "D-PAD MOVE  A/B FIRE  SELECT MENU" : "ARROWS/A D MOVE  SPACE FIRE  ESC MENU  R RESTART  M SOUND", DIM);
+  if (!scores.list.length) center(38, "NO SCORES YET", DIM);
+  scores.list.forEach((e, i) => center(38 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
+  center(52, pad.touch ? "D-PAD MOVE  A/B FIRE  SELECT MENU" : "ARROWS/A D MOVE  SPACE FIRE  ESC MENU  R RESTART  M SOUND", DIM);
   center(54, "CATCH AIRDROPS: [P] PARTS  [S] SHIELDS  [L] LIFE", DIM);
   center(56, "DIFFICULTY: " + diffKey.toUpperCase(), DIM);
 }
@@ -430,21 +365,21 @@ function draw(t){
   }
   if (state === "play" || state === "clear") eachCell(cannonArt(), Math.round(px), PY, (gx, gy, code) => put(gx, gy, CANNON_RGB, 1, 3, code));
   drawBorder();
-  text(2, 0, " SCORE " + String(score).padStart(6, "0") + "  HI " + String(Math.max(score, scores[0]?.s || 0)).padStart(6, "0") + " ", WHITE);
+  text(2, 0, " SCORE " + String(score).padStart(6, "0") + "  HI " + String(Math.max(score, scores.list[0]?.s || 0)).padStart(6, "0") + " ", WHITE);
   const right = " LV " + level + "  LIVES " + Math.max(0, lives) + "  " + diffKey.toUpperCase() + " ";
   text(GW - 2 - right.length, 0, right, WHITE);
   text(2, GH - 1, " GUN " + GUNS[gun].name + "  PARTS " + (gun < GUNS.length - 1 ? parts + "/" + partsCost() : "MAX") + " ", CANNON_RGB);
   const left = " ENEMIES " + aliens.filter(a => a.alive).length + " ";
   text(GW - 2 - left.length, GH - 1, left, WHITE);
-  const hint = touchMode ? " SELECT MENU " : " ESC MENU ";
+  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
   text(Math.floor((GW - hint.length) / 2), GH - 1, hint, DIM);
   const mid = GH >> 1;
   if (state === "over"){
-    center(mid, "  GAME OVER - press " + (touchMode ? "START" : "R") + "  ", WHITE);
+    center(mid, "  GAME OVER - press " + (pad.touch ? "START" : "R") + "  ", WHITE);
     if (rank >= 0) center(mid + 2, "  NEW HIGH SCORE - RANK " + (rank + 1) + "  ", CANNON_RGB);
   } else if (state === "clear"){
     const n = makeLevel(level);
-    center(mid, "  WAVE " + (level - 1) + " CLEARED - press " + (touchMode ? "START" : "R") + "  ", WHITE);
+    center(mid, "  WAVE " + (level - 1) + " CLEARED - press " + (pad.touch ? "START" : "R") + "  ", WHITE);
     center(mid + 2, "  NEXT: " + n.rows * n.cols + " ENEMIES" + (n.fresh !== undefined ? "  NEW: " + TYPES[n.fresh].name : "") + "  ", CANNON_RGB);
   }
   if (msgT > 0) center(4, " " + msg + " ", [1.6, 0.5, 0.35]);
@@ -453,7 +388,7 @@ function draw(t){
 }
 function drawMenu(){
   // the menu writes on its own layer, above the game's text, so nothing shows through its box
-  if (menu.open) menu.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: CANNON_RGB, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "DIFFICULTY APPLIES ON RESTART" });
+  if (menu.open) menu.draw(screen, { accent: CANNON_RGB, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "DIFFICULTY APPLIES ON RESTART" });
 }
 
 function drawBorder(){
@@ -468,92 +403,57 @@ const KEYMAP = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d
 // The pause menu (src/menu.js) holds what the old button row did. Open it with Esc or P, SELECT, or a mouse click.
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
-  { label: state === "title" ? "START GAME" : state === "clear" ? "NEXT WAVE" : "RESTART", select: () => { menu.hide(); unlockAudio(); restart(); } },
+  { label: state === "title" ? "START GAME" : state === "clear" ? "NEXT WAVE" : "RESTART", select: () => { menu.hide(); audio.unlock(); restart(); } },
   { label: "DIFFICULTY", value: () => diffKey.toUpperCase(), change: d => { const ks = Object.keys(DIFF); diffKey = ks[(ks.indexOf(diffKey) + d + ks.length) % ks.length]; } },
-  { label: "SOUND", value: () => muted ? "OFF" : "ON", change: () => toggleMute() },
-  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
+  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
-  onOpen: () => { paused = true; keys.left = keys.right = keys.fire = false; if (actx) actx.suspend(); },
-  onClose: () => { paused = false; if (actx) actx.resume(); },
+  onOpen: () => { paused = true; keys.left = keys.right = keys.fire = false; audio.pause(); },
+  onClose: () => { paused = false; audio.resume(); },
   onChange: () => { pausedDrawn = false; }   // the paused screen is only redrawn when something changes
 });
 // On the title, the first key or tap only turns the sound on (and starts the title music).
-function titlePress(){ if (!unlocked && !muted){ unlockAudio(); return; } unlockAudio(); restart(); }
+function titlePress(){ if (!audio.unlocked && !audio.muted){ audio.unlock(); return; } audio.unlock(); restart(); }
 addEventListener("keydown", e => {
   if (menu.key(e)){ e.preventDefault(); return; }
   const k = KEYMAP[e.key]; if (k){ e.preventDefault(); keys[k] = true; }
   if (e.repeat) return;
-  if (e.key === "Escape" || e.key === "p" || e.key === "P"){ unlockAudio(); return menu.show(); }
-  if (e.key === "m" || e.key === "M"){ toggleMute(); return; }
-  if (state === "title"){ if (!unlocked && !muted) unlockAudio(); else if (e.key === " " || e.key === "Enter") titlePress(); return; }
-  unlockAudio();
+  if (e.key === "Escape" || e.key === "p" || e.key === "P"){ audio.unlock(); return menu.show(); }
+  if (e.key === "m" || e.key === "M"){ audio.toggleMute(); return; }
+  if (state === "title"){ if (!audio.unlocked && !audio.muted) audio.unlock(); else if (e.key === " " || e.key === "Enter") titlePress(); return; }
+  audio.unlock();
   if (e.key === "r" || e.key === "R" || (e.key === "Enter" && (state === "over" || state === "clear"))) restart();
 });
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; });
 addEventListener("blur", () => { keys.left = keys.right = keys.fire = false; });
 
-/* ---------- controls: keyboard or touch gamepad ---------- */
-const CTRL_KEY = "baseCommander.v1.controls";
-let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the Controls button overrides it
-try { const c = localStorage.getItem(CTRL_KEY); if (c) touchMode = c === "touch"; } catch (e){}
-function setControls(touch, save){
-  touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
-  if (save) try { localStorage.setItem(CTRL_KEY, touch ? "touch" : "keyboard"); } catch (e){ console.warn("Base Commander: could not save controls setting", e); }
-}
-setControls(touchMode, false);
-const buzz = () => navigator.vibrate && navigator.vibrate(8);   // a tick of feedback on phones that support it
-// The D-pad is one surface: the thumb's position picks the direction, so sliding across switches like a real pad.
-const dpad = $("dpad");
-function dpadAt(e){
-  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  if (menu.open){   // in the menu all four directions count: up/down move, left/right change a value
-    const d = Math.hypot(dx, dy) < r.width * 0.1 ? "" : Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-    if (d !== (dpad.dataset.dir || "")){ dpad.dataset.dir = d; if (d){ buzz(); d === "up" ? menu.move(-1) : d === "down" ? menu.move(1) : menu.change(d === "left" ? -1 : 1); } }
-    return;
-  }
-  const dir = Math.abs(dx) < r.width * 0.1 ? "" : dx < 0 ? "left" : "right";
-  if (dir !== (dpad.dataset.dir || "")){ dpad.dataset.dir = dir; if (dir) buzz(); }
-  keys.left = dir === "left"; keys.right = dir === "right";
-}
-dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); unlockAudio(); dpadAt(e); });
-dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadAt(e); });
-for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dpad.dataset.dir = ""; keys.left = keys.right = false; });
+/* ---------- controls: keyboard or the touch gamepad (src/arcade.js) ---------- */
 function padStart(){   // START: begin, continue after a wave or game over, otherwise open the menu
   if (state === "title") titlePress();
   else if (state === "over" || state === "clear") restart();
-  else { unlockAudio(); menu.show(); }
+  else { audio.unlock(); menu.show(); }
 }
 const firing = new Set();   // A and B both fire; firing stops once neither is held
-document.querySelectorAll("[data-pad]").forEach(b => {
-  const id = b.dataset.pad;
-  b.addEventListener("pointerdown", e => {
-    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }   // in the menu: A chooses, any other button closes
-    if (id === "select"){ unlockAudio(); return menu.show(); }
+const pad = createPad({ store, axis: "x", menu: () => menu.open && menu,
+  onDir: d => { keys.left = d === "left"; keys.right = d === "right"; if (d) audio.unlock(); },
+  onPress: id => {
+    if (id === "select"){ audio.unlock(); return menu.show(); }
     if (id === "start") return padStart();
     if (state === "title") return titlePress();
-    unlockAudio(); firing.add(id); keys.fire = true;
-  });
-  const up = () => { b.classList.remove("on"); if (firing.delete(id)) keys.fire = firing.size > 0; };
-  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
-});
+    audio.unlock(); firing.add(id); keys.fire = true;
+  },
+  onRelease: id => { if (firing.delete(id)) keys.fire = firing.size > 0; } });
 cv.addEventListener("pointerdown", e => {
   if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
   if (state === "title") titlePress();
-  else { unlockAudio(); if (!touchMode && state !== "over" && state !== "clear") menu.show(); }   // a mouse click opens the menu
+  else { audio.unlock(); if (!pad.touch && state !== "over" && state !== "clear") menu.show(); }   // a mouse click opens the menu
 });
 
 /* ---------- loop ---------- */
-let last = performance.now(), nextFrame = 0, pausedDrawn = false;
-const FRAME_MS = 1000 / 60;
-function tick(t){
-  requestAnimationFrame(tick);
-  // 120 Hz and faster displays call this more often than the game needs: run at most ~60 times a second
-  if (t < nextFrame - 1) return;
-  nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
-  const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+let pausedDrawn = false;
+function tick(dt, t){
   if (screen && !paused){
     if (state === "play") update(dt);
     else if (state === "dead" && (deadT -= dt) <= 0) state = "play";
@@ -581,14 +481,6 @@ function tick(t){
   if (screen && !(paused && pausedDrawn)){ draw(t); pausedDrawn = paused; }   // a paused screen is drawn once
 }
 layout();
-// Re-fit only for real size changes (rotation, window resize). Mobile browsers also nudge the page height
-// as the address bar slides in and out; re-fitting then would make the game jump while you play.
-let fitted = stage.getBoundingClientRect();
-new ResizeObserver(() => {
-  const r = stage.getBoundingClientRect();
-  if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
-  fitted = r;
-  if (screen){ layout(); pausedDrawn = false; for (const s of shields){ s.body.x = cx(s.x); s.body.y = cy(s.y); } }
-}).observe(stage);
-requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
+onResize(stage, () => { layout(); pausedDrawn = false; for (const s of shields){ s.body.x = cx(s.x); s.body.y = cy(s.y); } });
+startLoop(tick);
 })();

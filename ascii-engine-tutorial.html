@@ -961,6 +961,13 @@ class Screen {
     const k = 3 * i; this.rad[k] = r; this.rad[k + 1] = g; this.rad[k + 2] = b;
     this.lum[i] = L; lay[i] = layer; this.over[i] = glyph || 0;
   }
+  // Game-side drawing on the character grid: one cell (colour rgb times k), a line of text, a sprite (an array of
+  // strings; spaces are see-through). Cells off the grid are skipped. Text sits on TEXT_LAYER, so it stays letters
+  // in pixel mode.
+  cell(gx, gy, rgb, k, layer, glyph){ if (gx >= 0 && gy >= 0 && gx < this.cols && gy < this.rows) this.put(gy * this.cols + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, glyph); }
+  text(gx, gy, s, rgb, layer = TEXT_LAYER){ for (let i = 0; i < s.length; i++) this.cell(gx + i, gy, rgb, 1, layer, s.charCodeAt(i)); }
+  center(gy, s, rgb){ this.text(Math.floor((this.cols - s.length) / 2), gy, s, rgb); }
+  sprite(art, x, y, rgb, k, layer){ art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") this.cell(x + dx, y + dy, rgb, k, layer, row.charCodeAt(dx)); }); }
   add(i, r, g, b){   // light adds up: used for floor light, glows and halos
     if (this.lay[i] > 0) return;
     const k = 3 * i; this.rad[k] += r; this.rad[k + 1] += g; this.rad[k + 2] += b;

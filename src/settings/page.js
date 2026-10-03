@@ -61,9 +61,8 @@ function drop(){   // keep a few lit balls and boxes tumbling in from the top
   const b = n % 3 ? spawn(world, x, screen.ch * 2, mat, 0.9) : spawnBox(world, x, screen.ch * 2, mat);
   b.vx = (Math.random() - 0.5) * 300; b.life = 9;
 }
-function put(gx, gy, rgb, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0], rgb[1], rgb[2], layer, code); }
-function sprite(art, x, y, rgb){ art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") put(x + dx, y + dy, rgb, 2, row.charCodeAt(dx)); }); }
-function text(x, y, str, rgb){ for (let i = 0; i < str.length; i++) put(x + i, y, rgb, TEXT_LAYER, str.charCodeAt(i)); }
+const put = (gx, gy, rgb, layer, code) => screen.cell(gx, gy, rgb, 1, layer, code);
+const sprite = (art, x, y, rgb) => screen.sprite(art, x, y, rgb, 1, 2), text = (x, y, str, rgb) => screen.text(x, y, str, rgb);
 let last = performance.now();
 function tick(t){
   requestAnimationFrame(tick);

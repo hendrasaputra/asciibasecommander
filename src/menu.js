@@ -1,6 +1,6 @@
 /* ---------- in-game pause menu, shared by the games ---------- */
-// Drawn into the game's own screen through a text() writer the game passes in (on MENU_LAYER, above game text),
-// so it matches ASCII or pixel mode and stays readable.
+// Drawn into the game's own screen on MENU_LAYER, above the game's text, so it matches ASCII or pixel mode and
+// stays readable.
 // The game supplies the rows as a function (labels and values can change): each row is
 // { label, value?: () => string, change?: dir => void, select?: () => void }.
 // Keys while open: up/down move, left/right change a value, Enter/Space choose, Esc/P close.
@@ -33,7 +33,8 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     if (i >= 0 && i < b.n){ m.at = b.first + i; m.choose(); }
     return true;
   };
-  m.draw = ({ text, GW, GH, accent, normal, dim, title = "PAUSED", note = "" }) => {
+  m.draw = (screen, { accent, normal, dim, title = "PAUSED", note = "" }) => {
+    const GW = screen.cols, GH = screen.rows, text = (x, y, s, rgb) => screen.text(x, y, s, rgb, MENU_LAYER);
     const R = rows(); m.at = Math.min(m.at, R.length - 1);
     // a list longer than the screen shows a window around the chosen row, with ^ and v marks
     const n = Math.min(R.length, Math.max(3, GH - 8 - (note ? 1 : 0))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));

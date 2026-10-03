@@ -24,32 +24,10 @@ const FONT = {   // 5x5 block letters for the title, drawn two cells wide per do
   U: ["#...#", "#...#", "#...#", "#...#", ".###."], L: ["#....", "#....", "#....", "#....", "#####"]
 };
 
-/* ---------- sound: Crater Duel's own effects (CRATER_SFX, made by audio/crater-sfx.py) ---------- */
-// Browsers only allow audio after a user gesture, so nothing is decoded until the first key or tap.
-const MUTE_KEY = "craterDuel.v1.muted";
-let actx = null, sfxBus = null, buffers = {}, unlocked = false, muted = false, waiting = null;
-try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e){}
-function unlockAudio(){
-  if (unlocked) return;
-  unlocked = true;
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC){ console.warn("Crater Duel: Web Audio not supported, playing silent"); return; }
-  actx = new AC(); sfxBus = actx.createGain(); sfxBus.gain.value = muted ? 0 : 0.9; sfxBus.connect(actx.destination);
-  for (const [k, v] of Object.entries(CRATER_SFX)) actx.decodeAudioData(Uint8Array.from(atob(v), c => c.charCodeAt(0)).buffer,
-    b => { buffers[k] = b; if (k === waiting){ waiting = null; sfx(k); } }, e => console.warn("Crater Duel: could not decode sound", k, e));
-}
-function sfx(name, vol = 1){
-  if (muted) return;
-  const b = buffers[name];
-  if (!b){ if (actx) waiting = name; return; }   // the first tap starts the game before decoding finishes: play it once ready
-  const src = actx.createBufferSource(), g = actx.createGain(); src.buffer = b; g.gain.value = vol;
-  src.connect(g); g.connect(sfxBus); src.start();
-}
-function toggleMute(){
-  unlockAudio(); muted = !muted;
-  if (sfxBus) sfxBus.gain.setTargetAtTime(muted ? 0 : 0.9, actx.currentTime, 0.02);
-  try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e){ console.warn("Crater Duel: could not save sound setting", e); }
-}
+/* ---------- saved settings and sound (src/arcade.js) ---------- */
+const store = prefs("craterDuel.v1.", "Crater Duel");
+const audio = createAudio({ label: "Crater Duel", store, sounds: CRATER_SFX, volume: 1 });
+const sfx = name => audio.play(name);
 
 const D = defaultDisplay(); D.room = 0.28; D.glow = 0.25; D.lampRGB = [1.0, 0.72, 0.45];   // the low sun is the lamp: warm light
 applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
@@ -68,24 +46,14 @@ const name = i => isCpu(i) ? "COMPUTER" : "PLAYER " + (i + 1);
 const vmax = () => Math.sqrt(1.3 * world.w * world.g.y);   // full power at 45 degrees carries about 1.3 screens on flat ground
 
 function layout(){
-  const r = stage.getBoundingClientRect(); if (!r.width) return;
-  const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
-  for (let f = Math.max(5, Math.ceil(Math.min(r.width / GW / 0.5, r.height / GH / 1.15))); ; f--){
-    screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-    if ((screen.cols >= GW && screen.rows >= GH) || f <= 5) break;   // below 5px the text is unreadable: scale the canvas instead
-  }
+  const old = screen; screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old) return;
   const W = GW * screen.cw, H = GH * screen.ch;
-  screen.fit(W, H, dpr);
-  cv.style.width = W + "px"; cv.style.height = H + "px";
-  const k = Math.min(1, r.width / W, r.height / H);
-  cv.style.transform = "translate(-50%,-50%)" + (k < 1 ? " scale(" + k + ")" : "");
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   world.w = W; world.h = H; world.unit = screen.cw; world.drag = 2e-4 * (600 / H) ** 2;
   world.g = { x: wind * H * 0.012, y: H * 0.9 };
   if (world.terrain){ world.terrain.cw = screen.cw; world.terrain.ch = screen.ch; }
   sunLight.x = cx(SUN_X + 3); sunLight.y = cy(SUN_Y + 2); sunLight.z = screen.ch * 14;
-  if (old){ const kx = screen.cw / old.cw, ky = screen.ch / old.ch; for (const b of world.bodies){ b.x *= kx; b.y *= ky; b.r *= kx; if (b.box){ b.hw *= kx; b.hh *= kx; } }
-    for (const p of [...trail, ...lastTrail[0], ...lastTrail[1]]){ p.x *= kx; p.y *= ky; } }
+  rescaleBodies(world, old, screen);
+  if (old){ const kx = screen.cw / old.cw, ky = screen.ch / old.ch; for (const p of [...trail, ...lastTrail[0], ...lastTrail[1]]){ p.x *= kx; p.y *= ky; } }
   stars = Array.from({ length: 80 }, () => ({ x: 1 + Math.floor(Math.random() * (GW - 2)), y: 2 + Math.floor(Math.random() * 20), ph: Math.random() * 6.283 }));
 }
 
@@ -292,10 +260,7 @@ function update(dt){
 }
 
 /* ---------- drawing ---------- */
-function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
-function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
-const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
-function sprite(art, x, y, rgb, k, layer){ art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") put(x + dx, y + dy, rgb, k, layer, row.charCodeAt(dx)); }); }
+const { put, text, center, sprite } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
 function blastLight(gx, gy){   // warm light from recent blasts, falling off with distance
   let v = 0;
   for (const B of blasts){ const d = Math.hypot(cx(gx) - B.x, (cy(gy) - B.y) * 0.8) / (screen.ch * (B.big ? 16 : 11)); if (d < 1) v += (B.t / 0.45) * (1 - d) * 1.4; }
@@ -332,8 +297,8 @@ function drawTitle(){
       for (const k of [0, 1]) put(x0 + li * 12 + dx * 2 + k, y0 + dy, TANK_RGB[wi], 1.3, 3, 35); }));
   });
   const blink = (performance.now() / 500 | 0) % 2;
-  center(27, (touchMode ? "A" : "1") + "  ONE PLAYER (VS COMPUTER)     " + (touchMode ? "B" : "2") + "  TWO PLAYERS", blink ? WHITE : DIM);
-  center(29, touchMode ? "D-PAD LEFT/RIGHT AIM.  HOLD A FOR POWER, LET GO TO FIRE.  B WEAPON" : "LEFT/RIGHT AIM  HOLD SPACE FOR POWER, LET GO TO FIRE  TAB WEAPON  ESC MENU", DIM);
+  center(27, (pad.touch ? "A" : "1") + "  ONE PLAYER (VS COMPUTER)     " + (pad.touch ? "B" : "2") + "  TWO PLAYERS", blink ? WHITE : DIM);
+  center(29, pad.touch ? "D-PAD LEFT/RIGHT AIM.  HOLD A FOR POWER, LET GO TO FIRE.  B WEAPON" : "LEFT/RIGHT AIM  HOLD SPACE FOR POWER, LET GO TO FIRE  TAB WEAPON  ESC MENU", DIM);
   center(31, "LAST TANK STANDING WINS THE ROUND. FIRST TO " + WIN_ROUNDS + " ROUNDS.", DIM);
 }
 function draw(t){
@@ -371,21 +336,21 @@ function draw(t){
       const mark = lp !== null && k === Math.min(M - 1, Math.round(lp / 100 * M));
       put(x0 + k, 3, mark ? WHITE : TANK_RGB[turn], k < fill ? 1.2 : mark ? 0.9 : 0.25, 3, mark ? 124 : k < fill ? 35 : 46);
     }
-    if (state === "aim" && charge === null && msgT <= 0) center(4, touchMode ? "HOLD A FOR POWER, LET GO TO FIRE" : "HOLD SPACE FOR POWER, LET GO TO FIRE", DIM);
+    if (state === "aim" && charge === null && msgT <= 0) center(4, pad.touch ? "HOLD A FOR POWER, LET GO TO FIRE" : "HOLD SPACE FOR POWER, LET GO TO FIRE", DIM);
   }
   if (state === "over"){
     const w = wins[0] > wins[1] ? 0 : 1;
     center(9, `  ${name(w)} WINS ${wins[w]}-${wins[1 - w]}  `, TANK_RGB[w]);
-    center(11, touchMode ? "  PRESS START FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
+    center(11, pad.touch ? "  PRESS START FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
   } else if (msgT > 0) center(9, "  " + msg + "  ", WHITE);
-  const hint = touchMode ? " SELECT MENU " : " ESC MENU ";
+  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
   text(GW - 1 - hint.length, GH - 1, hint, DIM);
   drawMenu();
   screen.render(ctx);
 }
 function drawMenu(){
   // the menu writes on its own layer, above the game's text, so nothing shows through its box
-  if (menu.open) menu.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: TANK_RGB[0], normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "MODE APPLIES TO THE NEXT MATCH" });
+  if (menu.open) menu.draw(screen, { accent: TANK_RGB[0], normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "MODE APPLIES TO THE NEXT MATCH" });
 }
 
 /* ---------- input ---------- */
@@ -405,15 +370,15 @@ function release(){   // Space, A up: fire with the power on the meter
 // The pause menu (src/menu.js) holds what the old button row did. Open it with Esc or P, SELECT, or a mouse click.
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
-  { label: "NEW MATCH", select: () => { menu.hide(); unlockAudio(); start(nextMode); } },
+  { label: "NEW MATCH", select: () => { menu.hide(); audio.unlock(); start(nextMode); } },
   { label: "MODE", value: () => nextMode === "cpu" ? "VS COMPUTER" : "TWO PLAYERS", change: () => { nextMode = nextMode === "cpu" ? "two" : "cpu"; } },
-  { label: "SOUND", value: () => muted ? "OFF" : "ON", change: () => toggleMute() },
-  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
+  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
-  onOpen: () => { charge = null; for (const k in keys) keys[k] = false; if (actx) actx.suspend(); },   // opening cancels a charge
-  onClose: () => { if (actx) actx.resume(); }
+  onOpen: () => { charge = null; for (const k in keys) keys[k] = false; audio.pause(); },   // opening cancels a charge
+  onClose: () => { audio.resume(); }
 });
 function nextWeapon(){   // cycle to the next weapon that still has ammo
   if (state !== "aim") return;
@@ -426,9 +391,9 @@ addEventListener("keydown", e => {
   const k = KEYMAP[e.key]; if (k){ e.preventDefault(); keys[k] = true; }
   if (e.key === " " || e.key === "Tab") e.preventDefault();
   if (e.repeat) return;
-  if (e.key === "Escape" || e.key === "p" || e.key === "P"){ unlockAudio(); return menu.show(); }
-  if (e.key === "m" || e.key === "M") return toggleMute();
-  unlockAudio();
+  if (e.key === "Escape" || e.key === "p" || e.key === "P"){ audio.unlock(); return menu.show(); }
+  if (e.key === "m" || e.key === "M") return audio.toggleMute();
+  audio.unlock();
   if (state === "title" && (e.key === "1" || e.key === "2")) return start(e.key === "1" ? "cpu" : "two");
   if (e.key === " " || e.key === "Enter") press();
   if (e.key === "Tab" || e.key === "q" || e.key === "Q" || e.key === "e" || e.key === "E") nextWeapon();
@@ -437,59 +402,26 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; if (e.key === " " || e.key === "Enter") release(); });
 addEventListener("blur", () => { for (const k in keys) keys[k] = false; charge = null; });   // leaving the window cancels a charge
 
-const CTRL_KEY = "craterDuel.v1.controls";
-let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the Controls button overrides it
-try { const c = localStorage.getItem(CTRL_KEY); if (c) touchMode = c === "touch"; } catch (e){}
-function setControls(touch, save){
-  touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
-  if (save) try { localStorage.setItem(CTRL_KEY, touch ? "touch" : "keyboard"); } catch (e){ console.warn("Crater Duel: could not save controls setting", e); }
-}
-setControls(touchMode, false);
-const buzz = () => navigator.vibrate && navigator.vibrate(8);
-// The D-pad is one surface; the thumb's offset from the centre picks the direction, so sliding switches it.
-const dpad = $("dpad");
-function dpadAt(e){
-  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  const dir = Math.hypot(dx, dy) < r.width * 0.1 ? "" : Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-  const changed = dir !== (dpad.dataset.dir || "");
-  if (changed){ dpad.dataset.dir = dir; if (dir) buzz(); }
-  if (menu.open){ if (changed && dir) dir === "up" ? menu.move(-1) : dir === "down" ? menu.move(1) : menu.change(dir === "left" ? -1 : 1); return; }   // in the menu: one step per push
-  for (const k in keys) keys[k] = k === dir;
-}
-dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); unlockAudio(); dpadAt(e); });
-dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadAt(e); });
-for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dpad.dataset.dir = ""; for (const k in keys) keys[k] = false; });
-document.querySelectorAll("[data-pad]").forEach(b => {
-  const id = b.dataset.pad;
-  b.addEventListener("pointerdown", e => {
-    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    unlockAudio();
-    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }   // in the menu: A chooses, any other button closes
+const pad = createPad({ store, menu: () => menu.open && menu, onAny: () => audio.unlock(),
+  onDir: d => { for (const k in keys) keys[k] = k === d; },
+  onPress: id => {
     if (id === "select") return menu.show();
     if (state === "title" && (id === "a" || id === "b")) return start(id === "a" ? "cpu" : "two");
     if (id === "b") return nextWeapon();
     if (id === "start") return state === "title" || state === "over" ? action() : menu.show();
     press();
-  });
-  const up = () => { b.classList.remove("on"); if (id === "a") release(); };
-  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
-});
+  },
+  onRelease: id => { if (id === "a") release(); } });
 cv.addEventListener("pointerdown", e => {
-  unlockAudio();
+  audio.unlock();
   if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
   if (state === "title" || state === "over") action();
-  else if (!touchMode) menu.show();   // a mouse click during play opens the menu
+  else if (!pad.touch) menu.show();   // a mouse click during play opens the menu
 });
 
 /* ---------- loop ---------- */
 world.onSub = checkShells;
-let last = performance.now(), nextFrame = 0;
-const FRAME_MS = 1000 / 60;
-function tick(t){
-  requestAnimationFrame(tick);
-  if (t < nextFrame - 1) return;   // run at most ~60 times a second, even on faster displays
-  nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
-  const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+function tick(dt, t){
   if (screen && !menu.open){   // the open menu pauses everything
     if (state !== "title" && state !== "over") update(dt);
     for (const B of blasts) B.t -= dt;
@@ -505,11 +437,6 @@ function tick(t){
 layout();
 ground = makeGround();   // hills behind the title screen
 world.terrain = { cw: screen.cw, ch: screen.ch, cols: GW, rows: GH, solid: ground.solid, mat: DIRT };
-let fitted = stage.getBoundingClientRect();
-new ResizeObserver(() => {   // re-fit only for real size changes, not the mobile address bar sliding in and out
-  const r = stage.getBoundingClientRect();
-  if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
-  fitted = r; if (screen) layout();
-}).observe(stage);
-requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
+onResize(stage, layout);
+startLoop(tick);
 })();

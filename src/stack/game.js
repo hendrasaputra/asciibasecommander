@@ -46,68 +46,20 @@ let score = 0, lines = 0, level = 1, startLevel = 1, nextStartLevel = 1;
 let fallT = 0, lockT = 0, resets = 0, lowest = 0, das = { dir: 0, t: 0 }, clearing = [], msg = "", msgT = 0, best = false;
 const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
 
-/* ---------- high scores ---------- */
-const SCORES_KEY = "stackSmash.v1.scores";
-let scores = [];
-try { scores = JSON.parse(localStorage.getItem(SCORES_KEY)) || []; } catch (e){}
-function saveScore(){
-  const entry = { score, lines, level };
-  scores.push(entry); scores.sort((a, b) => b.score - a.score); scores = scores.slice(0, 5);
-  best = score > 0 && scores[0] === entry;
-  try { localStorage.setItem(SCORES_KEY, JSON.stringify(scores)); } catch (e){ console.warn("Stack Smash: could not save scores", e); }
-}
-
-/* ---------- sound: effects and music from audio/stack-sfx.py (STACK_SFX, STACK_MUSIC) ---------- */
-// Browsers only allow audio after a user gesture, so nothing is decoded until the first key or tap.
-const MUTE_KEY = "stackSmash.v1.muted";
-let actx = null, master = null, buffers = {}, unlocked = false, muted = false, song = null;
-try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e){}
-function unlockAudio(){
-  if (unlocked) return;
-  unlocked = true;
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC){ console.warn("Stack Smash: Web Audio not supported, playing silent"); return; }
-  actx = new AC(); master = actx.createGain(); master.gain.value = muted ? 0 : 0.9; master.connect(actx.destination);
-  const decode = (k, v) => actx.decodeAudioData(Uint8Array.from(atob(v), c => c.charCodeAt(0)).buffer,
-    b => { buffers[k] = b; if (k === "music" && state === "play") playMusic(true); }, e => console.warn("Stack Smash: could not decode sound", k, e));
-  for (const [k, v] of Object.entries(STACK_SFX)) decode(k, v);
-  decode("music", STACK_MUSIC.data);
-}
-function sfx(name){
-  const b = buffers[name]; if (!b || muted) return;
-  const src = actx.createBufferSource(); src.buffer = b; src.connect(master); src.start();
-}
-function playMusic(on){
-  if (song){ song.stop(); song = null; }
-  if (!on || !buffers.music) return;
-  const g = actx.createGain(); g.gain.value = 0.35; g.connect(master);
-  song = actx.createBufferSource(); song.buffer = buffers.music; song.loop = true;
-  song.loopStart = STACK_MUSIC.loopStart; song.loopEnd = STACK_MUSIC.loopEnd;
-  song.connect(g); song.start(0, STACK_MUSIC.loopStart);
-}
-function toggleMute(){
-  unlockAudio(); muted = !muted;
-  if (master) master.gain.setTargetAtTime(muted ? 0 : 0.9, actx.currentTime, 0.02);
-  try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e){ console.warn("Stack Smash: could not save sound setting", e); }
-}
+/* ---------- saved settings, high scores and sound (src/arcade.js) ---------- */
+const store = prefs("stackSmash.v1.", "Stack Smash"), scores = scoreTable(store);
+function saveScore(){ best = score > 0 && scores.add({ score, lines, level }).rank === 0; }
+// effects and Korobeiniki, made by audio/stack-sfx.py
+const audio = createAudio({ label: "Stack Smash", store, sounds: STACK_SFX, music: { music: STACK_MUSIC }, volume: 1, musicGain: 0.32 });
+const sfx = name => audio.play(name), playMusic = on => audio.music(on ? "music" : null);
 
 function layout(){
-  const r = stage.getBoundingClientRect(); if (!r.width) return;
-  const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
-  for (let f = Math.max(5, Math.ceil(Math.min(r.width / GW / 0.5, r.height / GH / 1.15))); ; f--){
-    screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-    if ((screen.cols >= GW && screen.rows >= GH) || f <= 5) break;   // below 5px the text is unreadable: scale the canvas instead
-  }
+  const old = screen; screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old) return;
   const W = GW * screen.cw, H = GH * screen.ch;
-  screen.fit(W, H, dpr);
-  cv.style.width = W + "px"; cv.style.height = H + "px";
-  const k = Math.min(1, r.width / W, r.height / H);
-  cv.style.transform = "translate(-50%,-50%)" + (k < 1 ? " scale(" + k + ")" : "");
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   world.w = W; world.h = H; world.unit = screen.cw; world.drag = 2e-4 * (600 / H) ** 2; world.g = { x: 0, y: H * 1.4 };
   if (world.terrain){ world.terrain.cw = screen.cw; world.terrain.ch = screen.ch; }
   lamp.x = cx(BX + BW * CW / 2); lamp.y = cy(BY + 4); lamp.z = screen.ch * 34;
-  if (old){ const kx = screen.cw / old.cw, ky = screen.ch / old.ch; for (const b of world.bodies){ b.x *= kx; b.y *= ky; b.r *= kx; if (b.box){ b.hw *= kx; b.hh *= kx; } } }
+  rescaleBodies(world, old, screen);
 }
 
 /* ---------- the well as engine terrain: walls, floor and every locked cell ---------- */
@@ -244,9 +196,7 @@ function update(dt){
 }
 
 /* ---------- drawing ---------- */
-function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
-function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
-const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
+const { put, text, center } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
 const slab = { box: true, a: 0, mat: BLOCK, flash: 0 };
 function block(gx, gy, w, h, rgb, fl, layer = 2){   // a lit raised slab covering w x h characters from (gx, gy)
   slab.x = gx * screen.cw + w * screen.cw / 2; slab.y = gy * screen.ch + h * screen.ch / 2;
@@ -280,25 +230,25 @@ function drawTitle(t){
     });
   });
   const blink = (performance.now() / 500 | 0) % 2;
-  center(21, touchMode ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
+  center(21, pad.touch ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
   center(23, "STARTING LEVEL " + nextStartLevel, DIM);
-  if (touchMode){
+  if (pad.touch){
     center(26, "D-PAD MOVE   DOWN SOFT DROP   UP DROP", DIM);
     center(27, "A TURN   B TURN BACK   START HOLD   SELECT MENU", DIM);
   } else {
     center(26, "LEFT/RIGHT MOVE   UP OR X TURN   Z TURN BACK", DIM);
     center(27, "DOWN SOFT DROP   SPACE DROP   C HOLD   ESC MENU", DIM);
   }
-  if (scores.length){
+  if (scores.list.length){
     center(30, "HIGH SCORES", ACCENT);
-    scores.forEach((s, i) => center(32 + i, `${i + 1}. ${String(s.score).padStart(7)}   LV ${String(s.level).padStart(2)}   ${String(s.lines).padStart(3)} LINES`, i ? DIM : WHITE));
+    scores.list.forEach((s, i) => center(32 + i, `${i + 1}. ${String(s.score).padStart(7)}   LV ${String(s.level).padStart(2)}   ${String(s.lines).padStart(3)} LINES`, i ? DIM : WHITE));
   }
 }
 function drawPanels(){
   const L = 1, R = BX + BW * CW + 2;
   text(L, BY + 1, "HOLD", canHold ? WHITE : DIM);
   if (held) mini(held, L, BY + 3);
-  [["SCORE", score], ["LEVEL", level], ["LINES", lines], ["BEST", Math.max(score, scores[0] ? scores[0].score : 0)]].forEach(([k, v], i) => {
+  [["SCORE", score], ["LEVEL", level], ["LINES", lines], ["BEST", Math.max(score, scores.list[0] ? scores.list[0].score : 0)]].forEach(([k, v], i) => {
     text(L, BY + 10 + i * 4, k, DIM); text(L, BY + 11 + i * 4, String(v), i ? WHITE : ACCENT);
   });
   text(R, BY + 1, "NEXT", WHITE);
@@ -326,16 +276,16 @@ function draw(t){
     center(mid - 2, "  GAME OVER  ", WHITE);
     center(mid, `  ${score} POINTS  `, ACCENT);
     if (best) center(mid + 2, "  NEW HIGH SCORE!  ", ACCENT);
-    center(mid + 4, touchMode ? "  PRESS START  " : "  PRESS SPACE  ", DIM);
+    center(mid + 4, pad.touch ? "  PRESS START  " : "  PRESS SPACE  ", DIM);
   } else if (msgT > 0) center(mid - 6, "  " + msg + "  ", WHITE);
-  const hint = touchMode ? " SELECT MENU " : " ESC MENU ";
+  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
   text(GW - 1 - hint.length, GH - 1, hint, DIM);
   drawMenu();
   screen.render(ctx);
 }
 function drawMenu(){
   // the menu writes on its own layer, above the game's text, so nothing shows through its box
-  if (menu.open) menu.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "LEVEL APPLIES TO THE NEXT GAME" });
+  if (menu.open) menu.draw(screen, { accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "LEVEL APPLIES TO THE NEXT GAME" });
 }
 
 /* ---------- title: pieces of every colour tumble down the screen ---------- */
@@ -358,24 +308,24 @@ function action(){   // start from the title; back to the title from game over
 const playing = () => state === "play" && cur;
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
-  { label: state === "title" ? "START GAME" : "RESTART", select: () => { menu.hide(); unlockAudio(); newGame(); } },
+  { label: state === "title" ? "START GAME" : "RESTART", select: () => { menu.hide(); audio.unlock(); newGame(); } },
   { label: "STARTING LEVEL", value: () => String(nextStartLevel), change: d => { nextStartLevel = (nextStartLevel + d + 14) % 15 + 1; } },
-  { label: "SOUND", value: () => muted ? "OFF" : "ON", change: () => toggleMute() },
-  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
+  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
-  onOpen: () => { for (const k in keys) keys[k] = false; if (actx) actx.suspend(); },
-  onClose: () => { if (actx) actx.resume(); }
+  onOpen: () => { for (const k in keys) keys[k] = false; audio.pause(); },
+  onClose: () => { audio.resume(); }
 });
 addEventListener("keydown", e => {
   if (menu.key(e)){ e.preventDefault(); return; }
   const k = KEYMAP[e.key]; if (k){ e.preventDefault(); keys[k] = true; }
   if (e.key === " " || e.key === "ArrowUp") e.preventDefault();
   if (e.repeat) return;
-  unlockAudio();
+  audio.unlock();
   if (e.key === "Escape" || e.key === "p" || e.key === "P") return menu.show();
-  if (e.key === "m" || e.key === "M") return toggleMute();
+  if (e.key === "m" || e.key === "M") return audio.toggleMute();
   if (e.key === "r" || e.key === "R") return newGame();
   if (!playing()){ if (e.key === " " || e.key === "Enter") action(); return; }
   if (e.key === " ") hardDrop();
@@ -386,57 +336,22 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; });
 addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
 
-const CTRL_KEY = "stackSmash.v1.controls";
-let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the menu's Controls row overrides it
-try { const c = localStorage.getItem(CTRL_KEY); if (c) touchMode = c === "touch"; } catch (e){}
-function setControls(touch, save){
-  touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
-  if (save) try { localStorage.setItem(CTRL_KEY, touch ? "touch" : "keyboard"); } catch (e){ console.warn("Stack Smash: could not save controls setting", e); }
-}
-setControls(touchMode, false);
-const buzz = () => navigator.vibrate && navigator.vibrate(8);
-// The D-pad is one surface; the thumb's offset from the centre picks the direction, so sliding switches it.
-const dpad = $("dpad");
-function dpadAt(e){
-  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  const dir = Math.hypot(dx, dy) < r.width * 0.1 ? "" : Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-  const changed = dir !== (dpad.dataset.dir || "");
-  if (changed){ dpad.dataset.dir = dir; if (dir) buzz(); }
-  if (menu.open){ if (changed && dir) dir === "up" ? menu.move(-1) : dir === "down" ? menu.move(1) : menu.change(dir === "left" ? -1 : 1); return; }   // in the menu: one step per push
-  if (changed && dir === "up" && playing()) hardDrop();
-  for (const k in keys) keys[k] = k === dir;
-}
-dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); unlockAudio(); dpadAt(e); });
-dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadAt(e); });
-for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dpad.dataset.dir = ""; for (const k in keys) keys[k] = false; });
-document.querySelectorAll("[data-pad]").forEach(b => {
-  const id = b.dataset.pad;
-  b.addEventListener("pointerdown", e => {
-    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    unlockAudio();
-    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }   // in the menu: A chooses, any other button closes
+const pad = createPad({ store, menu: () => menu.open && menu, onAny: () => audio.unlock(),
+  onDir: d => { if (d === "up" && playing()) hardDrop(); for (const k in keys) keys[k] = k === d; },
+  onPress: id => {
     if (id === "select") return menu.show();
     if (!playing()){ if (id === "a" || id === "start") action(); return; }
     if (id === "a") turn(1); else if (id === "b") turn(-1); else holdPiece();
-  });
-  const up = () => b.classList.remove("on");
-  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
-});
+  } });
 cv.addEventListener("pointerdown", e => {
-  unlockAudio();
+  audio.unlock();
   if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
   if (state === "title" || state === "over") action();
-  else if (!touchMode) menu.show();   // a mouse click during play opens the menu
+  else if (!pad.touch) menu.show();   // a mouse click during play opens the menu
 });
 
 /* ---------- loop ---------- */
-let last = performance.now(), nextFrame = 0;
-const FRAME_MS = 1000 / 60;
-function tick(t){
-  requestAnimationFrame(tick);
-  if (t < nextFrame - 1) return;   // run at most ~60 times a second, even on faster displays
-  nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
-  const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+function tick(dt, t){
   if (screen && !menu.open){   // the open menu pauses everything
     if (state === "title") rain(dt); else update(dt);
     for (const f of world.forces) f.t -= dt;
@@ -450,11 +365,6 @@ function tick(t){
   if (screen) draw(t);
 }
 layout();
-let fitted = stage.getBoundingClientRect();
-new ResizeObserver(() => {   // re-fit only for real size changes, not the mobile address bar sliding in and out
-  const r = stage.getBoundingClientRect();
-  if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
-  fitted = r; if (screen) layout();
-}).observe(stage);
-requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
+onResize(stage, layout);
+startLoop(tick);
 })();

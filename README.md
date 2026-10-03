@@ -59,6 +59,10 @@ physics, and `node tests/torch.js` for Torchlight Dungeons.
 
   A change to physics or rendering goes here, so every page stays in step.
 - `src/menu.js`: the pause menu, used by every game.
+- `src/arcade.js`: everything else the cartridges share: saved settings and high scores, sound (effects and looped
+  music), the touch gamepad, fitting the canvas to a fixed grid, resizing, and the frame loop.
+- `src/arcade/pad.css`: the styles every cartridge page shares (layout, gamepad, phone on its side); `build.sh` puts
+  it into each page.
 - `src/game/`, `src/rooftop/`, `src/crater/`, `src/stack/`, `src/rover/`: each game's page markup (`head.html`) and rules
   (`game.js`).
 - `src/torch/`: Torchlight Dungeons, split by job: `rng.js` random numbers, `fov.js` sight and light, `turn.js` the
