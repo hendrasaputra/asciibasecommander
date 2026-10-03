@@ -732,7 +732,9 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     const R = rows(); m.at = Math.min(m.at, R.length - 1);
     // a list longer than the screen shows a window around the chosen row, with ^ and v marks
     const n = Math.min(R.length, Math.max(3, GH - 8 - (note ? 1 : 0))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
-    const w = 40, h = n + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
+    // 40 wide, or wider (up to the screen) when a row or the note needs it
+    const longest = Math.max(title.length + 4, note.length + 4, ...R.map(r => 5 + Math.max(18, r.label.length) + (r.value ? r.value().length + 4 : 0) + 3));
+    const w = Math.max(40, Math.min(GW - 2, longest)), h = n + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
     const edge = "+" + "-".repeat(w - 2) + "+";
     text(x0, top, edge, dim); text(x0, top + h - 1, edge, dim);
     for (let y = 1; y < h - 1; y++){

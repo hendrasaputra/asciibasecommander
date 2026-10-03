@@ -1,8 +1,8 @@
 // Checks for Torchlight Dungeons' rules. Run: node tests/torch.js
 // Loads the game's logic files without a browser: random numbers, sight and light, turns, levels and data.
 const fs = require("fs"), vm = require("vm"), path = require("path");
-const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js", "chars.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
-const G = vm.runInNewContext(files.join("\n") + "\n;({ RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS, RACES, CLASSES, RACE, CLASS, STATS, SKILLS, rollStats, finalStats, skillOf, expNeeded, maxMana, firstHp, levelHp, titleOf, buySpent, BUY_POINTS, randomName, powerFor, POWERS })", { Math, console });
+const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js", "items.js", "chars.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
+const G = vm.runInNewContext(files.join("\n") + "\n;({ RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS, ITEM, EGOS, ARTIFACTS, CAT, SLOTS, newKnowledge, makeItem, rollItem, itemName, itemPowers, kindKnown, RACES, CLASSES, RACE, CLASS, STATS, SKILLS, rollStats, finalStats, skillOf, expNeeded, maxMana, firstHp, levelHp, titleOf, buySpent, BUY_POINTS, randomName, powerFor, POWERS })", { Math, console });
 
 let failed = 0;
 const check = (name, ok, detail) => { console.log((ok ? "ok    " : "FAIL  ") + name + (detail ? "  (" + detail + ")" : "")); if (!ok) failed++; };
@@ -57,7 +57,8 @@ const { MW, MH, T } = G;
 { // the data tables are complete
   const dice = s => /^\d+d\d+$/.test(s);
   const badM = G.MONSTERS.filter(m => !m.id || !m.name || m.glyph.length !== 1 || !(m.depth >= 1) || !dice(m.hp) || !m.blows.length || !m.blows.every(b => dice(b[0])) || !m.desc);
-  const badI = G.ITEMS.filter(k => !k.id || !k.name || k.glyph.length !== 1 || !(k.depth >= 1) || (k.slot === "weapon" && !dice(k.dice)) || (k.use === "quaff" && !dice(k.heal)));
+  const badI = G.ITEMS.filter(k => !k.id || !k.name || !G.CAT[k.cat] || k.glyph.length !== 1 || !(k.depth >= 1) || !(k.wt > 0) || !(k.cost >= 0)
+    || (k.cat === "weapon" && !dice(k.dice)) || ((k.cat === "wand" || k.cat === "staff") && !dice(k.charges)) || (k.dice && !dice(k.dice)));
   check("every monster and item is complete", !badM.length && !badI.length, [...badM, ...badI].map(x => x.id).join(", "));
   const ids = [...G.MONSTERS, ...G.ITEMS].map(x => x.id);
   check("ids are unique", new Set(ids).size === ids.length);
@@ -98,6 +99,36 @@ const { MW, MH, T } = G;
   check("point buy: all 8s cost nothing, all 16s are over budget", G.buySpent(all8) === 0 && G.buySpent(max) > G.BUY_POINTS);
   const names = new Set(); for (let k = 0; k < 50; k++) names.add(G.randomName(rng));
   check("random names vary", names.size > 30, names.size + " of 50");
+}
+
+{ // items: every kind of effect exists in the game, names are complete at every depth, flavours are distinct
+  const game = fs.readFileSync(path.join(__dirname, "..", "src", "torch", "game.js"), "utf8");
+  const missing = G.ITEMS.filter(K => K.effect && !new RegExp("\\b" + K.effect + ": ").test(game)).map(K => K.id + ":" + K.effect);
+  check("every item effect has a handler in game.js", !missing.length, missing.join(", "));
+  const rng = new G.RNG(11);
+  let bad = [], cursed = 0, egos = 0, arts = 0, total = 0;
+  for (const depth of [1, 5, 10, 20, 35, 50]){
+    const know = G.newKnowledge(rng);
+    for (let k = 0; k < 10000; k++){
+      const it = G.rollItem(depth, rng, know), K = G.ITEM[it.k]; total++;
+      if (!K || !(it.n >= 1) || K.depth > depth) { bad.push(JSON.stringify(it)); continue; }
+      for (const id of [false, true]){ const name = G.itemName({ ...it, id }, know); if (!name || /undefined|NaN/.test(name)) bad.push(name + " " + JSON.stringify(it)); }
+      const P = G.itemPowers(it); if (![P.ac, P.hit, P.dam, P.speed].every(Number.isFinite)) bad.push("powers " + JSON.stringify(it));
+      if (it.cursed) cursed++; if (it.ego) egos++; if (it.art) arts++;
+    }
+  }
+  check("60,000 items across six depths: all valid, with names and numbers", !bad.length, bad.length ? bad.slice(0, 3).join(" | ") : `${cursed} cursed, ${egos} special, ${arts} artifacts`);
+  check("each artifact is made at most once per game", arts <= G.ARTIFACTS.length * 6);
+  const know = G.newKnowledge(new G.RNG(5)), cats = ["potion", "wand", "staff", "rod", "ring", "amulet", "mushroom", "scroll"];
+  const clash = cats.filter(c => { const f = G.ITEMS.filter(K => K.cat === c).map(K => know.flav[K.id][0]); return new Set(f).size !== f.length; });
+  check("no two kinds in a category share a flavour", !clash.length, clash.join(", "));
+  // what you know survives being written out and read back (as a save game will do)
+  know.known.pspeed = true; know.tried.sident = true;
+  const back = JSON.parse(JSON.stringify(know)), samples = ["pspeed", "sident", "wfire", "rstr"].map(k => ({ k, n: 2 }));
+  check("knowledge and names survive a JSON round trip", samples.every(it => G.itemName(it, know) === G.itemName(it, back)), samples.map(it => G.itemName(it, back)).join("; "));
+  check("an unknown potion shows its colour, a known one its name", !/Speed/.test(G.itemName({ k: "pfire", n: 1 }, know)) && /Speed/.test(G.itemName({ k: "pspeed", n: 1 }, know)));
+  const sword = { k: "longsword", n: 1, tohit: 3, todam: 4, ego: "burning" };
+  check("weapon numbers and specials show only once identified", !/\+3|Burning/.test(G.itemName(sword, know)) && /\(\+3,\+4\)/.test(G.itemName({ ...sword, id: true }, know)) && /Burning/.test(G.itemName({ ...sword, id: true }, know)));
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");

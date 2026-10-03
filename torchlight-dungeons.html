@@ -732,7 +732,9 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     const R = rows(); m.at = Math.min(m.at, R.length - 1);
     // a list longer than the screen shows a window around the chosen row, with ^ and v marks
     const n = Math.min(R.length, Math.max(3, GH - 8 - (note ? 1 : 0))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
-    const w = 40, h = n + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
+    // 40 wide, or wider (up to the screen) when a row or the note needs it
+    const longest = Math.max(title.length + 4, note.length + 4, ...R.map(r => 5 + Math.max(18, r.label.length) + (r.value ? r.value().length + 4 : 0) + 3));
+    const w = Math.max(40, Math.min(GW - 2, longest)), h = n + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
     const edge = "+" + "-".repeat(w - 2) + "+";
     text(x0, top, edge, dim); text(x0, top + h - 1, edge, dim);
     for (let y = 1; y < h - 1; y++){
@@ -920,63 +922,332 @@ function reachable(L){
 // Depth is in levels (one level is 50 ft). Speed: 0 normal, +10 twice as fast, -10 half as fast.
 // Monster flags: erratic (share of random moves), pack [min, max], still (never moves), flee (runs when hurt),
 // glow { r, rgb } (gives off light), drop (chance to carry gold or an item), cold (no body heat: infravision
-// cannot see it).
+// cannot see it), animal / undead / evil (for weapons that slay them), res (elements it shrugs off).
 const MONSTERS = [
-  { id: "rat", name: "cave rat", glyph: "r", rgb: [0.75, 0.55, 0.4], depth: 1, rarity: 1, speed: 0, hp: "2d3", ac: 2, exp: 1,
+  { id: "rat", animal: true, name: "cave rat", glyph: "r", rgb: [0.75, 0.55, 0.4], depth: 1, rarity: 1, speed: 0, hp: "2d3", ac: 2, exp: 1,
     blows: [["1d3", "bites"]], erratic: 0.3, desc: "A mangy rat with yellow teeth, bolder in the dark." },
-  { id: "slug", cold: true, name: "mire slug", glyph: "w", rgb: [0.45, 0.75, 0.35], depth: 1, rarity: 1, speed: -10, hp: "3d4", ac: 1, exp: 1,
+  { id: "slug", animal: true, cold: true, name: "mire slug", glyph: "w", rgb: [0.45, 0.75, 0.35], depth: 1, rarity: 1, speed: -10, hp: "3d4", ac: 1, exp: 1,
     blows: [["1d2", "slimes"]], desc: "A fat slug that leaves a glistening trail across the stone." },
-  { id: "moth", cold: true, name: "glimmer moth", glyph: "I", rgb: [0.75, 1.0, 0.55], depth: 1, rarity: 2, speed: 10, hp: "1d4", ac: 3, exp: 2,
+  { id: "moth", animal: true, cold: true, name: "glimmer moth", glyph: "I", rgb: [0.75, 1.0, 0.55], depth: 1, rarity: 2, speed: 10, hp: "1d4", ac: 3, exp: 2,
     blows: [["1d2", "brushes"]], erratic: 0.6, glow: { r: 3, rgb: [0.45, 0.8, 0.35] }, desc: "Its wings shed a pale green light as it flutters about." },
-  { id: "jackal", name: "tunnel jackal", glyph: "C", rgb: [0.8, 0.65, 0.4], depth: 2, rarity: 1, speed: 0, hp: "2d5", ac: 3, exp: 2,
+  { id: "jackal", animal: true, name: "tunnel jackal", glyph: "C", rgb: [0.8, 0.65, 0.4], depth: 2, rarity: 1, speed: 0, hp: "2d5", ac: 3, exp: 2,
     blows: [["1d3", "bites"]], pack: [3, 5], desc: "Lean scavengers that hunt in yapping packs." },
-  { id: "mold", cold: true, name: "weeping mold", glyph: "m", rgb: [0.55, 0.8, 0.7], depth: 2, rarity: 2, speed: 0, hp: "6d6", ac: 1, exp: 4,
+  { id: "mold", res: ["poison"], cold: true, name: "weeping mold", glyph: "m", rgb: [0.55, 0.8, 0.7], depth: 2, rarity: 2, speed: 0, hp: "6d6", ac: 1, exp: 4,
     blows: [["1d6", "stings"]], still: true, desc: "A damp grey-green growth that oozes when touched." },
-  { id: "goblin", name: "pit goblin", glyph: "g", rgb: [0.55, 0.85, 0.45], depth: 3, rarity: 1, speed: 0, hp: "3d6", ac: 6, exp: 4,
+  { id: "goblin", evil: true, name: "pit goblin", glyph: "g", rgb: [0.55, 0.85, 0.45], depth: 3, rarity: 1, speed: 0, hp: "3d6", ac: 6, exp: 4,
     blows: [["1d6", "hits"]], drop: 0.5, flee: true, desc: "A wiry goblin in rags, clutching a rusty blade and a stolen purse." },
-  { id: "spider", cold: true, name: "cave spider", glyph: "S", rgb: [0.6, 0.55, 0.7], depth: 4, rarity: 2, speed: 10, hp: "1d6", ac: 4, exp: 2,
+  { id: "spider", animal: true, cold: true, name: "cave spider", glyph: "S", rgb: [0.6, 0.55, 0.7], depth: 4, rarity: 2, speed: 10, hp: "1d6", ac: 4, exp: 2,
     blows: [["1d4", "bites"]], pack: [3, 5], desc: "Quick black spiders that pour out of cracks in swarms." },
-  { id: "skeleton", cold: true, name: "bone rattler", glyph: "s", rgb: [0.95, 0.95, 0.85], depth: 4, rarity: 1, speed: 0, hp: "4d6", ac: 9, exp: 8,
+  { id: "skeleton", undead: true, evil: true, res: ["cold", "poison"], cold: true, name: "bone rattler", glyph: "s", rgb: [0.95, 0.95, 0.85], depth: 4, rarity: 1, speed: 0, hp: "4d6", ac: 9, exp: 8,
     blows: [["1d6", "claws"]], desc: "Old bones held together by spite, clicking as they walk." },
-  { id: "beetle", cold: true, name: "ember beetle", glyph: "K", rgb: [1.0, 0.45, 0.2], depth: 4, rarity: 2, speed: 0, hp: "5d6", ac: 12, exp: 10,
+  { id: "beetle", animal: true, res: ["fire"], cold: true, name: "ember beetle", glyph: "K", rgb: [1.0, 0.45, 0.2], depth: 4, rarity: 2, speed: 0, hp: "5d6", ac: 12, exp: 10,
     blows: [["2d4", "burns"]], glow: { r: 2, rgb: [1.0, 0.35, 0.1] }, desc: "Its shell glows like a coal from the fire in its belly." },
-  { id: "wolf", name: "grey wolf", glyph: "C", rgb: [0.7, 0.7, 0.75], depth: 6, rarity: 1, speed: 10, hp: "5d6", ac: 10, exp: 15,
+  { id: "wolf", animal: true, name: "grey wolf", glyph: "C", rgb: [0.7, 0.7, 0.75], depth: 6, rarity: 1, speed: 10, hp: "5d6", ac: 10, exp: 15,
     blows: [["1d6", "bites"], ["1d4", "bites"]], pack: [3, 6], desc: "A hungry wolf, one of many, with eyes that catch your light." },
-  { id: "brute", name: "goblin brute", glyph: "g", rgb: [0.9, 0.6, 0.35], depth: 6, rarity: 1, speed: 0, hp: "8d8", ac: 14, exp: 18,
+  { id: "brute", evil: true, name: "goblin brute", glyph: "g", rgb: [0.9, 0.6, 0.35], depth: 6, rarity: 1, speed: 0, hp: "8d8", ac: 14, exp: 18,
     blows: [["1d10", "smashes"]], drop: 0.6, desc: "A hulking goblin who wears a door as a shield." },
-  { id: "bear", name: "cave bear", glyph: "q", rgb: [0.65, 0.45, 0.3], depth: 7, rarity: 2, speed: 0, hp: "10d8", ac: 16, exp: 25,
+  { id: "bear", animal: true, name: "cave bear", glyph: "q", rgb: [0.65, 0.45, 0.3], depth: 7, rarity: 2, speed: 0, hp: "10d8", ac: 16, exp: 25,
     blows: [["1d8", "claws"], ["1d8", "claws"], ["1d10", "bites"]], desc: "It rears up on its hind legs, filling the corridor." },
-  { id: "wisp", cold: true, name: "marsh wisp", glyph: "*", rgb: [0.6, 0.8, 1.2], depth: 8, rarity: 3, speed: 10, hp: "6d6", ac: 20, exp: 30,
+  { id: "wisp", res: ["elec", "poison"], cold: true, name: "marsh wisp", glyph: "*", rgb: [0.6, 0.8, 1.2], depth: 8, rarity: 3, speed: 10, hp: "6d6", ac: 20, exp: 30,
     blows: [["2d6", "shocks"]], erratic: 0.5, glow: { r: 4, rgb: [0.35, 0.55, 1.0] }, desc: "A drifting ball of cold blue light that crackles as it nears." },
-  { id: "ghoul", cold: true, name: "crypt ghoul", glyph: "z", rgb: [0.6, 0.75, 0.55], depth: 9, rarity: 2, speed: 0, hp: "12d8", ac: 18, exp: 40,
+  { id: "ghoul", undead: true, evil: true, res: ["cold", "poison"], cold: true, name: "crypt ghoul", glyph: "z", rgb: [0.6, 0.75, 0.55], depth: 9, rarity: 2, speed: 0, hp: "12d8", ac: 18, exp: 40,
     blows: [["1d8", "claws"], ["1d8", "claws"]], drop: 0.4, desc: "A grey, stooped corpse-eater that smells you long before it sees you." },
-  { id: "troll", name: "stone troll", glyph: "T", rgb: [0.6, 0.6, 0.6], depth: 10, rarity: 2, speed: 0, hp: "16d10", ac: 24, exp: 70,
+  { id: "troll", evil: true, name: "stone troll", glyph: "T", rgb: [0.6, 0.6, 0.6], depth: 10, rarity: 2, speed: 0, hp: "16d10", ac: 24, exp: 70,
     blows: [["1d10", "hits"], ["1d10", "hits"], ["2d6", "bites"]], drop: 0.5, desc: "Grey hide like weathered rock, and a club made from a stalactite." }
 ];
-// Items. Every kind is known on sight in phase 1 (identification comes in phase 3).
-const ITEMS = [
-  { id: "dagger", name: "Dagger", glyph: "|", rgb: [0.8, 0.8, 0.9], slot: "weapon", dice: "1d4", depth: 1, rarity: 1 },
-  { id: "shortsword", name: "Short sword", glyph: "|", rgb: [0.8, 0.8, 0.9], slot: "weapon", dice: "1d7", depth: 2, rarity: 1 },
-  { id: "mace", name: "Mace", glyph: "\\", rgb: [0.7, 0.7, 0.75], slot: "weapon", dice: "2d4", depth: 3, rarity: 1 },
-  { id: "longsword", name: "Long sword", glyph: "|", rgb: [0.85, 0.85, 1.0], slot: "weapon", dice: "2d5", depth: 6, rarity: 2 },
-  { id: "axe", name: "Broad axe", glyph: "/", rgb: [0.8, 0.75, 0.7], slot: "weapon", dice: "2d6", depth: 8, rarity: 2 },
-  { id: "dart", name: "Throwing dart", glyph: "{", rgb: [0.8, 0.75, 0.6], dice: "1d5", throw: true, depth: 1, rarity: 2 },
-  { id: "jerkin", name: "Padded jerkin", glyph: "(", rgb: [0.7, 0.55, 0.4], slot: "body", ac: 3, depth: 1, rarity: 1 },
-  { id: "leather", name: "Leather coat", glyph: "(", rgb: [0.65, 0.45, 0.3], slot: "body", ac: 6, depth: 3, rarity: 1 },
-  { id: "scale", name: "Scale coat", glyph: "[", rgb: [0.7, 0.7, 0.75], slot: "body", ac: 10, depth: 6, rarity: 2 },
-  { id: "chain", name: "Chain shirt", glyph: "[", rgb: [0.8, 0.8, 0.85], slot: "body", ac: 14, depth: 9, rarity: 2 },
-  { id: "torch", name: "Torch", glyph: "~", rgb: [1.0, 0.6, 0.25], slot: "light", radius: 3, fuel: 4000, depth: 1, rarity: 1 },
-  { id: "lantern", name: "Lantern", glyph: "~", rgb: [1.0, 0.85, 0.4], slot: "light", radius: 4, fuel: 7500, maxFuel: 15000, depth: 5, rarity: 3 },
-  { id: "oil", name: "Flask of oil", glyph: "!", rgb: [0.9, 0.8, 0.4], use: "fuel", fuel: 7500, depth: 1, rarity: 1 },
-  { id: "ration", name: "Ration of food", glyph: ",", rgb: [0.85, 0.7, 0.45], use: "eat", food: 3000, depth: 1, rarity: 1 },
-  { id: "jerky", name: "Strip of dried meat", glyph: ",", rgb: [0.75, 0.45, 0.35], use: "eat", food: 1500, depth: 1, rarity: 1 },
-  { id: "heal", name: "Healing draught", glyph: "!", rgb: [1.0, 0.4, 0.45], use: "quaff", heal: "4d6", depth: 1, rarity: 1 },
-  { id: "bigheal", name: "Greater healing draught", glyph: "!", rgb: [1.0, 0.6, 0.9], use: "quaff", heal: "10d8", depth: 6, rarity: 2 }
-];
-const MONSTER = Object.fromEntries(MONSTERS.map(m => [m.id, m])), ITEM = Object.fromEntries(ITEMS.map(k => [k.id, k]));
+const MONSTER = Object.fromEntries(MONSTERS.map(m => [m.id, m]));
 // Experience needed for each character level, and the depth in feet shown to the player.
 const expFor = lvl => Math.round(8 * Math.pow(lvl - 1, 2.1));
 const feet = depth => depth * 50;
+/* ---------- Torchlight Dungeons: items, flavours and identification (phase 3) ---------- */
+// Original content: names, numbers and effects are this game's own, not Moria's. Weight is in pounds, cost in gold.
+// Kinds of potion, scroll, wand, staff, rod, ring, amulet and mushroom look different in every game (their
+// "flavour") until you learn what they are, by using them, reading Identify, or (later) selling them.
+const SLOTS = ["weapon", "bow", "ring1", "ring2", "neck", "light", "body", "cloak", "shield", "head", "hands", "feet"];
+const SLOT_NAMES = { weapon: "Weapon", bow: "Shooting", ring1: "Left ring", ring2: "Right ring", neck: "Neck", light: "Light", body: "Body", cloak: "Cloak", shield: "Arm", head: "Head", hands: "Hands", feet: "Feet" };
+const CAT = {   // per category: glyph, colour, slot, and whether its kinds are flavoured
+  weapon: { glyph: "|", rgb: [0.8, 0.8, 0.9], slot: "weapon" }, bow: { glyph: "}", rgb: [0.8, 0.65, 0.45], slot: "bow" },
+  ammo: { glyph: "{", rgb: [0.8, 0.75, 0.6] }, dart: { glyph: "{", rgb: [0.8, 0.75, 0.6] },
+  body: { glyph: "[", rgb: [0.75, 0.75, 0.8], slot: "body" }, shield: { glyph: ")", rgb: [0.7, 0.6, 0.45], slot: "shield" },
+  head: { glyph: "]", rgb: [0.75, 0.75, 0.8], slot: "head" }, hands: { glyph: "]", rgb: [0.7, 0.55, 0.4], slot: "hands" },
+  feet: { glyph: "]", rgb: [0.65, 0.5, 0.35], slot: "feet" }, cloak: { glyph: "(", rgb: [0.55, 0.6, 0.5], slot: "cloak" },
+  light: { glyph: "~", rgb: [1.0, 0.7, 0.3], slot: "light" }, food: { glyph: ",", rgb: [0.85, 0.7, 0.45] }, flask: { glyph: "!", rgb: [0.9, 0.8, 0.4] },
+  mushroom: { glyph: ",", flavour: true }, potion: { glyph: "!", flavour: true }, scroll: { glyph: "?", flavour: true },
+  wand: { glyph: "-", flavour: true }, staff: { glyph: "_", flavour: true }, rod: { glyph: "-", flavour: true },
+  ring: { glyph: "=", flavour: true, slot: "ring" }, amulet: { glyph: "\"", flavour: true, slot: "neck" }
+};
+const ARMOUR_CATS = ["body", "shield", "head", "hands", "feet", "cloak"], WEAR_CATS = ["weapon", "bow", ...ARMOUR_CATS, "light", "ring", "amulet"];
+const I = (cat, id, name, depth, rarity, wt, cost, o = {}) => ({ cat, id, name, depth, rarity, wt, cost, ...o });
+const ITEMS = [
+  // swords, hafted weapons, polearms and axes: [dice]
+  ...[["dagger", "Dagger", "1d4", 1, 1, 10], ["maingauche", "Main gauche", "1d5", 1.5, 2, 25], ["rapier", "Rapier", "1d6", 4, 3, 42], ["shortsword", "Short sword", "1d7", 5, 2, 50],
+      ["cutlass", "Cutlass", "1d8", 11, 5, 85], ["sabre", "Sabre", "1d8", 5, 6, 90], ["broadsword", "Broadsword", "2d4", 15, 8, 160], ["longsword", "Long sword", "2d5", 13, 10, 200],
+      ["bastard", "Bastard sword", "3d4", 14, 14, 350], ["twohander", "Two-handed sword", "3d6", 22, 20, 650], ["headsman", "Headsman's sword", "4d5", 26, 30, 1100]]
+    .map(([id, n, d, wt, dep, c]) => I("weapon", id, n, dep, dep > 12 ? 2 : 1, wt, c, { dice: d })),
+  ...[["club", "Club", "1d5", 8, 1, 5], ["staffw", "Quarterstaff", "1d9", 15, 2, 20], ["mace", "Mace", "2d4", 12, 3, 130], ["warhammer", "War hammer", "3d3", 12, 8, 225],
+      ["morningstar", "Morning star", "2d6", 15, 10, 300], ["flail", "Flail", "2d6", 15, 12, 300], ["leadmace", "Lead-filled mace", "3d4", 18, 16, 500],
+      ["maul", "Maul", "4d4", 25, 24, 800], ["greatmaul", "Great maul", "5d5", 30, 35, 1400]]
+    .map(([id, n, d, wt, dep, c]) => I("weapon", id, n, dep, dep > 12 ? 2 : 1, wt, c, { dice: d, glyph: "\\" })),
+  ...[["spear", "Spear", "1d6", 5, 2, 35], ["handaxe", "Hand axe", "2d3", 8, 3, 60], ["trident", "Trident", "1d10", 7, 6, 120], ["axe", "Broad axe", "2d6", 16, 8, 250],
+      ["pike", "Pike", "2d5", 16, 10, 240], ["glaive", "Glaive", "2d6", 19, 14, 360], ["battleaxe", "Battle axe", "2d8", 17, 16, 420], ["halberd", "Halberd", "3d5", 19, 20, 600],
+      ["lance", "Lance", "2d8", 30, 22, 500], ["greataxe", "Great axe", "4d4", 23, 28, 900], ["scythe", "War scythe", "5d3", 25, 32, 1000]]
+    .map(([id, n, d, wt, dep, c]) => I("weapon", id, n, dep, dep > 12 ? 2 : 1, wt, c, { dice: d, glyph: "/" })),
+  // launchers and what they shoot
+  I("bow", "sling", "Sling", 1, 1, 0.5, 5, { mult: 2, ammo: "shot" }), I("bow", "shortbow", "Short bow", 3, 1, 3, 80, { mult: 2, ammo: "arrow" }),
+  I("bow", "longbow", "Long bow", 8, 2, 4, 200, { mult: 3, ammo: "arrow" }), I("bow", "lightxbow", "Light crossbow", 10, 2, 11, 300, { mult: 3, ammo: "bolt" }),
+  I("bow", "heavyxbow", "Heavy crossbow", 20, 3, 18, 700, { mult: 4, ammo: "bolt" }),
+  I("ammo", "shot", "Iron shot", 1, 1, 0.4, 1, { dice: "1d4", ammo: "shot" }), I("ammo", "arrow", "Arrow", 2, 1, 0.2, 1, { dice: "1d4", ammo: "arrow" }),
+  I("ammo", "barbed", "Barbed arrow", 15, 3, 0.3, 4, { dice: "1d6", ammo: "arrow" }), I("ammo", "bolt", "Crossbow bolt", 8, 2, 0.3, 2, { dice: "1d5", ammo: "bolt" }),
+  I("dart", "dart", "Throwing dart", 1, 2, 0.3, 1, { dice: "1d5", throw: true }),
+  // armour: [base armour class]
+  ...[["robe", "Robe", 2, 2, 1, 4, "("], ["jerkin", "Padded jerkin", 3, 8, 1, 10, "("], ["leather", "Soft leather coat", 6, 8, 3, 30, "("], ["hardleather", "Hard leather coat", 8, 12, 5, 60, "("],
+      ["studded", "Studded leather", 10, 20, 8, 100, "("], ["leatherscale", "Leather scale coat", 12, 14, 10, 160, "["], ["ringmail", "Ring mail", 14, 25, 12, 200, "["],
+      ["scale", "Scale coat", 16, 25, 15, 300, "["], ["chain", "Chain shirt", 16, 22, 14, 280, "["], ["chainmail", "Chain mail", 20, 25, 18, 450, "["],
+      ["banded", "Banded mail", 24, 30, 24, 650, "["], ["splint", "Splint mail", 26, 33, 28, 800, "["], ["plate", "Plate armour", 30, 38, 34, 1200, "["], ["fullplate", "Full plate", 36, 45, 42, 2000, "["]]
+    .map(([id, n, ac, wt, dep, c, g]) => I("body", id, n, dep, dep > 14 ? 2 : 1, wt, c, { ac, glyph: g })),
+  ...[["buckler", "Buckler", 2, 3, 1, 15], ["leathershield", "Leather shield", 4, 6, 3, 40], ["roundshield", "Round shield", 6, 8, 8, 100], ["kite", "Kite shield", 8, 10, 15, 220], ["tower", "Tower shield", 12, 16, 25, 500]]
+    .map(([id, n, ac, wt, dep, c]) => I("shield", id, n, dep, 1, wt, c, { ac })),
+  ...[["cap", "Leather cap", 2, 1.5, 1, 8], ["ironhelm", "Iron helm", 5, 7, 6, 75], ["steelhelm", "Steel helm", 7, 6, 14, 200], ["greathelm", "Great helm", 9, 9, 24, 450], ["circlet", "Silver circlet", 3, 1, 18, 300]]
+    .map(([id, n, ac, wt, dep, c]) => I("head", id, n, dep, id === "circlet" ? 3 : 1, wt, c, { ac })),
+  ...[["gloves", "Leather gloves", 1, 1, 1, 6], ["gauntlets", "Gauntlets", 3, 2.5, 8, 60], ["steelgauntlets", "Steel gauntlets", 5, 3, 20, 250]]
+    .map(([id, n, ac, wt, dep, c]) => I("hands", id, n, dep, 1, wt, c, { ac })),
+  ...[["sandals", "Sandals", 1, 1, 1, 4], ["softboots", "Soft boots", 2, 2, 2, 12], ["hardboots", "Hard boots", 3, 4, 6, 40], ["ironboots", "Iron boots", 5, 8, 16, 200]]
+    .map(([id, n, ac, wt, dep, c]) => I("feet", id, n, dep, 1, wt, c, { ac })),
+  ...[["cloak", "Cloak", 1, 1, 1, 5], ["furcloak", "Fur cloak", 3, 3, 8, 50], ["oilskin", "Oilskin cloak", 2, 2, 12, 80]]
+    .map(([id, n, ac, wt, dep, c]) => I("cloak", id, n, dep, 1, wt, c, { ac })),
+  // light
+  I("light", "torch", "Torch", 1, 1, 3, 1, { radius: 3, fuel: 4000, rgb: [1.0, 0.6, 0.25] }),
+  I("light", "lantern", "Lantern", 5, 3, 5, 100, { radius: 4, fuel: 7500, maxFuel: 15000, rgb: [1.0, 0.85, 0.4] }),
+  I("light", "crystal", "Glow crystal", 25, 4, 1, 1500, { radius: 3, rgb: [0.7, 0.9, 1.2] }),   // never runs out
+  I("flask", "oil", "Flask of oil", 1, 1, 1, 3, { use: "fuel", fuel: 7500 }),
+  // food; mushrooms are flavoured and do something besides
+  I("food", "ration", "Ration of food", 1, 1, 0.8, 3, { food: 3000 }), I("food", "jerky", "Strip of dried meat", 1, 1, 0.3, 2, { food: 1500 }),
+  I("food", "biscuit", "Hard biscuit", 1, 1, 0.2, 1, { food: 800 }), I("food", "honeycake", "Honey cake", 3, 2, 0.4, 10, { food: 2000, effect: "curePoison" }),
+  ...[["mvigor", "Vigor", "heal", { dice: "2d8" }, 1], ["mclear", "Clear Mind", "mana", { amount: 10 }, 4], ["mcure", "Cleansing", "cure", {}, 2],
+      ["msick", "Sickness", "poison", {}, 1], ["mstupor", "Stupor", "sleep", {}, 2], ["msight", "Second Sight", "detectMon", {}, 3]]
+    .map(([id, n, e, o, dep]) => I("mushroom", id, n, dep, 1, 0.1, 5, { effect: e, ...o, food: 300 })),
+  // potions
+  ...[["heal", "Mending", "heal", { dice: "4d6" }, 1, 1, 20], ["bigheal", "Greater Mending", "heal", { dice: "10d8" }, 6, 2, 80], ["life", "Life", "healFull", {}, 35, 6, 2500],
+      ["pmana", "Restore Mana", "mana", { amount: 30 }, 10, 3, 350], ["pspeed", "Speed", "fast", {}, 5, 3, 75], ["phero", "Heroism", "hero", {}, 2, 2, 35],
+      ["pberserk", "Berserk Strength", "berserk", {}, 10, 3, 100], ["pfire", "Resist Heat", "resFire", {}, 3, 2, 30], ["pcold", "Resist Cold", "resCold", {}, 3, 2, 30],
+      ["pinfra", "Infravision", "infra", {}, 1, 2, 20], ["pclear", "Clear Mind", "cure", {}, 3, 2, 40], ["ppoisoncure", "Neutralize Poison", "curePoison", {}, 2, 1, 25],
+      ["psleep", "Sleep", "sleep", {}, 1, 1, 0], ["ppoison", "Poison", "poison", {}, 2, 1, 0], ["pconfuse", "Confusion", "confuse", {}, 1, 1, 0],
+      ["pblind", "Blindness", "blind", {}, 2, 1, 0], ["psalt", "Salt Water", "salt", {}, 1, 1, 0],
+      ["pstr", "Strength", "gainStat", { stat: "str" }, 25, 8, 4000], ["pint", "Intellect", "gainStat", { stat: "int" }, 25, 8, 4000], ["pwis", "Wisdom", "gainStat", { stat: "wis" }, 25, 8, 4000],
+      ["pdex", "Dexterity", "gainStat", { stat: "dex" }, 25, 8, 4000], ["pcon", "Constitution", "gainStat", { stat: "con" }, 30, 8, 4000], ["pcha", "Charisma", "gainStat", { stat: "cha" }, 20, 6, 1000],
+      ["penlight", "Enlightenment", "enlight", {}, 25, 5, 800], ["pexp", "Experience", "exp", {}, 40, 10, 10000], ["pclair", "Clairvoyance", "clairvoyance", {}, 15, 4, 400]]
+    .map(([id, n, e, o, dep, r, c]) => I("potion", id, n, dep, r, 0.4, c, { effect: e, ...o })),
+  // scrolls
+  ...[["sident", "Identify", "identify", 1, 1, 50], ["suncurse", "Remove Curse", "removeCurse", 5, 2, 100], ["slight", "Light", "lightArea", 1, 1, 15],
+      ["smap", "Magic Mapping", "map", 8, 2, 150], ["sobj", "Object Detection", "detectObj", 1, 1, 20], ["smon", "Monster Detection", "detectMon", 2, 1, 25],
+      ["sphase", "Phase Door", "phase", 1, 1, 15], ["stele", "Teleportation", "teleport", 8, 2, 40], ["stelelevel", "Teleport Level", "teleLevel", 12, 3, 60],
+      ["sdeep", "Deep Descent", "deepDescent", 5, 3, 50], ["senchhit", "Enchant Weapon To-Hit", "enchHit", 6, 2, 125], ["senchdam", "Enchant Weapon To-Dam", "enchDam", 8, 2, 125],
+      ["senchac", "Enchant Armour", "enchAc", 6, 2, 125], ["sbless", "Blessing", "bless", 1, 1, 15], ["schant", "Holy Chant", "chant", 10, 2, 40],
+      ["sfood", "Satisfy Hunger", "satisfy", 5, 2, 10], ["sconf", "Monster Confusion", "monConf", 3, 2, 30], ["sslumber", "Slumber", "slumber", 4, 2, 35],
+      ["sdark", "Darkness", "darkness", 1, 1, 0], ["saggr", "Aggravate Monsters", "aggravate", 5, 1, 0], ["scursearm", "Curse Armour", "curseArmour", 10, 2, 0],
+      ["sundead", "Summon Undead", "summonUndead", 15, 2, 0]]
+    .map(([id, n, e, dep, r, c]) => I("scroll", id, n, dep, r, 0.5, c, { effect: e })),
+  // wands: aimed, with charges
+  ...[["wmissile", "Magic Missile", "bolt", { elem: "arcane", dice: "3d4" }, 2, 1, 100, "5d4"], ["wstink", "Stinking Cloud", "ball", { elem: "poison", dmg: 12, r: 2 }, 5, 1, 400, "5d3"],
+      ["wfire", "Fire Bolts", "bolt", { elem: "fire", dice: "6d6" }, 12, 2, 800, "4d3"], ["wcold", "Frost Bolts", "bolt", { elem: "cold", dice: "5d6" }, 10, 2, 700, "4d3"],
+      ["welec", "Lightning Bolts", "beam", { elem: "elec", dice: "4d6" }, 8, 2, 600, "4d3"], ["wacid", "Acid Bolts", "bolt", { elem: "acid", dice: "6d6" }, 15, 2, 900, "4d3"],
+      ["wfireball", "Fire Balls", "ball", { elem: "fire", dmg: 40, r: 2 }, 30, 3, 1800, "2d3"], ["wcoldball", "Cold Balls", "ball", { elem: "cold", dmg: 35, r: 2 }, 25, 3, 1500, "2d3"],
+      ["wsleep", "Sleep Monster", "sleepMon", {}, 3, 1, 150, "5d3"], ["wslow", "Slow Monster", "slowMon", {}, 5, 1, 200, "5d3"], ["wconf", "Confuse Monster", "confMon", {}, 4, 1, 200, "5d3"],
+      ["wscare", "Scare Monster", "scareMon", {}, 6, 2, 250, "5d3"], ["wlight", "Light", "beamLight", {}, 2, 1, 150, "6d3"], ["wmud", "Stone to Mud", "stoneMud", {}, 10, 2, 300, "4d4"],
+      ["wdrain", "Drain Life", "bolt", { elem: "drain", dice: "75d1" }, 40, 4, 3000, "1d3"]]
+    .map(([id, n, e, o, dep, r, c, ch]) => I("wand", id, n, dep, r, 1, c, { effect: e, aim: true, charges: ch, ...o })),
+  // staffs: used where you stand, with charges
+  ...[["tlight", "Light", "lightArea", 1, 1, 200, "8d3"], ["tdetmon", "Detect Monsters", "detectMon", 2, 1, 250, "8d3"], ["tdetobj", "Detect Objects", "detectObj", 3, 1, 300, "8d3"],
+      ["tmap", "Mapping", "map", 10, 2, 700, "4d3"], ["ttele", "Teleportation", "teleport", 15, 2, 800, "4d3"], ["tcure", "Mending", "heal", 5, 2, 400, "5d3", { dice: "4d8" }],
+      ["tsleep", "Sleep Monsters", "sleepAll", 8, 2, 500, "4d3"], ["tslow", "Slow Monsters", "slowAll", 12, 2, 600, "4d3"], ["tspeed", "Speed", "fast", 40, 5, 4000, "2d3"],
+      ["tsummon", "Summoning", "summon", 10, 2, 0, "4d3"], ["tdark", "Darkness", "darkness", 5, 1, 0, "4d3"]]
+    .map(([id, n, e, dep, r, c, ch, o]) => I("staff", id, n, dep, r, 5, c, { effect: e, charges: ch, ...(o || {}) })),
+  // rods: recharge by themselves
+  ...[["rdetect", "Detection", "detection", 20, 3, 3000, 50], ["rillum", "Illumination", "lightArea", 10, 2, 1000, 30], ["rlight", "Light", "beamLight", 6, 2, 800, 10, true],
+      ["rcure", "Curing", "cure", 15, 3, 1500, 40], ["rodfire", "Fire Bolts", "bolt", 20, 3, 2500, 15, true, { elem: "fire", dice: "9d8" }],
+      ["rodcold", "Frost Bolts", "bolt", 18, 3, 2200, 13, true, { elem: "cold", dice: "6d8" }], ["robj", "Treasure Location", "detectObj", 5, 2, 800, 30]]
+    .map(([id, n, e, dep, r, c, time, aim, o]) => I("rod", id, n, dep, r, 1.5, c, { effect: e, recharge: time, aim: !!aim, ...(o || {}) })),
+  // rings and amulets: worn; pval is rolled when made
+  ...[["rprot", "Protection", 5, 1, { pac: true }, 400], ["rstr", "Strength", 20, 3, { pstat: "str" }, 1500], ["rint", "Intellect", 20, 3, { pstat: "int" }, 1500],
+      ["rdex", "Dexterity", 20, 3, { pstat: "dex" }, 1500], ["rcon", "Constitution", 22, 3, { pstat: "con" }, 1500], ["racc", "Accuracy", 8, 2, { phit: true }, 500],
+      ["rdam", "Damage", 10, 2, { pdam: true }, 600], ["rslay", "Slaying", 25, 3, { phit: true, pdam: true }, 2500], ["rspeed", "Speed", 50, 6, { pspeed: true }, 50000],
+      ["rregen", "Regeneration", 15, 3, { regen: 1 }, 1200], ["rfire", "Resist Fire", 6, 2, { res: ["fire"] }, 300], ["rcold", "Resist Cold", 6, 2, { res: ["cold"] }, 300],
+      ["rfree", "Free Action", 20, 3, { freeAct: true }, 1500], ["rdigest", "Slow Digestion", 5, 2, { slowDigest: true }, 250],
+      ["rtele", "Teleportation", 5, 2, { teleportCurse: true, cursed: true }, 0], ["rweak", "Weakness", 3, 1, { pstat: "str", cursed: true }, 0],
+      ["rstupid", "Stupidity", 3, 1, { pstat: "int", cursed: true }, 0], ["rwoe", "Woe", 10, 2, { pac: true, pstat: "wis", cursed: true }, 0]]
+    .map(([id, n, dep, r, o, c]) => I("ring", id, n, dep, r, 0.1, c, o)),
+  ...[["awis", "Wisdom", 20, 3, { pstat: "wis" }, 1500], ["acha", "Charisma", 10, 2, { pstat: "cha" }, 500], ["adigest", "Slow Digestion", 8, 2, { slowDigest: true }, 300],
+      ["aacid", "Resist Acid", 12, 2, { res: ["acid"] }, 400], ["ainfra", "Infravision", 6, 2, { pinfra: true }, 300], ["award", "Warding", 15, 3, { pac: true }, 800],
+      ["ainertia", "Inertia", 15, 2, { pspeed: true, cursed: true }, 0], ["adoom", "Doom", 25, 3, { pstat: "all", cursed: true }, 0]]
+    .map(([id, n, dep, r, o, c]) => I("amulet", id, n, dep, r, 0.3, c, o))
+];
+for (const K of ITEMS){ const C = CAT[K.cat]; K.glyph = K.glyph || C.glyph; if (!K.rgb && C.rgb) K.rgb = C.rgb; K.slot = K.slot || C.slot; K.flavoured = !!C.flavour; }
+const ITEM = Object.fromEntries(ITEMS.map(k => [k.id, k]));
+
+// Special kinds of weapon and armour, and one-off artifacts. brand: extra damage of an element; slay: double
+// damage to one sort of monster; res: elements resisted; stats: stat bonuses.
+const EGOS = [
+  { id: "burning", name: "of Burning", cats: ["weapon"], brand: "fire", depth: 8 }, { id: "frost", name: "of Frost", cats: ["weapon"], brand: "cold", depth: 8 },
+  { id: "storms", name: "of Storms", cats: ["weapon"], brand: "elec", depth: 12 }, { id: "slaybeast", name: "of Slay Beast", cats: ["weapon"], slay: "animal", depth: 4 },
+  { id: "slayundead", name: "of Slay Undead", cats: ["weapon"], slay: "undead", depth: 8 }, { id: "slayevil", name: "of Slay Evil", cats: ["weapon"], slay: "evil", depth: 12 },
+  { id: "warding", name: "of Warding", cats: ["weapon"], ac: 5, res: ["fire", "cold", "acid", "elec"], depth: 25 }, { id: "sharp", name: "of Sharpness", cats: ["weapon"], dam: 4, depth: 15 },
+  { id: "blessed", name: "(Blessed)", cats: ["weapon"], stats: { wis: 1 }, depth: 6 },
+  { id: "rfire", name: "of Resist Fire", cats: ["body", "shield", "cloak"], res: ["fire"], depth: 4 }, { id: "rcold", name: "of Resist Cold", cats: ["body", "shield", "cloak"], res: ["cold"], depth: 4 },
+  { id: "racid", name: "of Resist Acid", cats: ["body", "shield", "cloak"], res: ["acid"], depth: 6 }, { id: "relec", name: "of Resist Lightning", cats: ["body", "shield", "cloak"], res: ["elec"], depth: 6 },
+  { id: "resistance", name: "of Resistance", cats: ["body", "shield"], res: ["fire", "cold", "acid", "elec"], depth: 25 },
+  { id: "stealth", name: "of Stealth", cats: ["cloak", "feet"], stealth: 2, depth: 6 }, { id: "speed", name: "of Speed", cats: ["feet"], speed: [1, 4], depth: 35 },
+  { id: "free", name: "of Free Action", cats: ["hands"], freeAct: true, depth: 10 }, { id: "seeing", name: "of Seeing", cats: ["head"], search: 15, infra: 2, depth: 10 },
+  { id: "intellect", name: "of Intellect", cats: ["head"], stats: { int: 2 }, depth: 15 }, { id: "wisdom", name: "of Wisdom", cats: ["head"], stats: { wis: 2 }, depth: 15 },
+  { id: "might", name: "of Might", cats: ["hands"], stats: { str: 2 }, depth: 15 },
+  { id: "power", name: "of Power", cats: ["bow"], dam: 5, depth: 12 }, { id: "accuracy", name: "of Accuracy", cats: ["bow"], hit: 6, depth: 8 }
+];
+const EGO = Object.fromEntries(EGOS.map(e => [e.id, e]));
+const ARTIFACTS = [
+  { id: "embersong", name: "Embersong", base: "longsword", depth: 20, hit: 7, dam: 8, brand: "fire", res: ["fire"], light: 1, desc: "Its blade glows like a coal and hums softly." },
+  { id: "mantle", name: "the Mantle of Quiet Steps", base: "cloak", depth: 18, ac: 8, stealth: 3, desc: "Grey cloth that seems to swallow sound." },
+  { id: "stonehelm", name: "the Stonehelm of the Deep Halls", base: "greathelm", depth: 25, ac: 6, stats: { str: 2, con: 2 }, infra: 2, desc: "Carved from one block of dark stone, and yet light as a cap." },
+  { id: "firstlamp", name: "the Lantern of the First Keeper", base: "lantern", depth: 30, radius: 5, nofuel: true, desc: "Its flame never needs oil." },
+  { id: "starfall", name: "Starfall", base: "longbow", depth: 35, hit: 10, dam: 10, desc: "A bow of pale wood strung with silver." },
+  { id: "swiftband", name: "the Band of Swift Feet", base: "rspeed", depth: 45, pval: 4, freeAct: true, desc: "A plain silver ring that makes the world seem slow." }
+];
+const ARTIFACT = Object.fromEntries(ARTIFACTS.map(a => [a.id, a]));
+
+/* ---------- flavours and knowledge ---------- */
+const FLAVOURS = {
+  potion: [["Azure", [0.3, 0.55, 1.0]], ["Crimson", [1.0, 0.2, 0.25]], ["Murky", [0.45, 0.45, 0.3]], ["Bubbling", [0.6, 0.9, 0.8]], ["Golden", [1.0, 0.8, 0.25]], ["Smoky", [0.55, 0.55, 0.6]],
+    ["Milky", [0.95, 0.95, 0.9]], ["Violet", [0.7, 0.35, 1.0]], ["Amber", [1.0, 0.6, 0.2]], ["Emerald", [0.25, 0.9, 0.4]], ["Silvery", [0.8, 0.85, 0.95]], ["Inky", [0.25, 0.25, 0.45]],
+    ["Rosy", [1.0, 0.55, 0.65]], ["Brown", [0.6, 0.4, 0.25]], ["Cloudy", [0.75, 0.8, 0.85]], ["Fizzy", [0.85, 1.0, 0.6]], ["Oily", [0.5, 0.45, 0.2]], ["Glowing", [1.0, 1.0, 0.6]],
+    ["Grey", [0.6, 0.6, 0.6]], ["Pink", [1.0, 0.6, 0.8]], ["Teal", [0.2, 0.75, 0.7]], ["Coppery", [0.85, 0.5, 0.3]], ["Speckled", [0.7, 0.65, 0.55]], ["Icy", [0.7, 0.9, 1.0]],
+    ["Thick", [0.55, 0.35, 0.4]], ["Clear", [0.85, 0.9, 1.0]], ["Coral", [1.0, 0.5, 0.4]], ["Indigo", [0.35, 0.3, 0.8]], ["Chalky", [0.9, 0.88, 0.8]], ["Rusty", [0.7, 0.35, 0.2]]],
+  wood: [["Oak", [0.7, 0.5, 0.3]], ["Ash", [0.8, 0.75, 0.6]], ["Yew", [0.6, 0.35, 0.25]], ["Elm", [0.65, 0.5, 0.35]], ["Birch", [0.9, 0.88, 0.8]], ["Willow", [0.7, 0.7, 0.5]],
+    ["Hazel", [0.6, 0.45, 0.3]], ["Rowan", [0.75, 0.4, 0.3]], ["Cedar", [0.8, 0.45, 0.3]], ["Ebony", [0.3, 0.25, 0.25]], ["Maple", [0.85, 0.55, 0.35]], ["Pine", [0.8, 0.7, 0.45]],
+    ["Walnut", [0.5, 0.35, 0.25]], ["Holly", [0.85, 0.85, 0.75]], ["Alder", [0.7, 0.45, 0.35]], ["Teak", [0.65, 0.45, 0.25]]],
+  metal: [["Iron", [0.6, 0.6, 0.65]], ["Copper", [0.85, 0.5, 0.3]], ["Brass", [0.9, 0.75, 0.35]], ["Tin", [0.75, 0.78, 0.8]], ["Silver", [0.85, 0.87, 0.95]],
+    ["Golden", [1.0, 0.8, 0.3]], ["Pewter", [0.6, 0.62, 0.62]], ["Bronze", [0.75, 0.5, 0.25]], ["Steel", [0.7, 0.75, 0.85]], ["Zinc", [0.7, 0.75, 0.75]]],
+  stone: [["Jade", [0.35, 0.8, 0.5]], ["Ruby", [1.0, 0.2, 0.3]], ["Opal", [0.9, 0.9, 1.0]], ["Onyx", [0.3, 0.3, 0.35]], ["Garnet", [0.75, 0.15, 0.25]], ["Topaz", [1.0, 0.75, 0.3]],
+    ["Pearl", [0.95, 0.95, 0.9]], ["Amethyst", [0.7, 0.4, 0.95]], ["Agate", [0.75, 0.55, 0.45]], ["Jasper", [0.8, 0.35, 0.3]], ["Quartz", [0.9, 0.9, 0.95]], ["Coral", [1.0, 0.5, 0.45]],
+    ["Sapphire", [0.25, 0.4, 1.0]], ["Emerald", [0.25, 0.9, 0.45]], ["Moonstone", [0.8, 0.85, 1.0]], ["Obsidian", [0.25, 0.2, 0.3]], ["Bloodstone", [0.5, 0.6, 0.4]],
+    ["Amber", [1.0, 0.65, 0.25]], ["Tourmaline", [0.9, 0.45, 0.6]], ["Malachite", [0.2, 0.7, 0.45]]],
+  amulet: [["Bone", [0.9, 0.88, 0.75]], ["Copper", [0.85, 0.5, 0.3]], ["Crystal", [0.8, 0.9, 1.0]], ["Ivory", [0.95, 0.92, 0.8]], ["Silver", [0.85, 0.87, 0.95]],
+    ["Golden", [1.0, 0.8, 0.3]], ["Iron", [0.6, 0.6, 0.65]], ["Amber", [1.0, 0.65, 0.25]], ["Shell", [0.95, 0.8, 0.75]], ["Wooden", [0.7, 0.5, 0.3]]],
+  mushroom: [["Grey", [0.6, 0.6, 0.6]], ["Spotted", [0.9, 0.5, 0.4]], ["Purple", [0.7, 0.4, 0.9]], ["White", [0.95, 0.95, 0.9]], ["Black", [0.35, 0.3, 0.35]],
+    ["Yellow", [1.0, 0.85, 0.3]], ["Red", [1.0, 0.3, 0.25]]]
+};
+const FLAVOUR_POOL = { potion: "potion", wand: "wood", staff: "wood", rod: "metal", ring: "stone", amulet: "amulet", mushroom: "mushroom" };
+const SYLLABLES = ["ab", "ra", "zu", "mor", "ith", "kal", "vex", "lo", "nar", "eth", "qua", "dim", "or", "sel", "tha", "ung", "bri", "fal", "ok", "yr", "pex", "um", "gor", "wen"];
+// A new character's knowledge: which flavour each kind wears, and which kinds they know.
+function newKnowledge(rng){
+  const know = { flav: {}, known: {}, tried: {}, arts: {} }, used = new Set();
+  for (const cat of Object.keys(FLAVOUR_POOL)){
+    const pool = rng.shuffle([...FLAVOURS[FLAVOUR_POOL[cat]]]);
+    ITEMS.filter(K => K.cat === cat).forEach((K, i) => { know.flav[K.id] = pool[i % pool.length]; });
+  }
+  for (const K of ITEMS.filter(K => K.cat === "scroll")){   // scroll titles: made-up words, all different
+    let t; do { t = Array.from({ length: 2 + rng.int(2) }, () => rng.pick(SYLLABLES) + (rng.chance(0.5) ? rng.pick(SYLLABLES) : "")).join(" "); } while (used.has(t));
+    used.add(t); know.flav[K.id] = [t, [0.95, 0.92, 0.85]];
+  }
+  return know;
+}
+const kindKnown = (K, know) => !K.flavoured || !!know.known[K.id];
+const itemRgb = (it, know) => { const K = ITEM[it.k]; return it.art && ARTIFACT[it.art].rgb || (K.flavoured ? know.flav[K.id][1] : K.rgb); };
+
+/* ---------- making items ---------- */
+// Weapons and armour roll a quality: cursed (minus bonuses, and they stick to you), plain, good (plus bonuses),
+// or great (good, plus a special kind or, rarely, an artifact). Deeper means better odds.
+function makeItem(k, depth, rng, know, n = 1){
+  const K = ITEM[k], it = { k, n };
+  if (K.fuel && K.cat === "light") it.fuel = K.fuel;
+  if (K.charges) it.charges = rng.dice(K.charges);
+  if (K.cat === "rod") it.timeout = 0;
+  if (K.pstat || K.pac || K.phit || K.pdam || K.pspeed || K.pinfra){   // rings and amulets
+    const p = K.pac ? 5 + rng.int(3 + depth / 2) : K.pspeed ? 1 + rng.int(depth >= 70 ? 6 : 3) : 1 + rng.int(2 + Math.floor(depth / 15));
+    it.pval = K.cursed ? -p : p; if (K.cursed) it.cursed = true;
+  }
+  if (K.cursed) it.cursed = true;
+  if (!K.dice && !K.ac && !K.mult) return it;
+  if (K.cat === "dart") return it;
+  const roll = rng.int(100), good = Math.min(60, 12 + depth * 1.5), bonus = () => 1 + rng.int(3 + Math.floor(depth / 5));
+  const armourish = ARMOUR_CATS.includes(K.cat);
+  if (roll < 10){   // cursed
+    it.cursed = K.cat !== "ammo";
+    if (armourish) it.toac = -bonus(); else { it.tohit = -bonus(); it.todam = -bonus(); }
+  } else if (roll < 10 + good){
+    if (armourish) it.toac = bonus(); else { it.tohit = bonus(); it.todam = bonus(); }
+    if (rng.int(100) < Math.min(35, 5 + depth)){   // great
+      const art = ARTIFACTS.find(a => a.base === k && a.depth <= depth && !know.arts[a.id]);
+      if (art && rng.chance(0.15)) return makeArtifact(art, know);
+      const egos = EGOS.filter(e => e.cats.includes(K.cat) && e.depth <= depth);
+      if (egos.length && K.cat !== "ammo"){ const e = rng.pick(egos); it.ego = e.id; if (e.speed) it.pval = e.speed[0] + rng.int(e.speed[1]); if (e.dam) it.todam = (it.todam || 0) + e.dam; if (e.hit) it.tohit = (it.tohit || 0) + e.hit; if (e.ac) it.toac = (it.toac || 0) + e.ac; }
+    }
+  }
+  return it;
+}
+function makeArtifact(A, know){
+  know.arts[A.id] = true;   // each artifact exists once per game
+  const K = ITEM[A.base], it = { k: A.base, n: 1, art: A.id, tohit: A.hit || 0, todam: A.dam || 0, toac: A.ac || 0 };
+  if (K.fuel && !A.nofuel) it.fuel = K.fuel;
+  if (A.pval) it.pval = A.pval;
+  return it;
+}
+function rollItem(depth, rng, know){
+  const pool = ITEMS.filter(K => K.depth <= depth && (K.cat !== "rod" || depth >= 5));
+  const K = rng.weighted(pool, K => 1 / K.rarity * (K.depth >= depth - 5 ? 1.4 : 1) * (K.cat === "potion" || K.cat === "scroll" ? 1.6 : 1));
+  const n = K.cat === "ammo" ? rng.range(10, 25) : K.cat === "dart" ? rng.range(4, 12) : (K.cat === "potion" || K.cat === "scroll" || K.cat === "food" || K.cat === "flask") && rng.chance(0.25) ? rng.range(2, 4) : 1;
+  return makeItem(K.id, depth, rng, know, n);
+}
+
+/* ---------- what an item adds when worn ---------- */
+// Everything a worn item gives, from its kind, its rolled numbers, its special kind or artifact.
+function itemPowers(it){
+  const K = ITEM[it.k], E = it.ego ? EGO[it.ego] : null, A = it.art ? ARTIFACT[it.art] : null, out = { stats: {}, res: [] };
+  const merge = s => { if (!s) return; if (s.stats) for (const [k, v] of Object.entries(s.stats)) out.stats[k] = (out.stats[k] || 0) + v; if (s.res) out.res.push(...s.res);
+    for (const f of ["brand", "slay", "freeAct", "slowDigest", "teleportCurse"]) if (s[f]) out[f] = s[f];
+    for (const f of ["stealth", "search", "infra", "regen", "light"]) if (s[f]) out[f] = (out[f] || 0) + s[f]; };
+  merge(K); merge(E); merge(A);
+  const p = it.pval || 0;
+  if (K.pstat === "all") for (const s of ["str", "int", "wis", "dex", "con", "cha"]) out.stats[s] = (out.stats[s] || 0) + p;
+  else if (K.pstat) out.stats[K.pstat] = (out.stats[K.pstat] || 0) + p;
+  out.ac = (K.ac || 0) + (it.toac || 0) + (K.pac ? p : 0);
+  out.hit = (it.tohit || 0) + (K.phit ? p : 0);
+  out.dam = (it.todam || 0) + (K.pdam ? p : 0);
+  out.speed = K.pspeed || (E && E.speed) || (A && A.pval && ITEM[A.base].pspeed) ? p : 0;
+  if (K.pinfra) out.infra = (out.infra || 0) + p;
+  return out;
+}
+
+/* ---------- names ---------- */
+function plural(name){ const i = name.indexOf(" of "), w = i > 0 ? name.slice(0, i) : name, rest = i > 0 ? name.slice(i) : ""; return w + (/(ch|sh|s|x)$/.test(w) ? "es" : "s") + rest; }
+const sign = v => (v >= 0 ? "+" : "") + v;
+// The name the player sees, which depends on what they know: the kind, and (once identified) the numbers.
+function itemName(it, know, count = it.n){
+  const K = ITEM[it.k], A = it.art ? ARTIFACT[it.art] : null, E = it.ego ? EGO[it.ego] : null, known = kindKnown(K, know), many = count > 1;
+  const an = s => (/^[AEIOU]/.test(s) ? "an " : "a ") + s;
+  let base;
+  if (K.flavoured){
+    const [fl] = know.flav[K.id], noun = { potion: "Potion", scroll: "Scroll", wand: "Wand", staff: "Staff", rod: "Rod", ring: "Ring", amulet: "Amulet", mushroom: "Mushroom" }[K.cat];
+    if (K.cat === "scroll") base = (many ? count + " Scrolls" : "a Scroll") + (known ? " of " + K.name : " titled \"" + fl + "\"");
+    else if (known) base = (many ? count + " " + plural(noun) : an(noun)) + " of " + K.name;
+    else base = many ? count + " " + fl + " " + plural(noun) : an(fl + " " + noun);
+  } else base = many ? count + " " + plural(K.name) : an(K.name);
+  if (A && it.id) base = A.name + ", " + an(K.name);
+  else if (E && it.id) base += " " + E.name;
+  let s = base;
+  if (K.dice && (K.cat === "weapon" || K.cat === "ammo")) s += " (" + K.dice + ")";   // a wand's dice would give it away
+  if (K.mult) s += " (x" + K.mult + ")";
+  if (K.ac !== undefined && K.cat !== "ring") s += " [" + K.ac + (it.id && it.toac ? "," + sign(it.toac) : "") + "]";
+  if (it.id && (it.tohit || it.todam) && !K.ac) s += " (" + sign(it.tohit || 0) + "," + sign(it.todam || 0) + ")";
+  if (it.id && it.pval && known && (K.pstat || K.pspeed || K.pinfra || K.phit || K.pdam)) s += K.phit && K.pdam ? " (" + sign(it.pval) + "," + sign(it.pval) + ")" : " (" + sign(it.pval) + ")";
+  if (it.id && it.pval && known && K.pac) s += " [" + sign(it.pval) + "]";
+  if (it.id && it.pval && (E || A) && !(K.pstat || K.pspeed || K.pinfra || K.phit || K.pdam || K.pac)) s += " (" + sign(it.pval) + ")";
+  if (it.charges !== undefined && it.id && known) s += " (" + it.charges + " charge" + (it.charges === 1 ? "" : "s") + ")";
+  if (it.fuel !== undefined) s += " (" + it.fuel + " turns)";
+  if (K.cat === "rod" && it.timeout > 0) s += " (charging)";
+  const tag = it.id ? (it.cursed ? "cursed" : "") : it.sense || (known && K.flavoured ? "" : know.tried[K.id] ? "tried" : "");
+  if (it.charges === 0 && !it.id) s += " {empty}";
+  else if (tag) s += " {" + tag + "}";
+  return s;
+}
+const itemWeight = it => ITEM[it.k].wt * it.n;
 /* ---------- Torchlight Dungeons: races, classes, stats and skills (phase 2) ---------- */
 // Original content: the peoples, callings, titles and numbers here are this game's own, not Moria's.
 // Stats run 3..25; each 2 points above 10 give +1 (statMod). Skills are percentages, roughly: Poor under 20,
@@ -1002,7 +1273,7 @@ const RACES = [
     desc: "Clever little makers who can coax any wand or gadget to work, and pick most locks." },
   { id: "ashborn", name: "Ashborn", stats: { str: 1, int: 1, wis: -1, con: 1, cha: -1 }, hd: 10, infra: 3, xp: 35, fireRes: true,
     skills: { fight: 3, device: 5 },
-    desc: "Born near the deep fires, with ember-coloured eyes. Burns hurt them only half as much." },
+    desc: "Born near the deep fires, with ember-coloured eyes. They resist fire: burns hurt them far less." },
   { id: "marrowkin", name: "Marrowkin", stats: { str: 2, int: -2, wis: -1, con: 1, cha: -3 }, hd: 10, infra: 3, xp: 10,
     skills: { fight: 12, stealth: -1, device: -10 },
     desc: "Rough, tusked brawlers, unwelcome in most towns but welcome in any fight." },
@@ -1027,10 +1298,10 @@ const CLASSES = [
     fight: [50, 2.2], shoot: [55, 2.4], save: [35, 1.4], stealth: 5, disarm: [55, 2.2], device: [40, 1.6], search: [45, 1.4], notice: [45, 1.4],
     titles: ["Footpad", "Cutpurse", "Sneak", "Prowler", "Shadow", "Infiltrator", "Vaultbreaker", "Nightblade", "Master Delver", "Unseen"],
     desc: "A quiet treasure-seeker. Monsters stay asleep longer, and a sleeping one takes double damage." },
-  { id: "wayfinder", name: "Wayfinder", stats: { int: 1, wis: -1, dex: 2, con: 1 }, hd: 8, xp: 30, kit: [["dart", 20]],
+  { id: "wayfinder", name: "Wayfinder", stats: { int: 1, wis: -1, dex: 2, con: 1 }, hd: 8, xp: 30, kit: [["dart", 10], ["shot", 30]], bow: "sling",
     fight: [52, 2.4], shoot: [70, 3.2], save: [35, 1.4], stealth: 3, disarm: [35, 1.4], device: [35, 1.4], search: [40, 1.2], notice: [45, 1.4],
     titles: ["Trailhand", "Scout", "Tracker", "Pathfinder", "Outrider", "Hunter", "Far-strider", "Deepranger", "Wayfinder", "Warden of Roads"],
-    desc: "A scout of the deep roads. The best shot: starts with a bundle of throwing darts." },
+    desc: "A scout of the deep roads. The best shot: starts with a sling, iron shot and throwing darts." },
   { id: "oathknight", name: "Oathknight", stats: { str: 2, int: -3, wis: 1, con: 1, cha: 2 }, hd: 9, xp: 35, realm: "holy", stat: "wis", manaK: 0.6,
     fight: [60, 2.8], shoot: [40, 1.6], save: [40, 1.6], stealth: 1, disarm: [25, 1.0], device: [30, 1.2], search: [20, 0.5], notice: [25, 0.6],
     titles: ["Squire", "Sworn", "Shieldbearer", "Knight", "Oathkeeper", "Knight-Captain", "Lord Protector", "Banneret", "Paragon", "Oathbound"],
@@ -1114,8 +1385,9 @@ const dist = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 const race = () => RACE[player.race], cls = () => CLASS[player.cls];
 function say(s){ msgs.push(s); log.push(s); if (log.length > 200) log.shift(); }
 // You see a monster if light shows it, or if it is warm-blooded, in your line of sight and within your infravision.
-const byHeat = m => !m.K.cold && race().infra > 0 && inFov[idx(m.x, m.y)] === turnNo && dist(m.x, m.y, player.x, player.y) <= race().infra && !visible(idx(m.x, m.y));
+const byHeat = m => !m.K.cold && infra() > 0 && inFov[idx(m.x, m.y)] === turnNo && dist(m.x, m.y, player.x, player.y) <= infra() && !visible(idx(m.x, m.y));
 const seesMon = m => visible(idx(m.x, m.y)) || byHeat(m);
+const sensed = m => seesMon(m) || m.det === turnNo;   // seen, or found by detection this turn
 const theName = m => seesMon(m) ? "the " + m.K.name : "it";
 
 /* ---------- saved preferences and high scores ---------- */
@@ -1124,44 +1396,71 @@ const load = (k, d) => { try { const v = localStorage.getItem(PREFIX + k); retur
 const store = (k, v) => { try { localStorage.setItem(PREFIX + k, JSON.stringify(v)); } catch (e){ console.warn("Torchlight Dungeons: could not save", k, e); } };
 let keySet = load("keys", "original"), scores = load("scores", []);
 
-/* ---------- items ---------- */
-function makeItem(k, n = 1){ const K = ITEM[k], it = { k, n }; if (K.slot === "light") it.fuel = K.fuel; return it; }
-function plural(name){ const i = name.indexOf(" of "), w = i > 0 ? name.slice(0, i) : name, rest = i > 0 ? name.slice(i) : ""; return w + (/(ch|sh|s|x)$/.test(w) ? "es" : "s") + rest; }
-function itemName(it){
-  const K = ITEM[it.k], base = it.n > 1 ? it.n + " " + plural(K.name) : (/^[AEIOU]/.test(K.name) ? "an " : "a ") + K.name;
-  return base + (K.dice ? " (" + K.dice + ")" : "") + (K.ac ? " [" + K.ac + "]" : "") + (it.fuel !== undefined ? " (" + it.fuel + " turns)" : "");
-}
-const stackable = (a, b) => a.k === b.k && a.fuel === b.fuel;
+/* ---------- items: names, carrying, and what worn things add ---------- */
+const nameOf = (it, n) => itemName(it, player.know, n);
+const cap = s => s[0].toUpperCase() + s.slice(1);
+const sameItem = (a, b) => a.k === b.k && a.fuel === b.fuel && a.charges === undefined && b.charges === undefined && a.timeout === undefined && b.timeout === undefined
+  && !!a.id === !!b.id && a.sense === b.sense && (a.tohit || 0) === (b.tohit || 0) && (a.todam || 0) === (b.todam || 0) && (a.toac || 0) === (b.toac || 0)
+  && a.ego === b.ego && !a.art && !b.art && a.pval === b.pval && !!a.cursed === !!b.cursed;
 function carry(it){
-  const same = player.inv.find(o => stackable(o, it));
+  const same = player.inv.find(o => sameItem(o, it));
   if (same){ same.n += it.n; return same; }
   if (player.inv.length >= 22) return null;
   player.inv.push(it); return it;
 }
-function pickItem(d){
-  const pool = ITEMS.filter(k => k.depth <= d);
-  const K = rng.weighted(pool, k => 1 / k.rarity * (k.depth >= d - 3 ? 1.5 : 1));
-  return makeItem(K.id, K.throw ? rng.range(4, 12) : 1);
+const plainItem = (k, n = 1) => { const it = { k, n, id: true }; if (ITEM[k].cat === "light" && ITEM[k].fuel) it.fuel = ITEM[k].fuel; if (ITEM[k].charges) it.charges = rng.dice(ITEM[k].charges); return it; };
+const loot = d => rollItem(d, rng, player.know);
+const weapon = () => player.eq.weapon;
+const weaponDice = () => weapon() ? ITEM[weapon().k].dice : "1d2";
+const armour = () => player.bonus.ac + statMod(player.stats.dex) + Math.floor(player.lvl / 5);
+const totalWeight = () => player.inv.reduce((s, it) => s + itemWeight(it), 0) + SLOTS.reduce((s, k) => s + (player.eq[k] ? itemWeight(player.eq[k]) : 0), 0);
+const capacity = () => 70 + player.stats.str * 6;
+// Everything worn items and timed effects add, worked out again whenever something changes.
+function recalc(){
+  const p = player, b = { hit: 0, dam: 0, ac: 0, speed: 0, stealth: 0, search: 0, infra: 0, regen: 0, light: 0, res: new Set(), stats: {} };
+  for (const s of SLOTS){
+    const it = p.eq[s]; if (!it) continue;
+    const P = itemPowers(it);
+    if (s !== "weapon" && s !== "bow"){ b.hit += P.hit; b.dam += P.dam; }   // a weapon's or bow's own numbers count only for its own attacks
+    b.ac += P.ac; b.speed += P.speed;
+    for (const f of ["stealth", "search", "infra", "regen", "light"]) b[f] += P[f] || 0;
+    for (const [k, v] of Object.entries(P.stats)) b.stats[k] = (b.stats[k] || 0) + v;
+    for (const r of P.res) b.res.add(r);
+    for (const f of ["freeAct", "slowDigest", "teleportCurse"]) if (P[f]) b[f] = true;
+  }
+  const t = p.t;
+  if (t.fast) b.speed += 10;
+  if (t.bless){ b.hit += 10; b.ac += 5; }
+  if (t.hero) b.hit += 12;
+  if (t.berserk){ b.hit += 12; b.ac -= 10; }
+  if (t.resFire) b.res.add("fire");
+  if (t.resCold) b.res.add("cold");
+  if (t.infra) b.infra += 3;
+  if (RACE[p.race].fireRes) b.res.add("fire");
+  p.stats = {}; for (const k of STATS) p.stats[k] = clampStat(p.base[k] + (b.stats[k] || 0));
+  const over = totalWeight() - capacity();
+  b.burden = over > 0 ? Math.ceil(over / 10) : 0;   // every 10 lb over what you can carry slows you a step
+  p.speed = b.speed - b.burden; p.bonus = b;
 }
-const weaponDice = () => player.eq.weapon ? ITEM[player.eq.weapon.k].dice : "1d2";
-const armour = () => (player.eq.body ? ITEM[player.eq.body.k].ac : 0) + statMod(player.stats.dex) + Math.floor(player.lvl / 5);
 function lightRadius(){
-  const it = player.eq.light; if (!it || it.fuel <= 0) return 0;
-  const R = ITEM[it.k].radius + ((player.cls && cls().lightBonus) || 0);
-  return it.fuel < 100 ? 1 : it.fuel < 500 ? R - 1 : R;
+  const it = player.eq.light; if (!it || (it.fuel !== undefined && it.fuel <= 0)) return 0;
+  const A = it.art ? ARTIFACT[it.art] : null;
+  const R = ((A && A.radius) || ITEM[it.k].radius) + ((player.cls && cls().lightBonus) || 0) + ((player.bonus && player.bonus.light) || 0);
+  return it.fuel === undefined ? R : it.fuel < 100 ? 1 : it.fuel < 500 ? R - 1 : R;
 }
+const infra = () => player.t.blind ? 0 : race().infra + player.bonus.infra;
 
 /* ---------- levels ---------- */
 function newLevel(d){
   depth = d; player.maxDepth = Math.max(player.maxDepth, d);
   L = generateLevel(rng, d);
-  mem.fill(0); mons = [player]; floor = []; world.bodies.length = 0; shots = []; flashes = []; later = [];
+  mem.fill(0); mons = [player]; floor = []; pendingLevel = 0; world.bodies.length = 0; shots = []; flashes = []; later = [];
   // light from lit rooms is fixed for the whole level
   roomLight.fill(0);
   for (let i = 0; i < MW * MH; i++) if (L.lit[i]){ roomLight[3 * i] = ROOM_RGB[0]; roomLight[3 * i + 1] = ROOM_RGB[1]; roomLight[3 * i + 2] = ROOM_RGB[2]; }
   const at = L.spot(); player.x = at % MW; player.y = Math.floor(at / MW);
   for (let k = 0, n = 14 + d + rng.int(8); k < n; k++) spawnMonster(false);
-  for (let k = 0, n = 8 + rng.int(6); k < n; k++) dropAt(freeSpot(0), rng.chance(0.35) ? { k: "gold", n: rng.range(8, 25) * d } : pickItem(d));
+  for (let k = 0, n = 8 + rng.int(6); k < n; k++) dropAt(freeSpot(0), rng.chance(0.35) ? { k: "gold", n: rng.range(8, 25) * d } : loot(d));
   centerCamera(true); updateSight();
   say(d === 1 ? "You enter the dungeon at 50 ft. Your torch hisses in the damp air." : "You are now at " + feet(d) + " ft.");
 }
@@ -1209,10 +1508,12 @@ function computeLight(field, t){
 function updateSight(){
   turnNo++;
   computeLight(lightTurn, 0);
+  const blind = player.t && player.t.blind > 0;
   fov(player.x, player.y, 45, blocks, (x, y) => {
     const i = idx(x, y); inFov[i] = turnNo;
-    if (lum(lightTurn, 3 * i) > 0.03){ seenAt[i] = turnNo; mem[i] = 1; }
+    if (!blind && lum(lightTurn, 3 * i) > 0.03){ seenAt[i] = turnNo; mem[i] = 1; }
   }, MW, MH);
+  for (const f of floor) if (visible(idx(f.x, f.y))) f.seen = true;   // items you have seen stay on the map
   rebuildTerrain();
 }
 function centerCamera(force){
@@ -1235,6 +1536,7 @@ function rebuildTerrain(){
 
 /* ---------- the player's actions: each returns true when it took a turn ---------- */
 function tryMove(dx, dy){
+  if (player.t.confused && rng.chance(0.4)){ [dx, dy] = DIRS[rng.pick([1, 2, 3, 4, 6, 7, 8, 9])]; say("You are confused."); }
   const x = player.x + dx, y = player.y + dy, i = idx(x, y), t = L.tiles[i], m = monAt(x, y);
   if (m) return attack(m);
   if (t === T.DOOR){ L.tiles[i] = T.OPEN; say("You open the door."); return true; }
@@ -1242,21 +1544,29 @@ function tryMove(dx, dy){
   player.x = x; player.y = y;
   for (const f of itemsAt(x, y)) if (f.it.k === "gold"){ player.gold += f.it.n; say("You find " + f.it.n + " gold pieces."); floor.splice(floor.indexOf(f), 1); }
   const here = itemsAt(x, y);
-  if (here.length === 1) say("You see " + itemName(here[0].it) + ".");
+  if (here.length === 1) say("You see " + nameOf(here[0].it) + ".");
   else if (here.length > 1) say("You see several items here.");
   if (t === T.DOWN) say("There is a staircase down here.");
   if (t === T.UP) say("There is a staircase up here.");
   return true;
 }
 const hitChance = (skill, ac, extra = 0) => Math.max(5, Math.min(95, skill + 20 - ac * 0.8 + extra));
+// A weapon that slays a sort of monster, or is branded with an element the monster does not resist, doubles its dice.
+function multiplier(P, K){
+  if (P.slay && K[P.slay]) return 2;
+  if (P.brand && !(K.res || []).includes(P.brand)) return 2;
+  return 1;
+}
 function attack(m){
-  const K = m.K, name = theName(m), weak = player.food < 1000 ? -10 : 0;
-  if (rng.int(100) < hitChance(skillOf(player, "fight"), K.ac, weak)){
-    let dmg = Math.max(1, rng.dice(weaponDice()) + statMod(player.stats.str));
-    const ambush = cls().ambush && m.sleep > 0;
+  const K = m.K, name = theName(m), weak = player.food < 1000 ? -10 : 0, w = weapon(), P = w ? itemPowers(w) : { hit: 0, dam: 0 };
+  if (rng.int(100) < hitChance(skillOf(player, "fight") + 3 * (P.hit + player.bonus.hit), K.ac, weak)){
+    const mult = w ? multiplier(P, K) : 1, ambush = cls().ambush && m.sleep > 0;
+    let dmg = Math.max(1, rng.dice(weaponDice()) * mult + P.dam + player.bonus.dam + statMod(player.stats.str));
     if (ambush) dmg *= 2;   // a Delver strikes a sleeping monster twice as hard
-    m.sleep = 0;
-    return damage(m, dmg, ambush ? "You ambush " + name + "." : "You hit " + name + "."), true;
+    if (player.t.confHit){ player.t.confHit = 0; say("Your hands stop glowing."); if (!resists(m)) m.conf = 10 + rng.int(10); }
+    const verb = ambush ? "You ambush " : mult > 1 && P.brand ? { fire: "You burn ", cold: "You freeze ", elec: "You shock " }[P.brand] : mult > 1 ? "You smite " : "You hit ";
+    damage(m, dmg, verb + name + ".");
+    return true;
   }
   say("You miss " + name + ".");
   return true;
@@ -1272,7 +1582,7 @@ function kill(m, name, delay = 0){
   say("You have slain " + name + ".");
   mons.splice(mons.indexOf(m), 1); player.kills++;
   gainExp(m.K.exp * m.K.depth / player.lvl);
-  if (m.K.drop && rng.chance(m.K.drop)) dropAt(idx(m.x, m.y), rng.chance(0.6) ? { k: "gold", n: rng.range(5, 20) * depth } : pickItem(depth));
+  if (m.K.drop && rng.chance(m.K.drop)) dropAt(idx(m.x, m.y), rng.chance(0.6) ? { k: "gold", n: rng.range(5, 20) * depth } : loot(depth));
   const { x, y } = m;
   later.push({ t: delay, fn: () => burst(x, y, m.K.rgb, 7) });
 }
@@ -1285,7 +1595,7 @@ function gainExp(e){
     say("Welcome to level " + player.lvl + "." + (titleOf(player) !== before ? " You are now a " + titleOf(player) + "." : ""));
   }
 }
-// Bits that tumble from a kill (or sparks from a hit), lit by your torch.
+// Bits that tumble from a kill (or sparks from a hit, or glass from a potion), lit by your torch.
 function burst(x, y, rgb, n){
   if (!screen) return;
   const px = (x - cam.x + 0.5) * screen.cw, py = (y - cam.y + VY + 0.5) * screen.ch;
@@ -1294,15 +1604,25 @@ function burst(x, y, rgb, n){
     b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp - 120; b.w = (Math.random() - 0.5) * 20; b.flash = 0.6; b.life = 1.2 + Math.random() * 0.8;
   }
 }
+// A feeling about a weapon's or armour's quality, before it is identified.
+function sense(it, chance){
+  const K = ITEM[it.k];
+  if (it.id || it.sense || !(K.dice || K.ac !== undefined || K.mult) || K.cat === "dart" || rng.int(100) >= chance) return;
+  const sum = (it.tohit || 0) + (it.todam || 0) + (it.toac || 0);
+  it.sense = it.cursed || sum < 0 ? "cursed" : it.art || it.ego ? "special" : sum > 0 ? "magical" : "average";
+}
 function pickUp(){
   const here = itemsAt(player.x, player.y);
   if (!here.length){ say("There is nothing here to pick up."); return false; }
   for (const f of here){
+    sense(f.it, skillOf(player, "notice"));
     const got = carry(f.it);
     if (!got){ say("You cannot carry any more."); break; }
     floor.splice(floor.indexOf(f), 1);
-    say("You have " + itemName(got) + " (" + String.fromCharCode(97 + player.inv.indexOf(got)) + ").");
+    say("You have " + nameOf(got) + " (" + String.fromCharCode(97 + player.inv.indexOf(got)) + ").");
   }
+  recalc();
+  if (player.bonus.burden) say("You are carrying too much and slow down.");
   return true;
 }
 function takeStairs(down){
@@ -1312,31 +1632,233 @@ function takeStairs(down){
   newLevel(depth + (down ? 1 : -1));
   return "level";
 }
+function takeOne(it){ if (--it.n <= 0) player.inv.splice(player.inv.indexOf(it), 1); }
+// Using an item teaches you its kind when you could tell what it did; otherwise it is marked {tried}.
+function learn(it, noticed){
+  const K = ITEM[it.k];
+  if (!K.flavoured) return;
+  if (!noticed){ player.know.tried[K.id] = true; return; }
+  if (player.know.known[K.id]) return;
+  player.know.known[K.id] = true;
+  say("You learn that it is " + nameOf({ k: it.k, n: 1 }) + ".");
+  gainExp((K.depth + (player.lvl >> 1)) / player.lvl);
+}
 function useItem(it, how){
-  const K = ITEM[it.k], take = () => { if (--it.n <= 0) player.inv.splice(player.inv.indexOf(it), 1); };
-  if (how === "eat"){ player.food = Math.min(15000, player.food + K.food); say("That tastes good."); take(); return true; }
-  if (how === "quaff"){
-    const h = rng.dice(K.heal); player.hp = Math.min(player.mhp, player.hp + h);
-    say(player.hp >= player.mhp ? "You feel very good." : "You feel better."); take(); return true;
+  const K = ITEM[it.k];
+  if (how === "eat"){
+    player.food = Math.min(15000, player.food + (K.food || 0)); takeOne(it);
+    if (K.effect) learn(it, FX[K.effect]({ K, it })); else say("That tastes good.");
+    return true;
+  }
+  if (how === "quaff"){ takeOne(it); learn(it, FX[K.effect]({ K, it })); return true; }
+  if (how === "read"){
+    if (player.t.blind){ say("You can't see to read!"); return false; }
+    if (player.t.confused){ say("You are too confused to read."); return false; }
+    takeOne(it); learn(it, FX[K.effect]({ K, it })); return true;
   }
   if (how === "fuel"){
     const lt = player.eq.light;
-    if (!lt || !ITEM[lt.k].maxFuel){ say("You need a lantern to pour the oil into."); return false; }
-    lt.fuel = Math.min(ITEM[lt.k].maxFuel, lt.fuel + K.fuel); say("You fill your lantern."); take(); return true;
+    if (!lt || !ITEM[lt.k].maxFuel || lt.fuel === undefined){ say("You need a lantern to pour the oil into."); return false; }
+    lt.fuel = Math.min(ITEM[lt.k].maxFuel, lt.fuel + K.fuel); say("You fill your lantern."); takeOne(it); return true;
   }
-  if (how === "wield"){
-    const slot = K.slot, one = { ...it, n: 1 };
-    take();
-    const old = player.eq[slot]; player.eq[slot] = one;
-    if (old) carry(old);
-    say((slot === "body" ? "You are wearing " : slot === "light" ? "Your light source is " : "You are wielding ") + itemName(one) + ".");
-    return true;
-  }
+  if (how === "wield") return wear(it);
+  if (how === "use") return useDevice(it);
   if (how === "drop"){
-    floor.push({ x: player.x, y: player.y, it: { ...it } }); player.inv.splice(player.inv.indexOf(it), 1);
-    say("You drop " + itemName(it) + "."); return true;
+    floor.push({ x: player.x, y: player.y, it: { ...it }, seen: true }); player.inv.splice(player.inv.indexOf(it), 1);
+    say("You drop " + nameOf(it) + "."); recalc(); return true;
   }
   return false;
+}
+function wear(it){
+  const K = ITEM[it.k];
+  if (!K.slot){ say("You cannot wear that."); return false; }
+  let slot = K.slot;
+  if (slot === "ring") slot = !player.eq.ring1 ? "ring1" : !player.eq.ring2 ? "ring2" : "ring1";
+  const old = player.eq[slot];
+  if (old && old.cursed){ say("You cannot remove " + nameOf(old) + ": it is cursed!"); if (!old.id) old.sense = "cursed"; return false; }
+  const one = { ...it, n: 1 }; takeOne(it);
+  player.eq[slot] = one;
+  if (old && !carry(old)) floor.push({ x: player.x, y: player.y, it: old, seen: true });
+  const verb = slot === "weapon" ? "You are wielding " : slot === "bow" ? "You are shooting with " : slot === "light" ? "Your light source is " : "You are wearing ";
+  // a ring or amulet whose effect you can feel at once (a stat, speed, armour, aim) shows what it is
+  if ((K.cat === "ring" || K.cat === "amulet") && (K.pstat || K.pspeed || K.pac || K.phit || K.pdam || K.pinfra)){ one.id = true; learn(one, true); }
+  say(verb + nameOf(one) + ".");
+  if (one.cursed){ say("Oops! It feels deathly cold."); if (!one.id) one.sense = "cursed"; }
+  recalc();
+  return true;
+}
+function takeOff(slot){
+  const it = player.eq[slot]; if (!it) return false;
+  if (it.cursed){ say("You cannot remove " + nameOf(it) + ": it is cursed!"); if (!it.id) it.sense = "cursed"; return false; }
+  if (player.inv.length >= 22){ say("You have no room in your pack."); return false; }
+  player.eq[slot] = null; carry(it); say("You take off " + nameOf(it) + "."); recalc(); return true;
+}
+function useDevice(it){
+  const K = ITEM[it.k], verb = { wand: "Aim", staff: "Use", rod: "Zap" }[K.cat];
+  if (K.cat === "rod" && it.timeout > 0){ say("The rod is still charging."); return false; }
+  if (K.cat !== "rod" && it.charges <= 0){ say("It has no charges left."); return true; }
+  const fail = Math.max(5, Math.min(75, 35 + K.depth - skillOf(player, "device") * 0.5));
+  const go = (tx, ty) => {
+    if (rng.int(100) < fail){ say("You failed to use it properly."); return true; }
+    if (K.cat === "rod") it.timeout = K.recharge; else it.charges--;
+    learn(it, FX[K.effect]({ K, it, tx, ty }));
+    return true;
+  };
+  if (K.aim){ aim(verb + " " + nameOf({ ...it, n: 1 }) + ".", go); return false; }
+  return go();
+}
+
+/* ---------- effects: what potions, scrolls, mushrooms, wands, staffs and rods do ---------- */
+// Each returns true when the player can tell what happened, which teaches them the item's kind.
+const ELEM_RGB = { fire: [1.0, 0.45, 0.15], cold: [0.5, 0.75, 1.0], elec: [0.8, 0.8, 1.2], acid: [0.5, 1.0, 0.3], poison: [0.5, 0.9, 0.3], arcane: [0.8, 0.6, 1.0], drain: [0.6, 0.25, 0.8], light: [1.0, 1.0, 0.75] };
+const TIMERS = { fast: ["You feel yourself moving faster!", "You feel yourself slow down."], hero: ["You feel like a hero!", "The heroism wears off."],
+  berserk: ["You feel a terrible rage!", "You feel less violent."], bless: ["You feel righteous!", "The prayer has expired."],
+  resFire: ["You feel safe from heat.", "You feel less safe from heat."], resCold: ["You feel safe from cold.", "You feel less safe from cold."],
+  infra: ["Your eyes begin to tingle.", "Your eyes stop tingling."], poison: ["You are poisoned!", "You are no longer poisoned."],
+  confused: ["You are confused!", "You feel less confused now."], blind: ["You are blind!", "You can see again."], asleep: ["You fall asleep.", "You wake up."] };
+function setTimer(k, n){ const was = player.t[k] > 0; player.t[k] = Math.max(player.t[k] || 0, n); if (!was) say(TIMERS[k][0]); recalc(); return true; }
+function clearTimer(k){ if (!(player.t[k] > 0)) return false; player.t[k] = 0; say(TIMERS[k][1]); recalc(); return true; }
+const resists = m => rng.int(100) < 10 + 3 * m.K.depth;   // monsters save against sleep, slowing, confusion and fear
+function hurtMon(m, dmg, elem, msg, delay){
+  if (elem === "drain" && m.K.undead){ say(cap(theName(m)) + " is unaffected."); return false; }
+  if (elem && (m.K.res || []).includes(elem)){ dmg = Math.ceil(dmg / 3); msg += " It resists a lot."; }
+  return damage(m, dmg, msg, delay);
+}
+function missile(path, elem, speed = 40){   // the visible flight of a bolt, and its flash where it stops
+  if (!path.length) return 0;
+  const rgb = ELEM_RGB[elem] || ELEM_RGB.arcane, end = path[path.length - 1], delay = path.length / speed;
+  shots.push({ path, t: 0, speed, glyph: elem === "elec" ? "~" : "*", rgb: rgb.map(v => v * 1.8), light: rgb });
+  later.push({ t: delay, fn: () => { flashes.push({ x: end[0], y: end[1], t: 0.35, t0: 0.35, rgb }); burst(end[0], end[1], rgb, 3); } });
+  return delay;
+}
+function lineToWall(tx, ty, range){ const out = []; for (const c of line(player.x, player.y, tx, ty, range)){ if (blocks(c[0], c[1])) return { path: out, wall: c }; out.push(c); } return { path: out, wall: null }; }
+function mapAround(r){
+  for (let y = Math.max(1, player.y - r); y < Math.min(MH - 1, player.y + r); y++) for (let x = Math.max(1, player.x - r); x < Math.min(MW - 1, player.x + r); x++){
+    const i = idx(x, y), t = L.tiles[i];
+    if (!opaque(t) || t === T.DOOR) mem[i] = 1;
+    else for (const d of [1, -1, MW, -MW, MW + 1, MW - 1, -MW + 1, -MW - 1]) if (!opaque(L.tiles[i + d])){ mem[i] = 1; break; }
+  }
+}
+function teleportPlayer(range){
+  for (let tries = 0; tries < 800; tries++){
+    const x = player.x + rng.range(-range, range), y = player.y + rng.range(-range, range);
+    if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1 || !passable(L.tiles[idx(x, y)]) || monAt(x, y) || dist(x, y, player.x, player.y) < range / 3) continue;
+    player.x = x; player.y = y; centerCamera(true); return true;
+  }
+  return false;
+}
+function summonNear(pool, n){
+  let made = 0;
+  for (let k = 0; k < n && pool.length; k++){
+    const K = rng.pick(pool);
+    for (let tries = 0; tries < 20; tries++){
+      const x = player.x + rng.range(-3, 3), y = player.y + rng.range(-3, 3);
+      if (!passable(L.tiles[idx(x, y)]) || monAt(x, y)) continue;
+      const hp = rng.dice(K.hp); mons.push({ K, x, y, hp, mhp: hp, energy: 0, speed: K.speed, sleep: 0, seen: false }); made++; break;
+    }
+  }
+  return made;
+}
+function lightCells(cells){ for (const i of cells){ L.lit[i] = 1; roomLight[3 * i] = ROOM_RGB[0]; roomLight[3 * i + 1] = ROOM_RGB[1]; roomLight[3 * i + 2] = ROOM_RGB[2]; } }
+function roomCells(){   // the room you stand in (with its walls), or the cells around you in a corridor
+  const id = L.room[idx(player.x, player.y)], out = [];
+  if (id >= 0) for (let i = 0; i < MW * MH; i++) if (L.room[i] === id) out.push(i);
+  for (let y = player.y - 2; y <= player.y + 2; y++) for (let x = player.x - 2; x <= player.x + 2; x++) out.push(idx(x, y));
+  return out;
+}
+function statusBolt(c, what){   // a bolt that puts a monster to sleep, slows, confuses or scares it
+  const { path, m } = flight(c.tx, c.ty, 18), delay = missile(path, "arcane");
+  if (!m) return false;
+  if (resists(m)){ say(cap(theName(m)) + " is unaffected."); return true; }
+  if (what === "sleep"){ m.sleep = 500; say(cap(theName(m)) + " falls asleep."); }
+  if (what === "slow"){ m.slow = 20; say(cap(theName(m)) + " starts moving slower."); }
+  if (what === "confuse"){ m.conf = 10 + rng.int(10); say(cap(theName(m)) + " looks confused."); }
+  if (what === "scare"){ m.afraid = 20; say(cap(theName(m)) + " flees in terror!"); }
+  return true;
+}
+function allInView(what){
+  let n = 0;
+  for (const m of mons) if (m.K && seesMon(m) && !resists(m)){ n++; if (what === "sleep") m.sleep = 500; else m.slow = 20; }
+  if (n) say(what === "sleep" ? "The monsters around you fall asleep." : "The monsters around you slow down.");
+  return n > 0;
+}
+const FX = {
+  heal: c => { player.hp = Math.min(player.mhp, player.hp + rng.dice(c.K.dice)); say(player.hp >= player.mhp ? "You feel very good." : "You feel better."); return true; },
+  healFull: () => { player.hp = player.mhp; for (const k of ["poison", "confused", "blind"]) clearTimer(k); say("You feel wonderful!"); return true; },
+  mana: c => { player.mana = Math.min(player.mmana, player.mana + c.K.amount); say("Your mind feels clearer."); return true; },
+  fast: () => setTimer("fast", 20 + rng.int(25)), hero: () => setTimer("hero", 25 + rng.int(25)),
+  berserk: () => { player.hp = Math.min(player.mhp, player.hp + Math.ceil(player.mhp * 0.3)); return setTimer("berserk", 25 + rng.int(25)); },
+  resFire: () => setTimer("resFire", 20 + rng.int(20)), resCold: () => setTimer("resCold", 20 + rng.int(20)), infra: () => setTimer("infra", 100 + rng.int(100)),
+  cure: () => { let any = false; for (const k of ["poison", "confused", "blind"]) any = clearTimer(k) || any; if (!any) say("You feel healthy."); return true; },
+  curePoison: () => clearTimer("poison"),
+  sleep: () => { if (player.bonus.freeAct){ say("You feel drowsy for a moment, but it passes."); return true; } return setTimer("asleep", 4 + rng.int(4)); },
+  poison: () => setTimer("poison", 10 + rng.int(10)), confuse: () => setTimer("confused", 10 + rng.int(10)), blind: () => setTimer("blind", 30 + rng.int(30)),
+  salt: () => { say("The potion makes you vomit!"); player.food = Math.min(player.food, 1500); clearTimer("poison"); return true; },
+  gainStat: c => { const k = c.K.stat; if (player.base[k] >= 25){ say("You feel no different."); return true; } player.base[k]++; recalc();
+    say("You feel " + { str: "stronger", int: "smarter", wis: "wiser", dex: "more nimble", con: "healthier", cha: "more charming" }[k] + "!"); return true; },
+  enlight: () => { mapAround(250); for (const f of floor) f.seen = true; say("You suddenly know the whole level."); return true; },
+  exp: () => { gainExp(Math.max(10, expNeeded(player, player.lvl + 1) - player.exp)); say("You feel more experienced."); return true; },
+  clairvoyance: () => { mapAround(60); FX.detectObj(); say("Images of the level flood your mind."); return true; },
+  identify: () => {
+    const unknown = [...player.inv, ...SLOTS.map(s => player.eq[s]).filter(Boolean)].filter(it => !it.id || !kindKnown(ITEM[it.k], player.know));
+    if (!unknown.length){ say("You have nothing to identify."); return true; }
+    say("This is a scroll of Identify.");
+    chooseItem("IDENTIFY WHICH?", it => unknown.includes(it), it => { it.id = true; delete it.sense; player.know.known[it.k] = true; say("It is " + nameOf(it) + "."); });
+    return true;
+  },
+  removeCurse: () => { let any = false; for (const s of SLOTS){ const it = player.eq[s]; if (it && it.cursed && !it.art){ it.cursed = false; if (it.sense === "cursed") delete it.sense; any = true; } }
+    say(any ? "You feel as if someone is watching over you." : "You feel no different."); return any; },
+  lightArea: () => { lightCells(roomCells()); flashes.push({ x: player.x, y: player.y, t: 0.5, t0: 0.5, rgb: ELEM_RGB.light }); say("You are surrounded by light."); return true; },
+  darkness: () => { for (const i of roomCells()){ L.lit[i] = 0; roomLight[3 * i] = roomLight[3 * i + 1] = roomLight[3 * i + 2] = 0; } say("Darkness surrounds you."); setTimer("blind", 3 + rng.int(5)); return true; },
+  map: () => { mapAround(30); say("You sense the dungeon around you."); return true; },
+  detectObj: () => { let n = 0; for (const f of floor) if (dist(f.x, f.y, player.x, player.y) <= 30){ f.seen = true; n++; } say(n ? "You sense the presence of objects!" : "You sense no objects."); return n > 0; },
+  detectMon: () => { let n = 0; for (const m of mons) if (m.K && dist(m.x, m.y, player.x, player.y) <= 30){ m.det = turnNo + 1; n++; } say(n ? "You sense the presence of monsters!" : "You sense no monsters."); return n > 0; },
+  detection: () => { FX.detectMon(); FX.detectObj(); return true; },
+  phase: () => teleportPlayer(10), teleport: () => teleportPlayer(60),
+  teleLevel: () => { const up = depth > 1 && rng.chance(0.5); say(up ? "You rise up through the ceiling." : "You sink through the floor."); pendingLevel = depth + (up ? -1 : 1); return true; },
+  deepDescent: () => { say("The floor opens beneath you!"); pendingLevel = depth + 2; return true; },
+  enchHit: () => enchant(weapon(), "tohit"), enchDam: () => enchant(weapon(), "todam"),
+  enchAc: () => { const worn = ["body", "shield", "cloak", "head", "hands", "feet"].map(s => player.eq[s]).filter(Boolean); return enchant(worn.length ? rng.pick(worn) : null, "toac"); },
+  bless: () => setTimer("bless", 12 + rng.int(12)), chant: () => setTimer("bless", 24 + rng.int(24)),
+  satisfy: () => { player.food = Math.max(player.food, 10000); say("You feel full."); return true; },
+  monConf: () => { player.t.confHit = 1; say("Your hands begin to glow."); return true; },
+  slumber: () => { let n = 0; for (const m of mons) if (m.K && dist(m.x, m.y, player.x, player.y) <= 1 && !resists(m)){ m.sleep = 500; n++; } if (n) say("The monsters next to you fall asleep."); return n > 0; },
+  aggravate: () => { for (const m of mons) if (m.K) m.sleep = 0; say("There is a high-pitched humming noise."); return true; },
+  curseArmour: () => { const worn = ["body", "shield", "cloak", "head", "hands", "feet"].filter(s => player.eq[s] && !player.eq[s].art); if (!worn.length) return false;
+    const it = player.eq[rng.pick(worn)]; it.cursed = true; it.toac = -(1 + rng.int(5)); delete it.ego; say("Your " + ITEM[it.k].name.toLowerCase() + " glows black!"); recalc(); return true; },
+  summonUndead: () => summonNear(MONSTERS.filter(K => K.undead && K.depth <= depth + 5), 1 + rng.int(3)) > 0 && (say("Cold, dead things appear around you!"), true),
+  summon: () => summonNear(MONSTERS.filter(K => K.depth <= depth + 2), 2 + rng.int(3)) > 0 && (say("Monsters appear around you!"), true),
+  bolt: c => { const { path, m } = flight(c.tx, c.ty, 18), delay = missile(path, c.K.elem); if (m) hurtMon(m, rng.dice(c.K.dice), c.K.elem, "The bolt hits " + theName(m) + ".", delay); return true; },
+  beam: c => { const { path } = lineToWall(c.tx, c.ty, 18), delay = missile(path, c.K.elem, 60);
+    for (const [x, y] of path){ const m = monAt(x, y); if (m) hurtMon(m, rng.dice(c.K.dice), c.K.elem, "The lightning strikes " + theName(m) + ".", delay); } return true; },
+  ball: c => {
+    const { path } = flight(c.tx, c.ty, 18), end = path.length ? path[path.length - 1] : [player.x, player.y], delay = missile(path, c.K.elem), rgb = ELEM_RGB[c.K.elem];
+    later.push({ t: delay, fn: () => { flashes.push({ x: end[0], y: end[1], t: 0.6, t0: 0.6, rgb: rgb.map(v => v * 1.6) }); burst(end[0], end[1], rgb, 10);
+      if (screen) world.forces.push({ x: (end[0] - cam.x + 0.5) * screen.cw, y: (end[1] - cam.y + VY + 0.5) * screen.ch, radius: screen.ch * 6, strength: world.h * 12, t: 0.08 }); } });
+    for (const m of [...mons]) if (m.K && dist(m.x, m.y, end[0], end[1]) <= c.K.r) hurtMon(m, Math.floor(c.K.dmg / (1 + dist(m.x, m.y, end[0], end[1]))), c.K.elem, "The blast engulfs " + theName(m) + ".", delay);
+    return true;
+  },
+  sleepMon: c => statusBolt(c, "sleep"), slowMon: c => statusBolt(c, "slow"), confMon: c => statusBolt(c, "confuse"), scareMon: c => statusBolt(c, "scare"),
+  sleepAll: () => allInView("sleep"), slowAll: () => allInView("slow"),
+  beamLight: c => { const { path } = lineToWall(c.tx, c.ty, 25); lightCells(path.map(([x, y]) => idx(x, y))); missile(path, "light", 80); say("A line of light appears."); return true; },
+  stoneMud: c => {
+    const { path, wall } = lineToWall(c.tx, c.ty, 25); missile(path, "acid", 60);
+    if (!wall) return false;
+    const i = idx(wall[0], wall[1]);
+    if (L.tiles[i] !== T.WALL){ say("The wall resists."); return true; }
+    L.tiles[i] = T.FLOOR; say("The wall turns into mud!");
+    later.push({ t: path.length / 60, fn: () => { burst(wall[0], wall[1], [0.55, 0.5, 0.45], 9); rebuildTerrain(); } });
+    return true;
+  }
+};
+function enchant(it, field){
+  if (!it){ say("You have nothing to enchant."); return true; }
+  const v = it[field] || 0, chance = v < 0 ? 100 : Math.max(10, 100 - v * 12);
+  if (rng.int(100) < chance && !it.art){
+    it[field] = v + 1; if (it.cursed && rng.chance(0.5)){ it.cursed = false; if (it.sense === "cursed") delete it.sense; }
+    say("Your " + ITEM[it.k].name.toLowerCase() + " glows faintly."); recalc();
+  } else say("The enchantment fails.");
+  return true;
 }
 
 /* ---------- aiming: bolts and thrown things fly along a line until they hit a wall or a monster ---------- */
@@ -1368,29 +1890,55 @@ function nearestTarget(){
 function aim(prompt, fn){ aiming = fn; oldMsgs = []; msgs = []; say(prompt + " Direction? (" + (touchMode ? "D-pad, A nearest, B cancel" : "a direction key, ' or t for nearest, Esc") + ")"); }
 function aimAt(dx, dy){ const f = aiming; aiming = null; act(() => f(player.x + dx * 20, player.y + dy * 20)); }
 function aimNearest(){
+  if (!aiming) return;
   const m = nearestTarget(); if (!m){ aiming = null; oldMsgs = []; msgs = []; say("There is nothing in sight to aim at."); return; }
   const f = aiming; aiming = null; act(() => f(m.x, m.y));
 }
 function throwItem(it){
   const K = ITEM[it.k];
-  aim("Throw " + itemName({ ...it, n: 1 }) + ".", (tx, ty) => {
-    const { path, m } = flight(tx, ty, 10), one = { ...it, n: 1 };
-    if (--it.n <= 0) player.inv.splice(player.inv.indexOf(it), 1);
+  aim("Throw " + nameOf(it, 1) + ".", (tx, ty) => {
+    const { path, m } = flight(tx, ty, 10), one = { ...it, n: 1 }, rgb = itemRgb(one, player.know);
+    takeOne(it); recalc();
     if (!path.length){ dropAt(idx(player.x, player.y), one); say("It drops at your feet."); return true; }
-    shots.push({ path, t: 0, speed: 35, glyph: K.glyph, rgb: K.rgb });
+    shots.push({ path, t: 0, speed: 35, glyph: K.glyph, rgb });
     const delay = path.length / 35, end = path[path.length - 1];
-    let lands = true;
+    let lands = K.cat !== "potion";
     if (m){
-      const hit = rng.int(100) < hitChance(skillOf(player, "shoot"), m.K.ac, -2 * path.length + (K.throw ? 10 : 0));
-      if (hit){
-        const dmg = Math.max(1, rng.dice(K.dice || "1d1") + (K.throw ? Math.max(0, statMod(player.stats.dex)) : 0));
+      if (rng.int(100) < hitChance(skillOf(player, "shoot"), m.K.ac, -2 * path.length + (K.throw ? 10 : 0))){
+        const dmg = Math.max(1, rng.dice(K.dice || "1d1") + (one.todam || 0) + (K.throw ? Math.max(0, statMod(player.stats.dex)) : 0));
         damage(m, dmg, "The " + K.name.toLowerCase() + " hits " + theName(m) + ".", delay);
         if (K.throw && rng.chance(0.25)) lands = false;   // darts sometimes break
       } else say("The " + K.name.toLowerCase() + " misses " + theName(m) + ".");
     }
+    if (K.cat === "potion"){ say("The potion shatters."); later.push({ t: delay, fn: () => burst(end[0], end[1], rgb, 8) }); }   // glass skitters across the floor
     if (lands) dropAt(idx(end[0], end[1]), one);
     return true;
   });
+}
+function fireAmmo(it){
+  const bow = player.eq.bow, K = ITEM[it.k], B = ITEM[bow.k];
+  aim("Fire " + nameOf(it, 1) + ".", (tx, ty) => {
+    const { path, m } = flight(tx, ty, 10 + B.mult * 5), one = { ...it, n: 1 }, BP = itemPowers(bow);
+    takeOne(it); recalc();
+    if (!path.length){ dropAt(idx(player.x, player.y), one); return true; }
+    shots.push({ path, t: 0, speed: 55, glyph: K.glyph, rgb: K.rgb });
+    const delay = path.length / 55, end = path[path.length - 1];
+    let lands = true;
+    if (m){
+      if (rng.int(100) < hitChance(skillOf(player, "shoot") + 3 * (BP.hit + (one.tohit || 0) + player.bonus.hit), m.K.ac, -path.length)){
+        damage(m, Math.max(1, (rng.dice(K.dice) + (one.todam || 0) + BP.dam) * B.mult), "The " + K.name.toLowerCase() + " hits " + theName(m) + ".", delay);
+        if (rng.chance(0.35)) lands = false;
+      } else { say("The " + K.name.toLowerCase() + " misses " + theName(m) + "."); if (rng.chance(0.1)) lands = false; }
+    }
+    if (lands) dropAt(idx(end[0], end[1]), one);
+    return true;
+  });
+}
+function fire(){
+  const bow = player.eq.bow;
+  if (!bow){ say("You have nothing to fire with."); return; }
+  const ammo = ITEM[bow.k].ammo;
+  chooseItem("FIRE WHICH?", it => ITEM[it.k].ammo === ammo && ITEM[it.k].cat === "ammo", fireAmmo, "You have nothing to fire from your " + ITEM[bow.k].name.toLowerCase() + ".");
 }
 function cast(){
   const C = cls(), P = POWERS[powerFor(C)];
@@ -1421,7 +1969,10 @@ function act(fn){
   oldMsgs = msgs.length ? msgs : oldMsgs; msgs = [];
   const r = fn();
   if (!r) return false;
-  if (r !== "level") endTurn();
+  if (r === "level") return true;
+  if (pendingLevel){ const d = Math.max(1, pendingLevel); pendingLevel = 0; newLevel(d); return true; }
+  endTurn();
+  while (player.t.asleep > 0 && state === "play") endTurn();   // asleep: the monsters keep moving
   return true;
 }
 function endTurn(){
@@ -1437,14 +1988,20 @@ function endTurn(){
   centerCamera(false); updateSight();
   for (const m of mons) if (m.K){ const v = seesMon(m); if (v && !m.seen) disturbed = true; m.seen = v; }
 }
-let disturbed = false;
+let disturbed = false, pendingLevel = 0;
 function everyTurn(){
   // food and light burn away, and wounds and mana slowly come back
-  player.food--;
+  if (!player.bonus.slowDigest || player.turns % 2) player.food--;
   if (player.food === 2000) say("You are getting hungry.");
   if (player.food === 1000) say("You are getting weak from hunger.");
   if (player.food === 0) say("You are starving!");
   if (player.food < 0 && player.food % 10 === 0) hurt(1, "starvation");
+  if (player.t.poison > 0) hurt(1, "poison");
+  for (const k of Object.keys(TIMERS)) if (player.t[k] > 0 && --player.t[k] === 0){ say(TIMERS[k][1]); recalc(); }
+  for (const it of player.inv) if (it.timeout > 0) it.timeout--;   // rods recharge
+  if (player.bonus.teleportCurse && rng.int(80) === 0 && teleportPlayer(40)){ say("You feel yourself yanked sideways!");
+    for (const s of ["ring1", "ring2"]) if (player.eq[s] && ITEM[player.eq[s].k].teleportCurse) learn(player.eq[s], true); }
+  if (player.turns % 100 === 0) for (const it of [...player.inv, ...SLOTS.map(s => player.eq[s]).filter(Boolean)]) sense(it, skillOf(player, "notice") / 3);
   const lt = player.eq.light;
   if (lt && lt.fuel > 0){
     lt.fuel--;
@@ -1453,7 +2010,7 @@ function everyTurn(){
   }
   const k = resting ? 2 : 1;
   if (player.food > 1000 && player.hp < player.mhp){
-    player.regen += (0.03 + player.mhp * 0.004) * k * (race().regen || 1);
+    player.regen += (0.03 + player.mhp * 0.004) * k * (race().regen || 1) * (player.bonus.regen ? 2 : 1);
     while (player.regen >= 1 && player.hp < player.mhp){ player.hp++; player.regen--; }
   }
   if (player.mana < player.mmana){
@@ -1479,7 +2036,10 @@ function monsterTurn(m){
     if (d < 16 - st) m.sleep -= rng.range(0, Math.max(1, 6 - st));
     return;
   }
+  m.speed = K.speed - (m.slow > 0 ? 10 : 0);
+  if (m.slow > 0) m.slow--;
   if (K.still){ if (d <= 1) monsterAttack(m); return; }
+  if (m.conf > 0){ m.conf--; const [dx, dy] = DIRS[rng.pick([1, 2, 3, 4, 6, 7, 8, 9])]; return step(m, m.x + dx, m.y + dy); }
   if (d <= 1 && !m.afraid) return monsterAttack(m);
   const seesYou = inFov[idx(m.x, m.y)] === turnNo && d < 20;   // sight is symmetric: if you could see it, it can see you
   let tx = player.x, ty = player.y, away = false;
@@ -1511,7 +2071,7 @@ function monsterAttack(m){
     if (state !== "play") return;
     if (rng.int(100) < Math.max(15, Math.min(95, 60 + 2 * K.depth - armour()))){
       let dmg = rng.dice(dice);
-      if (verb === "burns" && race().fireRes){ dmg = Math.ceil(dmg / 2); say(name + " burns you, but you resist the heat."); }
+      if (verb === "burns" && player.bonus.res.has("fire")){ dmg = Math.ceil(dmg / 3); say(name + " burns you, but you resist the heat."); }
       else say(name + " " + verb + " you.");
       hurt(dmg, "a " + K.name);
     } else say(name + " misses you.");
@@ -1592,10 +2152,13 @@ function crChoose(){ const r = crRows()[cr.at]; if (r.select) r.select(); else i
 function begin(){
   const p = crPreview(), C = CLASS[p.cls];
   const weapon = { sellsword: "shortsword", arcanist: "dagger", lampwarden: "mace", delver: "dagger", wayfinder: "shortsword", oathknight: "mace" }[p.cls];
-  player = { ...p, name: cr.name, x: 0, y: 0, exp: 0, energy: 100, speed: 0, food: 5000, gold: rng.range(40, 120), regen: 0, mregen: 0,
-    inv: [], eq: { weapon: makeItem(weapon), body: makeItem("jerkin"), light: makeItem("torch") }, maxDepth: 1, kills: 0, turns: 0 };
+  player = { ...p, base: { ...p.stats }, name: cr.name, x: 0, y: 0, exp: 0, energy: 100, speed: 0, food: 5000, gold: rng.range(40, 120), regen: 0, mregen: 0,
+    inv: [], eq: Object.fromEntries(SLOTS.map(s => [s, null])), t: {}, know: newKnowledge(rng), maxDepth: 1, kills: 0, turns: 0 };
+  Object.assign(player.eq, { weapon: plainItem(weapon), body: plainItem("jerkin"), light: plainItem("torch") });
+  for (const [k, n] of [["torch", 2], ["ration", 4], ["heal", 2], ...(C.kit || [])]){ carry(plainItem(k, n)); player.know.known[k] = true; }
+  if (C.bow) player.eq.bow = plainItem(C.bow);
+  recalc();
   player.mhp = player.hp = firstHp(player); player.mmana = player.mana = maxMana(player);
-  for (const [k, n] of [["torch", 2], ["ration", 4], ["heal", 2], ...(C.kit || [])]) carry(makeItem(k, n));
   log = []; msgs = []; oldMsgs = []; killer = ""; tomb = null; cr = null;
   state = "play"; stateT = 0;
   newLevel(1);
@@ -1654,12 +2217,12 @@ function drawMap(t){
     } else if (mem[i]) put(c, VY + r, [base[0] * MEM_RGB[0] * 2, base[1] * MEM_RGB[1] * 2, base[2] * MEM_RGB[2] * 2], 1, 1, g.charCodeAt(0));   // remembered: dim and blue
   }
   const shade = i => Math.max(0.55, Math.min(1.3, 0.45 + lum(lightNow, 3 * i) * 1.2));
-  for (const f of floor){ const i = idx(f.x, f.y); if (!visible(i)) continue;
-    const K = f.it.k === "gold" ? { glyph: "$", rgb: [1.4, 1.15, 0.3] } : ITEM[f.it.k];
-    put(f.x - cam.x, VY + f.y - cam.y, K.rgb, shade(i), TEXT_LAYER, K.glyph.charCodeAt(0)); }
-  for (const m of mons){ if (!m.K || !seesMon(m)) continue; const i = idx(m.x, m.y), heat = byHeat(m);
-    // seen only by infravision: a dull red shape
-    put(m.x - cam.x, VY + m.y - cam.y, heat ? [1.2, 0.3, 0.25] : m.K.rgb, heat ? 0.9 : m.K.glow ? 1.4 : shade(i) * 1.15, TEXT_LAYER, m.K.glyph.charCodeAt(0)); }
+  for (const f of floor){ const i = idx(f.x, f.y), v = visible(i); if (!v && !f.seen) continue;   // items seen before stay on the map, dim
+    const gold = f.it.k === "gold", g = gold ? "$" : ITEM[f.it.k].glyph, rgb = gold ? [1.4, 1.15, 0.3] : itemRgb(f.it, player.know);
+    put(f.x - cam.x, VY + f.y - cam.y, rgb, v ? shade(i) : 0.3, TEXT_LAYER, g.charCodeAt(0)); }
+  for (const m of mons){ if (!m.K || !sensed(m)) continue; const i = idx(m.x, m.y), heat = byHeat(m), seen = seesMon(m);
+    // seen only by infravision: a dull red shape; found only by detection: dim
+    put(m.x - cam.x, VY + m.y - cam.y, heat ? [1.2, 0.3, 0.25] : m.K.rgb, !seen ? 0.45 : heat ? 0.9 : m.K.glow ? 1.4 : shade(i) * 1.15, TEXT_LAYER, m.K.glyph.charCodeAt(0)); }
   if (state === "play") put(player.x - cam.x, VY + player.y - cam.y, [1.7, 1.55, 1.2], 1, TEXT_LAYER, 64);
   for (const s of shots){ const c = s.path[Math.min(s.path.length - 1, Math.floor(s.t * s.speed))]; put(c[0] - cam.x, VY + c[1] - cam.y, s.rgb, 1.2, TEXT_LAYER, s.glyph.charCodeAt(0)); }
   lamp.x = (player.x - cam.x + 0.5) * screen.cw; lamp.y = (player.y - cam.y + VY + 0.5) * screen.ch; lamp.z = screen.ch * 3;
@@ -1684,6 +2247,9 @@ function drawUI(){
   seg2(lt ? ITEM[lt.k].name + " " + lt.fuel : "No light", lt && lt.fuel > 500 ? ACCENT : RED);
   if (food) seg2(food, RED);
   seg2("Gold " + p.gold, DIM);
+  const T0 = p.t, st = [[T0.fast, "Fast", GREEN], [T0.hero, "Hero", GREEN], [T0.berserk, "Berserk", GREEN], [T0.bless, "Blessed", GREEN],
+    [T0.poison, "Poisoned", RED], [T0.confused, "Confused", RED], [T0.blind, "Blind", RED], [T0.asleep, "Asleep", RED], [p.bonus.burden, "Burdened", RED]];
+  for (const [on, label, rgb] of st) if (on && x + label.length < GW - 24) seg2(label, rgb);
   const hint = touchMode ? "B COMMANDS  START MENU" : "? HELP  ESC MENU";
   if (x + hint.length <= GW) text(GW - hint.length, GH - 1, hint, DIM);
 }
@@ -1739,8 +2305,12 @@ function commandList(){
     { label: "Inventory", select: () => inventoryList() },
     { label: "Pick up", select: done(() => act(pickUp)) },
     { label: "Take the stairs", select: done(() => { const t = L.tiles[idx(player.x, player.y)]; act(() => takeStairs(t !== T.UP)); }) },
+    { label: "Equipment", select: () => equipmentList() },
     ...(P ? [{ label: (cls().realm === "holy" ? "Pray " : "Cast ") + P.name + " (" + P.cost + " MP)", select: done(cast) }] : []),
-    { label: "Throw", select: () => inventoryList(() => true, "throw") },
+    { label: "Drink a potion", select: () => useWhich("quaff") }, { label: "Read a scroll", select: () => useWhich("read") },
+    { label: "Use a wand, staff or rod", select: () => chooseItem("USE WHICH?", it => ["wand", "staff", "rod"].includes(ITEM[it.k].cat), it => act(() => useItem(it, "use")), "You have no magic devices.") },
+    ...(player.eq.bow ? [{ label: "Fire", select: () => fire() }] : []),
+    { label: "Throw", select: () => useWhich("throw") },
     { label: "Rest until healed", select: done(rest) },
     { label: "Wait a turn", select: done(() => act(() => true)) },
     { label: "Look around", select: done(look) },
@@ -1749,36 +2319,95 @@ function commandList(){
     { label: "Help", select: () => helpList() }
   ]);
 }
-function inventoryList(filter, verb){
-  const rows = [];
-  for (const slot of ["weapon", "body", "light"]){ const it = player.eq[slot]; if (it && !filter) rows.push(info(slot.padEnd(7) + itemName(it))); }
-  const items = player.inv.map((it, k) => [it, k]).filter(([it]) => !filter || filter(it));
-  if (verb === "throw") items.sort((a, b) => !!ITEM[b[0].k].throw - !!ITEM[a[0].k].throw);   // darts first
-  for (const [it, k] of items) rows.push({ label: String.fromCharCode(97 + k) + ") " + itemName(it), select: () => verb ? (list.hide(), verb === "throw" ? throwItem(it) : act(() => useItem(it, verb))) : itemActions(it) });
-  if (!rows.length) rows.push(info(filter ? "Nothing suitable." : "You are carrying nothing."));
-  openList(filter ? verb.toUpperCase() + " WHICH?" : "INVENTORY  " + player.inv.length + "/22", rows);
+function chooseItem(title, filter, fn, none = "You have nothing suitable."){
+  const rows = player.inv.map((it, k) => [it, k]).filter(([it]) => filter(it)).map(([it, k]) => ({ label: String.fromCharCode(97 + k) + ") " + nameOf(it), select: () => { list.hide(); fn(it); } }));
+  for (const sl of SLOTS){ const it = player.eq[sl]; if (it && filter(it)) rows.push({ label: SLOT_NAMES[sl].slice(0, 6).padEnd(7) + nameOf(it), select: () => { list.hide(); fn(it); } }); }
+  if (!rows.length){ oldMsgs = []; msgs = []; say(none); return; }
+  openList(title, rows);
+}
+const VERB_FILTER = { eat: it => ITEM[it.k].cat === "food" || ITEM[it.k].cat === "mushroom", quaff: it => ITEM[it.k].cat === "potion", read: it => ITEM[it.k].cat === "scroll",
+  fuel: it => ITEM[it.k].cat === "flask", wield: it => !!ITEM[it.k].slot && player.inv.includes(it), drop: it => player.inv.includes(it),
+  wand: it => ITEM[it.k].cat === "wand", staff: it => ITEM[it.k].cat === "staff", rod: it => ITEM[it.k].cat === "rod", throw: it => player.inv.includes(it), inspect: () => true };
+function useWhich(verb){   // the item lists behind single keys: q drink, r read, a aim and so on
+  const how = verb === "wand" || verb === "staff" || verb === "rod" ? "use" : verb;
+  chooseItem({ eat: "EAT", quaff: "DRINK", read: "READ", fuel: "FILL LANTERN WITH", wield: "WEAR OR WIELD", drop: "DROP", wand: "AIM", staff: "USE", rod: "ZAP", throw: "THROW", inspect: "INSPECT" }[verb] + " WHICH?",
+    VERB_FILTER[verb], it => verb === "throw" ? throwItem(it) : verb === "inspect" ? inspect(it) : act(() => useItem(it, how)),
+    { wand: "You have no wands.", staff: "You have no staffs.", rod: "You have no rods.", read: "You have no scrolls.", quaff: "You have no potions.", eat: "You have nothing to eat." }[verb]);
+}
+function inventoryList(){
+  const rows = player.inv.map((it, k) => ({ label: String.fromCharCode(97 + k) + ") " + nameOf(it), select: () => itemActions(it) }));
+  if (!rows.length) rows.push(info("You are carrying nothing."));
+  openList("PACK " + player.inv.length + "/22  " + Math.round(totalWeight()) + "/" + capacity() + " LB", rows);
+}
+function equipmentList(){
+  openList("EQUIPMENT", SLOTS.map(sl => { const it = player.eq[sl];
+    return { label: SLOT_NAMES[sl].slice(0, 6).padEnd(7) + (it ? nameOf(it) : "-"), select: () => it ? openList(nameOf(it).toUpperCase().slice(0, 34), [
+      { label: "Take off", select: done(() => act(() => takeOff(sl))) }, { label: "Inspect", select: () => inspect(it) }, { label: "Back", select: equipmentList }]) : null }; }));
 }
 function verbsFor(it){
   const K = ITEM[it.k], v = [];
-  if (K.use === "eat") v.push(["eat", "Eat"]);
-  if (K.use === "quaff") v.push(["quaff", "Drink"]);
-  if (K.use === "fuel") v.push(["fuel", "Fill lantern"]);
-  if (K.slot) v.push(["wield", K.slot === "body" ? "Wear" : K.slot === "light" ? "Use as light" : "Wield"]);
-  v.push(["throw", "Throw"], ["drop", "Drop"]);
+  if (K.cat === "food" || K.cat === "mushroom") v.push(["eat", "Eat"]);
+  if (K.cat === "potion") v.push(["quaff", "Drink"]);
+  if (K.cat === "scroll") v.push(["read", "Read"]);
+  if (K.cat === "flask") v.push(["fuel", "Fill lantern"]);
+  if (K.cat === "wand" || K.cat === "staff" || K.cat === "rod") v.push(["use", { wand: "Aim", staff: "Use", rod: "Zap" }[K.cat]]);
+  if (K.cat === "ammo" && player.eq.bow && ITEM[player.eq.bow.k].ammo === K.ammo) v.push(["fire", "Fire"]);
+  if (K.slot) v.push(["wield", K.slot === "weapon" ? "Wield" : K.slot === "light" ? "Use as light" : "Wear"]);
+  v.push(["throw", "Throw"], ["inspect", "Inspect"], ["drop", "Drop"]);
   return v;
 }
 function itemActions(it){
-  openList(itemName(it).toUpperCase().slice(0, 34), [...verbsFor(it).map(([how, label]) => ({ label, select: done(() => how === "throw" ? throwItem(it) : act(() => useItem(it, how))) })), { label: "Back", select: () => inventoryList() }]);
+  openList(nameOf(it).toUpperCase().slice(0, 34), [...verbsFor(it).map(([how, label]) => ({ label, select: how === "inspect" ? () => inspect(it) : done(() =>
+    how === "throw" ? throwItem(it) : how === "fire" ? fireAmmo(it) : act(() => useItem(it, how))) })), { label: "Back", select: () => inventoryList() }]);
+}
+const EFFECT_TEXT = { heal: "heals wounds", healFull: "heals you completely", mana: "restores mana", fast: "makes you faster for a while", hero: "makes you heroic",
+  berserk: "puts you in a fighting rage", resFire: "protects you from heat", resCold: "protects you from cold", infra: "lets you see heat further",
+  cure: "cures poison, confusion and blindness", curePoison: "cures poison", sleep: "puts you to sleep", poison: "poisons you", confuse: "confuses you", blind: "blinds you",
+  salt: "makes you sick", gainStat: "raises a stat for good", enlight: "shows you the whole level", exp: "gives experience", clairvoyance: "shows you the level and its objects",
+  identify: "identifies an item", removeCurse: "removes curses from your equipment", lightArea: "lights up the area", darkness: "darkens the area and blinds you",
+  map: "maps the area around you", detectObj: "shows objects nearby", detectMon: "shows monsters nearby", detection: "shows monsters and objects nearby",
+  phase: "teleports you a short way", teleport: "teleports you far away", teleLevel: "takes you up or down a level", deepDescent: "drops you two levels",
+  enchHit: "makes your weapon more accurate", enchDam: "makes your weapon hit harder", enchAc: "strengthens a piece of armour", bless: "blesses you", chant: "blesses you for longer",
+  satisfy: "fills your stomach", monConf: "makes your next hit confuse", slumber: "puts monsters next to you to sleep", aggravate: "wakes every monster",
+  curseArmour: "curses your armour", summonUndead: "calls the undead", summon: "calls monsters", bolt: "fires a bolt", beam: "fires a beam that goes through monsters",
+  ball: "fires an exploding ball", sleepMon: "puts a monster to sleep", slowMon: "slows a monster", confMon: "confuses a monster", scareMon: "frightens a monster",
+  sleepAll: "puts the monsters you see to sleep", slowAll: "slows the monsters you see", beamLight: "lights a line through the dark", stoneMud: "turns a wall to mud" };
+function inspect(it){
+  const K = ITEM[it.k], known = kindKnown(K, player.know), lines = [], P = itemPowers(it), A = it.art ? ARTIFACT[it.art] : null;
+  lines.push(...wrap(cap(nameOf(it)), 34));
+  lines.push("Weighs " + (Math.round(itemWeight(it) * 10) / 10) + " lb.");
+  if (K.dice && K.cat !== "ammo") lines.push("Hits for " + K.dice + (K.cat === "dart" ? " when thrown." : "."));
+  if (K.mult) lines.push("Multiplies damage by " + K.mult + ".");
+  if (K.radius) lines.push("Lights a radius of " + ((A && A.radius) || K.radius) + ".");
+  if (K.effect) lines.push(...wrap(known ? "It " + EFFECT_TEXT[K.effect] + "." : "You do not know what it does.", 34));
+  if (K.cat === "rod" && known) lines.push("Recharges in " + K.recharge + " turns.");
+  if (it.id || A){
+    if (P.brand) lines.push("It " + { fire: "burns", cold: "freezes", elec: "shocks" }[P.brand] + " your foes.");
+    if (P.slay) lines.push("It is deadly against " + { animal: "animals", undead: "the undead", evil: "evil" }[P.slay] + ".");
+    if (P.res.length) lines.push(...wrap("It protects you from " + [...new Set(P.res)].join(", ") + ".", 34));
+    for (const [k, v] of Object.entries(P.stats)) lines.push((v > 0 ? "+" : "") + v + " " + STAT_NAMES[k] + ".");
+    if (P.speed) lines.push((P.speed > 0 ? "+" : "") + P.speed + " speed.");
+    if (P.stealth) lines.push("+" + P.stealth + " stealth.");
+    if (P.freeAct) lines.push("It keeps you from being put to sleep.");
+    if (P.regen) lines.push("It speeds your healing.");
+    if (P.slowDigest) lines.push("You need less food.");
+    if (it.cursed) lines.push("It is cursed.");
+  } else if (K.dice || K.ac !== undefined || K.mult) lines.push(it.sense ? "You feel it is " + it.sense + "." : "Its quality is unknown.");
+  if (A) lines.push(...wrap(A.desc, 34));
+  openList("INSPECT", lines.map(info));
 }
 function characterList(){
-  const p = player, R = race(), C = cls(), s = p.stats;
+  const p = player, R = race(), C = cls(), s = p.stats, b = p.bonus;
   openList("CHARACTER", [
     info(p.name + ", " + R.name + " " + C.name), info("Title: " + titleOf(p)),
     info("Level " + p.lvl + "   Exp " + Math.floor(p.exp) + " / " + expNeeded(p, p.lvl + 1)),
     info("HP " + p.hp + "/" + p.mhp + (p.mmana ? "  MP " + p.mana + "/" + p.mmana : "") + "  AC " + armour()),
     info(statLine(s, "str").padEnd(15) + statLine(s, "int")), info(statLine(s, "wis").padEnd(15) + statLine(s, "dex")), info(statLine(s, "con").padEnd(15) + statLine(s, "cha")),
-    ...SKILLS.map(k => { const v = skillOf(p, k); return info(SKILL_NAMES[k].padEnd(15) + (k === "stealth" ? stealthWord(v) : skillWord(v))); }),
-    info("Infravision".padEnd(15) + (R.infra ? R.infra * 10 + " ft" : "none")), info("Hit die".padEnd(15) + "d" + hitDie(p)),
+    info("To-hit " + (b.hit >= 0 ? "+" : "") + b.hit + "  To-dam " + (b.dam >= 0 ? "+" : "") + b.dam + "  Speed " + (p.speed >= 0 ? "+" : "") + p.speed),
+    info("Carrying " + Math.round(totalWeight()) + " of " + capacity() + " lb"),
+    ...(b.res.size ? [info("Resists " + [...b.res].join(", "))] : []),
+    ...SKILLS.map(k => { const v = skillOf(p, k) + (k === "stealth" ? b.stealth : k === "search" ? b.search : 0); return info(SKILL_NAMES[k].padEnd(15) + (k === "stealth" ? stealthWord(v) : skillWord(v))); }),
+    info("Infravision".padEnd(15) + (infra() ? infra() * 10 + " ft" : "none")), info("Hit die".padEnd(15) + "d" + hitDie(p)),
     info("Exp penalty".padEnd(15) + "+" + (R.xp + C.xp) + "%"),
     info("Weapon " + weaponDice() + "   Gold " + p.gold), info("Deepest " + feet(p.maxDepth) + " ft   Kills " + p.kills), info("Turns " + p.turns)
   ]);
@@ -1789,8 +2418,9 @@ function helpList(){
   openList("HELP", [
     info(ro ? "hjklyubn  move (Shift runs)" : "Arrows/numpad  move"), info(ro ? "arrows also move" : "Shift + move  run"),
     info("Walk into a monster to attack"), info("Walk into a door to open it"),
-    info("g or ,  pick up"), info("i  inventory    E  eat"), info("q  drink    w  wield/wear"), info("F  fill lantern  d  drop"),
-    info("m  cast or pray   v  throw"), info("  then a direction, or ' / t"), info("  for the nearest monster"),
+    info("g or ,  pick up"), info("i  pack   e  equipment"), info("w  wear   " + (ro ? "T" : "t") + "  take off   d  drop"),
+    info("E  eat   q  drink   r  read"), info("a  aim a wand   " + (ro ? "Z" : "u") + "  use a staff"), info("z  zap a rod   F  fill lantern"),
+    info("f  fire   v  throw   I  inspect"), info("m  cast or pray"), info("  then a direction, or ' / t"), info("  for the nearest monster"),
     info(">  <  take the stairs"), info("R  rest   " + (ro ? "." : ". or 5") + "  wait"), info((ro ? "x" : "l") + "  look   C  character"),
     info("Ctrl+P  messages"), info("Esc  menu"),
     info("Touch: D-pad moves (8 ways),"), info("A acts here, B commands")
@@ -1844,12 +2474,20 @@ function onKey(e){
   else if (k === ">") act(() => takeStairs(true));
   else if (k === "<") act(() => takeStairs(false));
   else if (k === "i") inventoryList();
-  else if (k === "E") inventoryList(it => ITEM[it.k].use === "eat", "eat");
-  else if (k === "q") inventoryList(it => ITEM[it.k].use === "quaff", "quaff");
-  else if (k === "w") inventoryList(it => !!ITEM[it.k].slot, "wield");
-  else if (k === "F") inventoryList(it => ITEM[it.k].use === "fuel", "fuel");
-  else if (k === "d") inventoryList(() => true, "drop");
-  else if (k === "v") inventoryList(() => true, "throw");
+  else if (k === "e") equipmentList();
+  else if (k === "E") useWhich("eat");
+  else if (k === "q") useWhich("quaff");
+  else if (k === "r") useWhich("read");
+  else if (k === "w") useWhich("wield");
+  else if (k === (ro ? "T" : "t")) equipmentList();
+  else if (k === "F") useWhich("fuel");
+  else if (k === "d") useWhich("drop");
+  else if (k === "v") useWhich("throw");
+  else if (k === "a") useWhich("wand");
+  else if (k === (ro ? "Z" : "u")) useWhich("staff");
+  else if (k === "z") useWhich("rod");
+  else if (k === "f") fire();
+  else if (k === "I") useWhich("inspect");
   else if (k === "m" || k === "p") cast();
   else if (k === "R") rest();
   else if (k === "." || (!ro && (k === "5" || e.code === "Numpad5"))) act(() => true);
