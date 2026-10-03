@@ -17,10 +17,13 @@ function syncForm(){
     ? "Not used in pixel mode: lit objects become solid pixels. Switch to ASCII characters to choose a set."
     : "Used for shading lit objects such as debris, rubble and the physics balls. Sprites and text keep their own characters.";
   $("crt").checked = !!s.crt;
+  for (const r of document.querySelectorAll("input[name=detail]")) r.checked = +r.value === (s.detail || 1);
 }
 function apply(note){
-  D.chars = arcadeChars(s); D.pixels = s.mode === "pixels";
+  const detailChanged = D.detail !== (s.detail || 1);
+  D.chars = arcadeChars(s); D.pixels = s.mode === "pixels"; D.detail = s.detail || 1;
   if (screen) screen.setRamp();
+  if (detailChanged) layout();   // the preview's fine grid is made when it is fitted
   document.body.classList.toggle("crt", !!s.crt);
   syncForm();
   $("status").textContent = saveArcadeSettings(s) ? (note || "Saved") : "Could not save: this browser is blocking storage.";
@@ -34,6 +37,7 @@ document.querySelectorAll("input[name=mode]").forEach(r => r.addEventListener("c
 document.querySelectorAll("input[name=ramp]").forEach(r => r.addEventListener("change", () => { s.ramp = r.value; apply(); if (r.value === "custom") $("custom").focus(); }));
 $("custom").addEventListener("input", e => { s.custom = e.target.value; apply(); });
 $("crt").addEventListener("change", e => { s.crt = e.target.checked; apply(); });
+document.querySelectorAll("input[name=detail]").forEach(r => r.addEventListener("change", () => { s.detail = +r.value; apply(); }));
 $("reset").addEventListener("click", () => { s = { ...ARCADE_DEFAULTS }; apply("Reset to defaults"); });
 syncForm();
 
@@ -80,7 +84,7 @@ function tick(t){
   for (let y = 7; y < GH - 7; y += 2) put(11, y, [3.0, 0.15, 0.1], 3, 124);   // an enemy laser
   text(1, 0, "SCORE 001250", [1.6, 1.6, 1.6]);
   text(GW - 9, 0, "LIVES 3", [1.6, 1.6, 1.6]);
-  text(1, GH - 1, s.mode === "pixels" ? "PIXELS" + (s.crt ? " + TV" : "") : "ASCII " + s.ramp.toUpperCase() + (s.crt ? " + TV" : ""), [1.4, 1.1, 0.5]);
+  text(1, GH - 1, (s.mode === "pixels" ? "PIXELS" : "ASCII " + s.ramp.toUpperCase()) + (s.detail > 1 ? " x" + s.detail : "") + (s.crt ? " + TV" : ""), [1.4, 1.1, 0.5]);
   screen.render(ctx);
 }
 layout();

@@ -36,7 +36,9 @@ All games are original code and art. Rover Patrol takes its idea from msokalski'
 - **Pause menu:** drawn on the game screen. It has resume, restart, game options (difficulty, mode or starting
   level), sound, controls, display settings, and the way back to the shelf.
 - **Display settings** (`settings.html`, shared by every game): draw with ASCII characters or solid pixels (text
-  stays readable either way), pick the character set, and turn on a tube TV filter.
+  stays readable either way), pick the character set, choose the detail, and turn on a tube TV filter. Detail (Fine
+  2x, Finest 3x) draws the engine's lit balls, boxes, blocks, rubble and light with smaller characters or pixels, while
+  game text and sprites keep their size; Torchlight Dungeons uses smaller characters everywhere and shows more map.
 
 ### Other pages
 

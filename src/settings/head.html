@@ -84,6 +84,16 @@ button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   </fieldset>
 
   <fieldset>
+    <legend>Detail</legend>
+    <div class="choices" role="radiogroup">
+      <label class="choice"><input type="radio" name="detail" value="1"><span>Standard<small>one character or pixel per cell</small></span></label>
+      <label class="choice"><input type="radio" name="detail" value="2"><span>Fine<small>2 x 2 smaller per cell</small></span></label>
+      <label class="choice"><input type="radio" name="detail" value="3"><span>Finest<small>3 x 3 smaller per cell</small></span></label>
+    </div>
+    <p class="hint">Lit balls, boxes, blocks, rubble and light are drawn with smaller characters or pixels. Game text and sprites keep their size, so they stay readable. Torchlight Dungeons uses smaller characters everywhere and shows more of the map. Higher detail uses more of your device's power.</p>
+  </fieldset>
+
+  <fieldset>
     <legend>Tube TV filter</legend>
     <label class="switch"><input type="checkbox" id="crt"><span>Scanlines, phosphor glow, rounded glass and a faint flicker</span></label>
   </fieldset>

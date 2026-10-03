@@ -256,7 +256,7 @@ function block(gx, gy, w, h, rgb, fl, layer = 2){   // a lit raised slab coverin
   // the falling piece and the title sit above the debris: shade, then lift the cells to layer 3. Drawn before the
   // debris, so the debris can't take these cells.
   screen.box(slab, lamp);
-  for (let r = gy; r < gy + h; r++) for (let c = gx; c < gx + w; c++) if (c >= 0 && r >= 0 && c < GW && r < GH) screen.lay[r * GW + c] = layer;
+  screen.raise(gx, gy, w, h, layer);
 }
 function cellAt(x, y, rgb, fl, layer){ if (y >= 0) block(BX + x * CW, BY + y * CH, CW, CH, rgb, fl, layer); }
 function mini(kind, gx, gy){   // a piece in a side panel, centred in a 16 x 4 area

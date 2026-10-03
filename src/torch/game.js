@@ -17,6 +17,8 @@ const VY = 2;   // map rows start under the two message rows; the status bar tak
 
 const D = defaultDisplay(); D.room = 0.15; D.glow = 0.3; D.lampRGB = TORCH_RGB;
 applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
+// Detail: this page's grid already follows the screen, so higher detail means smaller characters and a bigger view.
+const DETAIL = D.detail; D.detail = 1;
 if (D.pixels) TILE[T.FLOOR][1] = [0.09, 0.09, 0.1];   // as solid pixels, floor must be much darker than wall to read the map
 const world = new World(); world.openTop = true;
 const lamp = { x: 0, y: 0, z: 0, on: true };   // the player's torch, for lighting the debris
@@ -1226,10 +1228,10 @@ cv.addEventListener("pointerdown", e => {
 function layout(){
   const r = stage.getBoundingClientRect(); if (!r.width) return;
   const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
-  // as large a font as fits at least 60 x 24 characters, up to 14px; the view grows with the space
-  const f = Math.max(6, Math.min(14, Math.floor(r.width / 60 / 0.6), Math.floor(r.height / 24 / 1.15)));
+  // as large a font as fits at least 60 x 24 characters, up to 14px (smaller with higher detail); the view grows with the space
+  const f = Math.max(4, Math.min(Math.round(14 / DETAIL), Math.floor(r.width / 60 / 0.6), Math.floor(r.height / 24 / 1.15)));
   screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-  GW = Math.min(screen.cols, 140); GH = Math.min(screen.rows, 50); VH = GH - VY - 2;
+  GW = Math.min(screen.cols, MW); GH = Math.min(screen.rows, MH + VY + 2); VH = GH - VY - 2;
   const W = GW * screen.cw, H = GH * screen.ch;
   screen.fit(W, H, dpr);
   cv.style.width = W + "px"; cv.style.height = H + "px"; cv.style.transform = "translate(-50%,-50%)";

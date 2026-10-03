@@ -117,9 +117,10 @@ function defaultDisplay(){
 }
 
 /* ---------- arcade display settings (settings.html), shared by the game pages ---------- */
-// One choice for every cartridge, saved in this browser: character set, ASCII or pixel drawing, tube TV filter.
+// One choice for every cartridge, saved in this browser: character set, ASCII or pixel drawing, tube TV filter, and
+// detail (1, 2 or 3: how many times finer the engine draws its lit bodies and light; see Screen.fit).
 const ARCADE_KEY = "arcade.v1.display";
-const ARCADE_DEFAULTS = { ramp: "classic", custom: " .:oO0@", mode: "ascii", crt: false };
+const ARCADE_DEFAULTS = { ramp: "classic", custom: " .:oO0@", mode: "ascii", crt: false, detail: 1 };
 function arcadeSettings(){
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(ARCADE_KEY) || "{}") || {}; }
@@ -145,7 +146,7 @@ body.crt #stage::after{border-radius:inherit;background:radial-gradient(ellipse 
 // Call once at start-up with the game's display: applies the character set, pixel mode and the TV filter.
 function applyArcadeSettings(D){
   const s = arcadeSettings();
-  D.chars = arcadeChars(s); D.pixels = s.mode === "pixels";
+  D.chars = arcadeChars(s); D.pixels = s.mode === "pixels"; D.detail = Math.max(1, Math.min(3, s.detail | 0 || 1));
   if (!document.getElementById("crt-css")){ const st = document.createElement("style"); st.id = "crt-css"; st.textContent = CRT_CSS; document.head.appendChild(st); }
   document.body.classList.toggle("crt", !!s.crt);
   return s;
@@ -482,10 +483,22 @@ class Screen {
     this.pixC = document.createElement("canvas");
     this.colC = document.createElement("canvas"); this.glowC = document.createElement("canvas");
     this.glowS = document.createElement("canvas"); this.glyphC = document.createElement("canvas"); this.t = {}; }
+  // Detail above 1 adds a finer grid (detail x detail cells per cell) that the engine's own drawing (lit balls and
+  // boxes, floor light, streaks, rings, the lamp) goes into, while the game's characters and text keep this grid.
+  // render() then shows, cell by cell, whichever is on top.
   fit(W, H, dpr){
     const probe = this.glyphC.getContext("2d"); probe.font = this.fontPx + "px " + MONO;
     this.cw = probe.measureText("M").width; this.ch = Math.round(this.fontPx * 1.15);
-    this.cols = Math.max(1, Math.floor(W / this.cw)); this.rows = Math.max(1, Math.floor(H / this.ch));
+    this.alloc(Math.max(1, Math.floor(W / this.cw)), Math.max(1, Math.floor(H / this.ch)), W, H, dpr);
+    const k = this.D.detail | 0;
+    this.fine = null; this.k = 1;
+    if (k > 1 && !this.gscale){
+      const F = new Screen(this.fontPx, this.D); F.gscale = 1 / k; F.cw = this.cw / k; F.ch = this.ch / k;
+      F.alloc(this.cols * k, this.rows * k, W, H, dpr); this.fine = F; this.k = k;
+    }
+  }
+  alloc(cols, rows, W, H, dpr){
+    this.cols = cols; this.rows = rows;
     const n = this.n = this.cols * this.rows;
     this.rad = new Float32Array(3 * n); this.lum = new Float32Array(n); this.lay = new Int8Array(n);
     this.over = new Uint16Array(n); this.glyphs = new Uint16Array(n);
@@ -499,8 +512,14 @@ class Screen {
     this.gx = this.glyphC.getContext("2d");
     this.setRamp();
   }
-  setRamp(){ this.ink = buildLUT(this.D.chars, this.fontPx, this.D.calibrate); }
-  clear(){ this.rad.fill(0); this.lum.fill(0); this.lay.fill(-1); this.over.fill(0); }
+  setRamp(){ this.ink = buildLUT(this.D.chars, this.fontPx, this.D.calibrate); if (this.fine) this.fine.setRamp(); }
+  clear(){ this.rad.fill(0); this.lum.fill(0); this.lay.fill(-1); this.over.fill(0); if (this.fine) this.fine.clear(); }
+  // Lifts what is already drawn in a block of cells to a higher layer (on the fine grid too, if there is one).
+  raise(gx, gy, w, h, layer){
+    const S = this.fine || this, k = this.k;
+    for (let r = gy * k; r < (gy + h) * k; r++) for (let c = gx * k; c < (gx + w) * k; c++)
+      if (c >= 0 && r >= 0 && c < S.cols && r < S.rows){ const i = r * S.cols + c; if (S.lay[i] >= 0 || S === this) S.lay[i] = layer; }
+  }
   put(i, r, g, b, layer, glyph){
     const L = 0.2126 * r + 0.7152 * g + 0.0722 * b, lay = this.lay;
     if (lay[i] > layer || (lay[i] === layer && L <= this.lum[i])) return;
@@ -514,6 +533,7 @@ class Screen {
   }
   light(L){ return L && L.on ? this.D.lampRGB : [0.95, 0.95, 0.95]; }
   sphere(b, L, opt = {}){
+    if (this.fine) return this.fine.sphere(b, L, opt);
     if (b.box) return this.box(b, L, opt);
     const { cols, rows, cw, ch } = this, t = this.t, A = b.alb, LC = this.light(L), room = this.D.room;
     const dOn = opt.diffuse !== false, sOn = opt.spec !== false, stripe = opt.stripe !== false && !b.static;
@@ -537,6 +557,7 @@ class Screen {
   }
   // A box is drawn as a raised slab: flat lit top, bevelled edges that tilt towards their side.
   box(b, L, opt = {}){
+    if (this.fine) return this.fine.box(b, L, opt);
     const { cols, rows, cw, ch } = this, t = this.t, A = b.alb, LC = this.light(L), room = this.D.room;
     const dOn = opt.diffuse !== false, sOn = opt.spec !== false, fl = b.flash * 0.8;
     const c = Math.cos(b.a), s = Math.sin(b.a), bev = Math.min(b.hw, b.hh) * 0.35, top = Math.min(b.hw, b.hh) * 2;
@@ -561,6 +582,7 @@ class Screen {
     }
   }
   floor(B, L, shadows = true){
+    if (this.fine) return this.fine.floor(B, L, shadows);
     const { cols, rows, cw, ch } = this;
     if (L && L.on){
       const LC = this.D.lampRGB, lz2 = L.z * L.z;
@@ -589,6 +611,7 @@ class Screen {
     }
   }
   streak(b, unit){
+    if (this.fine) return this.fine.streak(b, unit);
     if (b.static) return;
     const sp = Math.hypot(b.vx, b.vy); if (sp < 320) return;
     const len = Math.min((sp - 320) * 0.045, unit * 7); if (len < 2) return;
@@ -604,6 +627,7 @@ class Screen {
     }
   }
   ring(x, y, radius, rgb){
+    if (this.fine) return this.fine.ring(x, y, radius, rgb);
     const { cols, rows, cw, ch } = this, steps = Math.ceil(radius * 0.5);
     for (let k = 0; k < steps; k++){
       const a = k / steps * Math.PI * 2, c = Math.floor((x + Math.cos(a) * radius) / cw), r = Math.floor((y + Math.sin(a) * radius) / ch);
@@ -611,6 +635,7 @@ class Screen {
     }
   }
   bulb(L, unit){
+    if (this.fine) return this.fine.bulb(L, unit);
     if (!L.on) return;
     const { cols, rows, cw, ch } = this, LC = this.D.lampRGB, R = unit * 2.4, Rb = Math.max(unit * 0.9, cw * 1.2);
     const c0 = Math.max(0, Math.floor((L.x - R) / cw)), c1 = Math.min(cols - 1, Math.floor((L.x + R) / cw));
@@ -623,6 +648,50 @@ class Screen {
   }
   // Light (linear, can exceed 1) -> screen colour -> character + colour per cell -> pixels.
   render(ctx, opt = {}){
+    const F = this.fine;
+    if (F) this.mergeFine();
+    this.paint(); if (F) F.paint();
+    // compose: background, soft glow, pixels, grid dots, coloured characters; the fine grid first, under this one
+    const S = F ? [F, this] : [this], D = this.D;
+    ctx.fillStyle = SCREEN.bg; ctx.fillRect(0, 0, this.W, this.H);
+    if (D.glow > 0) for (const L of S){
+      ctx.imageSmoothingEnabled = true; L.glowSX.imageSmoothingEnabled = true;
+      L.glowSX.clearRect(0, 0, L.glowS.width, L.glowS.height);
+      L.glowSX.drawImage(L.glowC, 0, 0, L.glowS.width, L.glowS.height);
+      ctx.globalAlpha = D.glow * 0.35; ctx.drawImage(L.glowC, 0, 0, this.cols * this.cw, this.rows * this.ch);
+      ctx.globalAlpha = D.glow * 0.8; ctx.drawImage(L.glowS, 0, 0, this.cols * this.cw, this.rows * this.ch);
+      ctx.globalAlpha = 1;
+    }
+    if (D.pixels){ ctx.imageSmoothingEnabled = false; for (const L of S) ctx.drawImage(L.pixC, 0, 0, this.cols * this.cw, this.rows * this.ch); }
+    if (opt.grid){
+      const yOff = (this.ch - this.fontPx) / 2;
+      ctx.fillStyle = SCREEN.dot; ctx.font = this.fontPx + "px " + MONO; ctx.textBaseline = "top";
+      for (let i = 0; i < this.n; i++) if (this.glyphs[i] === 32) ctx.fillText("\u00b7", (i % this.cols) * this.cw, ((i / this.cols) | 0) * this.ch + yOff);
+    }
+    for (const L of S) ctx.drawImage(L.glyphC, 0, 0, this.W, this.H);
+  }
+  // Per cell, whichever is on top wins: this grid's cell, or the fine cells inside it. Where the fine grid wins only
+  // part of a cell, the rest of that cell is filled from this one, so a ball in front of a wall leaves no hole.
+  mergeFine(){
+    const F = this.fine, k = this.k, { cols, rows, lay, lum, rad, over } = this;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++){
+      const i = r * cols + c;
+      let top = -1, bright = 0;
+      for (let y = r * k; y < r * k + k; y++) for (let x = c * k; x < c * k + k; x++){ const j = y * F.cols + x; if (F.lay[j] > top || (F.lay[j] === top && F.lum[j] > bright)){ top = F.lay[j]; bright = F.lum[j]; } }
+      if (top < 0) continue;
+      if (lay[i] > top || (lay[i] === top && lum[i] >= bright)){   // this cell is on top: hide the fine cells under it
+        for (let y = r * k; y < r * k + k; y++) for (let x = c * k; x < c * k + k; x++) F.lay[y * F.cols + x] = -1;
+        continue;
+      }
+      if (lay[i] >= 0) for (let y = r * k; y < r * k + k; y++) for (let x = c * k; x < c * k + k; x++){
+        const j = y * F.cols + x; if (F.lay[j] >= 0) continue;
+        F.rad[3 * j] = rad[3 * i]; F.rad[3 * j + 1] = rad[3 * i + 1]; F.rad[3 * j + 2] = rad[3 * i + 2]; F.lum[j] = lum[i]; F.lay[j] = lay[i]; F.over[j] = over[i];
+      }
+      lay[i] = -1;
+    }
+  }
+  // Tone-maps every cell and draws its character (or pixel) into this screen's own canvases; render() composes them.
+  paint(){
     const { cols, rows, cw, ch, n, rad, lay, over, glyphs, D } = this;
     const ex = D.exposure, ig = 1 / D.gamma, split = D.split, black = D.black, lut = this.ink.lut, amp = 1 / Math.max(1, this.ink.count - 1);
     const cd = this.colImg.data, gd = this.glowImg.data, pix = !!D.pixels, pd = this.pixImg.data;
@@ -658,39 +727,24 @@ class Screen {
     }
     this.colX.putImageData(this.colImg, 0, 0); this.glowX.putImageData(this.glowImg, 0, 0);
     if (pix) this.pixX.putImageData(this.pixImg, 0, 0);
-    // 3. draw every character in white on its own layer...
-    const g = this.gx, dpr = this.dpr, yOff = (ch - this.fontPx) / 2;
+    // 3. draw every character in white on its own layer... (the fine grid draws full-size characters, scaled down,
+    // so their spacing matches its cells exactly)
+    const g = this.gx, dpr = this.dpr, s = this.gscale || 1, gcw = cw / s, gch = ch / s, yOff = (gch - this.fontPx) / 2;
     g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "source-over"; g.clearRect(0, 0, this.glyphC.width, this.glyphC.height);
-    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.font = this.fontPx + "px " + MONO; g.textBaseline = "top"; g.textAlign = "left"; g.fillStyle = "#fff";
+    g.setTransform(dpr * s, 0, 0, dpr * s, 0, 0); g.font = this.fontPx + "px " + MONO; g.textBaseline = "top"; g.textAlign = "left"; g.fillStyle = "#fff";
     if ("fontKerning" in g) g.fontKerning = "none";
     if (this.ink.ascii){
       for (let r = 0; r < rows; r++){   // one call per row: monospace ASCII keeps every character on its cell
-        const s = String.fromCharCode.apply(null, glyphs.subarray(r * cols, (r + 1) * cols));
-        if (s.trim()) g.fillText(s, 0, r * ch + yOff);
+        const row = String.fromCharCode.apply(null, glyphs.subarray(r * cols, (r + 1) * cols));
+        if (row.trim()) g.fillText(row, 0, r * gch + yOff);
       }
     } else {
-      for (let i = 0; i < n; i++) if (glyphs[i] !== 32) g.fillText(String.fromCharCode(glyphs[i]), (i % cols) * cw, ((i / cols) | 0) * ch + yOff);
+      for (let i = 0; i < n; i++) if (glyphs[i] !== 32) g.fillText(String.fromCharCode(glyphs[i]), (i % cols) * gcw, ((i / cols) | 0) * gch + yOff);
     }
     // ...then keep the white pixels only, painted with each cell's 24-bit colour
     g.globalCompositeOperation = "source-in"; g.imageSmoothingEnabled = false;
-    g.drawImage(this.colC, 0, 0, cols * cw, rows * ch);
+    g.drawImage(this.colC, 0, 0, cols * gcw, rows * gch);
     g.globalCompositeOperation = "source-over";
-    // 4. compose: background, soft glow, grid dots, coloured characters
-    ctx.fillStyle = SCREEN.bg; ctx.fillRect(0, 0, this.W, this.H);
-    if (D.glow > 0){
-      ctx.imageSmoothingEnabled = true; this.glowSX.imageSmoothingEnabled = true;
-      this.glowSX.clearRect(0, 0, this.glowS.width, this.glowS.height);
-      this.glowSX.drawImage(this.glowC, 0, 0, this.glowS.width, this.glowS.height);
-      ctx.globalAlpha = D.glow * 0.35; ctx.drawImage(this.glowC, 0, 0, cols * cw, rows * ch);
-      ctx.globalAlpha = D.glow * 0.8; ctx.drawImage(this.glowS, 0, 0, cols * cw, rows * ch);
-      ctx.globalAlpha = 1;
-    }
-    if (pix){ ctx.imageSmoothingEnabled = false; ctx.drawImage(this.pixC, 0, 0, cols * cw, rows * ch); }
-    if (opt.grid){
-      ctx.fillStyle = SCREEN.dot; ctx.font = this.fontPx + "px " + MONO; ctx.textBaseline = "top";
-      for (let i = 0; i < n; i++) if (glyphs[i] === 32) ctx.fillText("\u00b7", (i % cols) * cw, ((i / cols) | 0) * ch + yOff);
-    }
-    ctx.drawImage(this.glyphC, 0, 0, this.W, this.H);
   }
 }
 /* ---------- in-game pause menu, shared by the games ---------- */
@@ -1367,6 +1421,8 @@ const VY = 2;   // map rows start under the two message rows; the status bar tak
 
 const D = defaultDisplay(); D.room = 0.15; D.glow = 0.3; D.lampRGB = TORCH_RGB;
 applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
+// Detail: this page's grid already follows the screen, so higher detail means smaller characters and a bigger view.
+const DETAIL = D.detail; D.detail = 1;
 if (D.pixels) TILE[T.FLOOR][1] = [0.09, 0.09, 0.1];   // as solid pixels, floor must be much darker than wall to read the map
 const world = new World(); world.openTop = true;
 const lamp = { x: 0, y: 0, z: 0, on: true };   // the player's torch, for lighting the debris
@@ -2576,10 +2632,10 @@ cv.addEventListener("pointerdown", e => {
 function layout(){
   const r = stage.getBoundingClientRect(); if (!r.width) return;
   const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
-  // as large a font as fits at least 60 x 24 characters, up to 14px; the view grows with the space
-  const f = Math.max(6, Math.min(14, Math.floor(r.width / 60 / 0.6), Math.floor(r.height / 24 / 1.15)));
+  // as large a font as fits at least 60 x 24 characters, up to 14px (smaller with higher detail); the view grows with the space
+  const f = Math.max(4, Math.min(Math.round(14 / DETAIL), Math.floor(r.width / 60 / 0.6), Math.floor(r.height / 24 / 1.15)));
   screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-  GW = Math.min(screen.cols, 140); GH = Math.min(screen.rows, 50); VH = GH - VY - 2;
+  GW = Math.min(screen.cols, MW); GH = Math.min(screen.rows, MH + VY + 2); VH = GH - VY - 2;
   const W = GW * screen.cw, H = GH * screen.ch;
   screen.fit(W, H, dpr);
   cv.style.width = W + "px"; cv.style.height = H + "px"; cv.style.transform = "translate(-50%,-50%)";
