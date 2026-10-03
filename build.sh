@@ -8,5 +8,6 @@ cd "$(dirname "$0")"
 { cat src/rooftop/head.html; echo "<script>"; cat src/core.js src/menu.js src/audio/sfx-data.js src/rooftop/game.js; echo "</script>"; echo "</body></html>"; } > rooftop-rumble.html
 { cat src/crater/head.html; echo "<script>"; cat src/core.js src/menu.js src/audio/crater-sfx-data.js src/crater/game.js; echo "</script>"; echo "</body></html>"; } > crater-duel.html
 { cat src/stack/head.html; echo "<script>"; cat src/core.js src/menu.js src/audio/stack-sfx-data.js src/stack/game.js; echo "</script>"; echo "</body></html>"; } > stack-smash.html
+{ cat src/rover/head.html; echo "<script>"; cat src/core.js src/menu.js src/audio/rover-sfx-data.js src/rover/game.js; echo "</script>"; echo "</body></html>"; } > rover-patrol.html
 { cat src/settings/head.html; echo "<script>"; cat src/core.js src/settings/page.js; echo "</script>"; echo "</body></html>"; } > settings.html
-echo "Built ascii-physics.html, ascii-engine-tutorial.html, base-commander.html, rooftop-rumble.html, crater-duel.html, stack-smash.html and settings.html"
+echo "Built ascii-physics.html, ascii-engine-tutorial.html, base-commander.html, rooftop-rumble.html, crater-duel.html, stack-smash.html, rover-patrol.html and settings.html"

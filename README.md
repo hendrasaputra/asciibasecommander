@@ -1,42 +1,102 @@
-# ASCII Physics Engine v0.3
+# ASCII Physics Engine and Arcade
 
-Three self-contained pages. Play online: https://games.hendrasaputra.com/ Open either HTML file in a browser; no server or install needed.
+A small physics engine that draws with characters: lit balls and boxes, 24-bit colour, and soft glow, all made of
+text. Six games are built on it so far.
 
-- `ascii-physics.html`: the engine (touch physics, lighting, 24-bit colour, display settings)
-- `ascii-engine-tutorial.html`: the 14-step tutorial with live demos
-- `settings.html`: display settings shared by the games, saved in localStorage under `arcade.v1.display`: ASCII characters or pixels (text stays readable), the character set, and a tube TV filter. Source in `src/settings/`.
-- `index.html`: the cartridge shelf, the site's front page. Pick a cartridge to open its game. Album art lives in `cartridges/<id>.jpg`; prompts for making it are in `CARTRIDGE_PROMPT.md`.
-- `stack-smash.html`: Stack Smash, a falling-block puzzle after Tetris: seven pieces from a shuffled bag, SRS turning with wall kicks, hold, ghost piece, three-piece preview, lock delay, levels that speed up every 10 lines. Each block is a lit slab; cleared lines burst into tumbling engine boxes that land on the stack, and at game over the whole stack falls apart. High scores are saved in localStorage under `stackSmash.v1.scores`. Its sound effects and music (Korobeiniki, a public-domain folk song) are synthesised by `audio/stack-sfx.py`.
-- `crater-duel.html`: Crater Duel, a tank artillery duel after Scorched Earth: rolling hills that collapse after every blast, tanks that fall and take damage, four weapons (missile, big shot, MIRV, dirt bomb), wind, one player against the computer or two players. Its sound effects are synthesised by `audio/crater-sfx.py`.
-- `rooftop-rumble.html`: Rooftop Rumble, an artillery duel after QBasic Gorillas: two apes on a night skyline lob fruit with angle and power against wind; blasts carve the buildings into tumbling rubble. One player against the computer, or two players.
-- `base-commander.html`: Base Commander, a fixed-shooter game built on the engine: generated levels, 7 enemy types, 6 gun upgrades from airdropped parts, debris physics, sun-lit shields. High scores are saved in localStorage under `baseCommander.v1.scores`.
+**Play online:** https://games.hendrasaputra.com/
+
+Every page is one self-contained HTML file. You can also open it straight from disk, with no server or install.
+
+## The cartridge shelf
+
+`index.html` is the front page: a shelf of game cartridges. Click one to open its game. The album art is in
+`cartridges/<id>.jpg`, and `CARTRIDGE_PROMPT.md` has the prompts used to make it. A cartridge with no image shows an
+ASCII label instead.
+
+| Game | After | What the engine adds |
+|---|---|---|
+| [Base Commander](base-commander.html) | Space Invaders / ASCII Alien Attack | Generated waves, 7 enemy types, 6 gun upgrades from airdrops, sun-lit shields, tumbling debris |
+| [Rooftop Rumble](rooftop-rumble.html) | QBasic Gorillas | Lobbed fruit with wind; blasts carve buildings into rubble; apes fall when their roof goes |
+| [Crater Duel](crater-duel.html) | Scorched Earth | Hills that collapse after each blast, falling tanks, four weapons |
+| [Stack Smash](stack-smash.html) | Tetris | Blocks as lit slabs; cleared lines burst into boxes that land on the stack |
+| [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble |
+| [Physics Sandbox](ascii-physics.html) | | The engine itself: throw balls and boxes under a lamp |
+
+All games are original code and art. Rover Patrol takes its idea from msokalski's
+[Ascii Patrol](https://github.com/msokalski/ascii-patrol), but copies nothing from it, because that project is GPL.
+
+### Playing
+
+- **Keyboard:** each game lists its keys on the title screen. Esc or P opens the pause menu, M turns the sound on or
+  off, and R restarts.
+- **Touch:** a handheld-style gamepad with a D-pad, A/B, SELECT and START. On a phone it shows up by itself; choose
+  between touch and keyboard in the pause menu. On a phone held sideways, the D-pad and buttons move to the sides.
+- **Pause menu:** drawn on the game screen. It has resume, restart, game options (difficulty, mode or starting
+  level), sound, controls, display settings, and the way back to the shelf.
+- **Display settings** (`settings.html`, shared by every game): draw with ASCII characters or solid pixels (text
+  stays readable either way), pick the character set, and turn on a tube TV filter.
+
+### Other pages
+
+- `ascii-physics.html`: the Physics Sandbox, with touch physics, lighting and its own display settings.
+- `ascii-engine-tutorial.html`: a 14-step tutorial with live demos of how the engine works.
 
 ## Editing
 
-Edit the files in `src/`, then run `./build.sh` to rebuild all pages.
+Edit the files in `src/`, then run `./build.sh` to rebuild every page. Run `node tests/physics.js` to check the
+physics.
 
-- `src/core.js`: shared by all pages. Physics (`World`: balls and boxes), lighting, ink measurement (`measureInk`, `buildLUT`), and the 24-bit renderer (`Screen`). Check the physics with `node tests/physics.js`.
-- `src/engine/`: engine page markup, styles and UI.
-- `src/tutorial/`: tutorial markup, code snippets shown on the page, helpers and demos.
-- `src/game/`: the Base Commander page markup and game rules.
-- `src/rooftop/`: the Rooftop Rumble page markup and game rules.
-- `src/crater/`: the Crater Duel page markup and game rules.
-- `src/stack/`: the Stack Smash page markup and game rules.
-- `PLAN.md`: what to build next.
-- `audio/`: game sound. `base-commander.rb` is the Sonic Pi source for all effects and music.
+- `src/core.js`: shared by every page.
+  - Physics (`World`): balls and boxes, a terrain grid, and sensors.
+  - Lighting.
+  - Ink measurement (`measureInk`, `buildLUT`).
+  - The 24-bit renderer (`Screen`), with pixel mode.
+  - The shared display settings.
 
-## Game audio
+  A change to physics or rendering goes here, so every page stays in step.
+- `src/menu.js`: the pause menu, used by every game.
+- `src/game/`, `src/rooftop/`, `src/crater/`, `src/stack/`, `src/rover/`: each game's page markup (`head.html`) and rules
+  (`game.js`).
+- `src/engine/`, `src/tutorial/`, `src/settings/`: the sandbox, the tutorial and the settings page.
+- `favicon.svg`: the site icon, a cartridge with a lit ball on its label.
+- `PLAN.md`: which games come next, and the engine features they need.
 
-1. Open `audio/base-commander.rb` in Sonic Pi, set `piece`, then Rec, Run, Stop and save to `audio/raw/` (`sfx.wav`, `battle.wav`, `title.wav`). The raw WAVs are not tracked in git.
-2. Run `python3 audio/process.py` (needs ffmpeg and numpy). It splits and levels the effects, cuts seamless music loops, writes MP3s to `audio/sfx/` and `audio/music/`, and generates `src/audio/sfx-data.js` (effects, used by both games) and `src/audio/music-data.js` (Base Commander's music).
-3. Run `./build.sh`. The audio is embedded in `base-commander.html`, so each page still works offline as a single file: Base Commander about 1 MB, Rooftop Rumble about 270 KB (effects only).
+## Sound
 
-A change to physics or rendering goes in `core.js`, so all pages stay in sync.
+Base Commander's effects and music come from Sonic Pi:
+
+1. Open `audio/base-commander.rb` in Sonic Pi and set `piece`. Then press Rec, Run and Stop, and save to `audio/raw/`
+   as `sfx.wav`, `battle.wav` and `title.wav`. The raw WAVs are not kept in git.
+2. Run `python3 audio/process.py` (needs ffmpeg and numpy). It splits and levels the effects, cuts seamless music
+   loops, and writes `src/audio/sfx-data.js` and `src/audio/music-data.js`. Rooftop Rumble uses the same effects.
+
+The newer games make their sound in Python, with no recording needed. Each script uses ffmpeg and numpy, and writes
+a `src/audio/*-data.js` file:
+
+| Script | Game | Music |
+|---|---|---|
+| `audio/crater-sfx.py` | Crater Duel | none |
+| `audio/stack-sfx.py` | Stack Smash | Korobeiniki, a public-domain folk song |
+| `audio/rover-sfx.py` | Rover Patrol | an original groove |
+
+Then run `./build.sh`. The sound is embedded, so each page still works offline as one file. Sizes: Base Commander
+about 1 MB, Stack Smash 370 KB, Rover Patrol and Rooftop Rumble about 250 KB, Crater Duel 220 KB.
+
+## Saved data
+
+Everything is saved in the browser's localStorage. Nothing is sent anywhere.
+
+| Key | What |
+|---|---|
+| `arcade.v1.display` | Display settings shared by the games |
+| `asciiPhysics.v3.display` | The sandbox's own display settings |
+| `<game>.v1.scores` | High scores (Base Commander, Stack Smash, Rover Patrol) |
+| `<game>.v1.muted`, `<game>.v1.controls` | Sound on or off, touch or keyboard, per game |
 
 ## Notes
 
 - The tutorial loads two fonts from Google Fonts. Offline, it falls back to Georgia and the system monospace font.
-- The engine saves display settings in the browser's localStorage under `asciiPhysics.v3.display`.
+- The site is served by GitHub Pages from this repository. The custom domain is in `CNAME`.
 
 ## License
 

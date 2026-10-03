@@ -108,4 +108,9 @@ debris.
 - Stack Smash (after Tetris), first playable version: 7-bag, SRS turning and wall kicks, hold, ghost, preview,
   lock delay, levels, high scores, touch gamepad, synthesised effects and music. Cleared lines and the topped-out
   stack break into engine boxes. Not yet: T-spin and combo scoring, a two-player garbage mode, Columns and Puyo.
+- Rover Patrol (after Moon Patrol and Ascii Patrol), first playable version: speed control, jumping, twin
+  forward/up cannon, craters, rocks, mines, UFO waves whose bombs dig new craters, checkpoints A to Z with time
+  bonuses, high scores, synthesised sound and music. Not yet: ground tanks, rolling boulders, alien fighters that
+  dive, a starting-point choice. The wheel suspension lives in the game, not as engine spring joints, and the
+  scrolling camera shifts the rubble by whole columns as the ground scrolls.
 - Engine: box shapes, destructible terrain grid, sensors, open top; checks in `tests/physics.js`.

@@ -86,6 +86,18 @@ Id: `stack-smash`
 > stack sits in deeper shadow. The blocks are original, simple shapes, not copied from any existing game.
 > Mood: satisfying, energetic.
 
+## Rover Patrol
+
+Id: `rover-patrol`
+
+> Scene: a small six-wheeled moon rover in warm yellow races to the right across grey lunar ground, caught in
+> mid-jump over a fresh crater, its three pairs of wheels hanging on their springs. It fires two shots at once: one
+> straight ahead at a lit boulder that is bursting into tumbling chunks of rock, and one straight up at a small green
+> flying saucer. Another saucer drops a glowing red bomb. Behind, layers of distant blue-grey mountains and a large
+> blue planet hang in a starry black sky. A low sun on the left lights the rover, the rocks and the planet from the
+> side, with long shadows to the right. A signpost with a letter marks a checkpoint. The rover and saucers are
+> original designs, not based on any existing game. Mood: fast, retro, daring.
+
 ## Next cartridges
 
 When a game from [PLAN.md](PLAN.md) ships, write its scene from what was actually built.
