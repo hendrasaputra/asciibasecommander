@@ -74,6 +74,18 @@ Id: `crater-duel`
 > tumbling down into it and a bright warm flash lighting the ground around the blast. Both tanks are original,
 > simple designs, not based on any existing game. Mood: tense standoff, explosive.
 
+## Stack Smash
+
+Id: `stack-smash`
+
+> Scene: a tall, narrow well of falling blocks under a single warm lamp hanging above it. Inside, a stack of
+> chunky square blocks in bright cyan, blue, orange, yellow, green, purple and red, each one a raised slab with a
+> lit top edge. A purple T-shaped piece of four blocks is falling into a gap near the bottom. A full row has just
+> burst: its blocks fly up and outwards, spinning and tumbling, some bouncing off the walls of the well, with a
+> bright white flash where the row was. The lamp lights the tops of the blocks and the flying pieces; the lower
+> stack sits in deeper shadow. The blocks are original, simple shapes, not copied from any existing game.
+> Mood: satisfying, energetic.
+
 ## Next cartridges
 
 When a game from [PLAN.md](PLAN.md) ships, write its scene from what was actually built.

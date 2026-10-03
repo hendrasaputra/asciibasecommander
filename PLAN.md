@@ -105,4 +105,7 @@ debris.
 - Crater Duel (after Scorched Earth), first playable version: rolling hills, dirt that falls after blasts, tanks that
   fall and take damage, four weapons, health, wind, a computer opponent, synthesised sound. Not yet: more than two
   tanks, a weapon shop between rounds, moving tanks.
+- Stack Smash (after Tetris), first playable version: 7-bag, SRS turning and wall kicks, hold, ghost, preview,
+  lock delay, levels, high scores, touch gamepad, synthesised effects and music. Cleared lines and the topped-out
+  stack break into engine boxes. Not yet: T-spin and combo scoring, a two-player garbage mode, Columns and Puyo.
 - Engine: box shapes, destructible terrain grid, sensors, open top; checks in `tests/physics.js`.
