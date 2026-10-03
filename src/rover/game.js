@@ -13,7 +13,9 @@ const ROVER = ["  ._n_.  ", " [=###=]>"];
 const SAUCER = [" .-. ", "<=o=>"], BOMBER = ["\\_^_/", " (#) "];
 const LIVES = 3;
 const WHITE = [1.6, 1.6, 1.6], DIM = [0.4, 0.45, 0.6], ACCENT = [1.6, 1.25, 0.45];
-const ROVER_RGB = [1.6, 1.3, 0.5], WHEEL_RGB = [1.1, 1.1, 1.2], SHOT_RGB = [2.2, 2.0, 1.2], BOMB_RGB = [2.2, 0.4, 0.3];
+const ROVER_RGB = [1.6, 1.3, 0.5], WHEEL_RGB = [1.1, 1.1, 1.2], SHOT_RGB = [2.2, 2.0, 1.2], BOMB_RGB = [2.6, 0.2, 0.1];
+// Everything that can wreck the rover (craters, rocks, mines, bombs) is drawn in warning red, so it never blends into the grey ground.
+const HAZARD_RGB = [2.4, 0.16, 0.08];
 const UFO_RGB = { saucer: [0.6, 1.6, 0.8], bomber: [1.6, 0.5, 1.4] }, FLASH = [1.8, 0.9, 0.4];
 const GROUND_RGB = [0.75, 0.7, 0.6], HILL_RGB = [0.42, 0.42, 0.55], FAR_RGB = [0.28, 0.32, 0.55];
 const ROCK = { name: "rock", density: 1.4, e: 0.25, mu: 0.8, kd: 0.95, ks: 0.15, shine: 8 };
@@ -337,17 +339,18 @@ const hillH = x => 33 - Math.round(2 * Math.sin(x * 0.07 + 3) + 1.3 * Math.sin(x
 function drawLand(t){
   const fx = Math.floor(scroll * 0.12), hx = Math.floor(scroll * 0.35), lit = flashes.length > 0;
   for (let c = 0; c < GW; c++){
-    const fTop = farH(c + fx), hTop = hillH(c + hx), g = gr[c];
+    const fTop = farH(c + fx), hTop = hillH(c + hx), g = gr[c], pit = craterAt(sc + c);
     for (let r = 2; r < GH; r++){
-      let rgb, v, layer = 0;
+      let rgb, v, layer = 0, glyph = 0;
       if (r >= g){   // the ground: lit from the left on rising slopes, darker with depth
         const slope = (gr[Math.max(0, c - 1)] - gr[Math.min(GW - 1, c + 1)]) * 0.15, depth = r - g;
         v = depth === 0 ? 0.55 + slope : Math.max(0.04, 0.24 - depth * 0.05); rgb = GROUND_RGB; layer = 1;
+        if (pit && depth <= 1){ rgb = HAZARD_RGB; v = depth === 0 ? 0.85 : 0.5; glyph = 35; }   // a crater's rim and floor, solid and red
       } else if (r >= hTop){ v = r === hTop ? 0.2 : 0.05; rgb = HILL_RGB; }
       else if (r >= fTop){ v = r === fTop ? 0.16 : 0.035; rgb = FAR_RGB; }
       else continue;
       const f = lit ? flashAt(c, r) : 0;
-      put(c, r, [rgb[0] * v + FLASH[0] * f * 0.5, rgb[1] * v + FLASH[1] * f * 0.5, rgb[2] * v + FLASH[2] * f * 0.5], 1, layer);
+      put(c, r, [rgb[0] * v + FLASH[0] * f * 0.5, rgb[1] * v + FLASH[1] * f * 0.5, rgb[2] * v + FLASH[2] * f * 0.5], 1, layer, glyph);
     }
   }
   for (const s of stars) if (s.y < farH(s.x + fx)){ const v = 0.07 + 0.05 * Math.sin(t * 0.0015 + s.ph); put(s.x, s.y, [v, v, v * 1.3], 1, 0, 46); }
@@ -356,8 +359,11 @@ function drawLand(t){
 function drawCourse(t){
   for (const f of features){
     const c = f.x - sc; if (c > GW + 2) break; if (c + f.w < -2) continue;
-    if (f.type === "rock") litBall(cx(c) + (f.w - 1) * screen.cw / 2, cy(groundAt(f.x) - f.h / 2 - 0.1), screen.ch * (f.h > 1 ? 1.2 : 0.75), [0.75, 0.66, 0.56]);
-    else if (f.type === "mine") put(c, groundAt(f.x) - 1, BOMB_RGB, (t / 250 | 0) % 2 ? 1 : 0.4, 3, 42);
+    if (f.type === "rock"){   // solid red, lighter on top, so it reads as danger in every display mode
+      const g = groundAt(f.x), art = f.h > 1 ? [" @ ", "@@@"] : ["@@"];
+      art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") put(c + dx, g - art.length + dy, HAZARD_RGB, dy === 0 ? 1 : 0.75, 3, 64); });
+    }
+    else if (f.type === "mine") put(c, groundAt(f.x) - 1, BOMB_RGB, 0.85 + 0.25 * Math.sin(t * 0.012), 3, 42);   // pulses, but never goes dim
   }
   for (let k = reached; k <= reached + 1; k++){   // checkpoint posts with their letter
     const c = postX(k) - sc; if (c < -3 || c > GW + 3) continue;
