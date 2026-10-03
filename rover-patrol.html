@@ -725,11 +725,14 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     if (!m.open || !m.box) return false;
     const b = m.box, i = gy - b.y0;
     if (gx < b.x0 || gx >= b.x0 + b.w || gy < b.top || gy >= b.top + b.h){ m.hide(); return true; }
-    if (i >= 0 && i < rows().length){ m.at = i; m.choose(); }
+    if (i >= 0 && i < b.n){ m.at = b.first + i; m.choose(); }
     return true;
   };
   m.draw = ({ text, GW, GH, accent, normal, dim, title = "PAUSED", note = "" }) => {
-    const R = rows(), w = 40, h = R.length + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
+    const R = rows(); m.at = Math.min(m.at, R.length - 1);
+    // a list longer than the screen shows a window around the chosen row, with ^ and v marks
+    const n = Math.min(R.length, Math.max(3, GH - 8 - (note ? 1 : 0))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
+    const w = 40, h = n + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
     const edge = "+" + "-".repeat(w - 2) + "+";
     text(x0, top, edge, dim); text(x0, top + h - 1, edge, dim);
     for (let y = 1; y < h - 1; y++){
@@ -738,12 +741,14 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
       text(x0, top + y, "|", dim); text(x0 + 1, top + y, " ".repeat(w - 2), [0, 0, 0]); text(x0 + w - 1, top + y, "|", dim);
     }
     text(x0 + ((w - title.length) >> 1), top + 1, title, accent);
-    R.forEach((r, i) => {
-      const sel = i === m.at, v = r.value ? "< " + r.value() + " >" : "";
+    for (let i = 0; i < n; i++){
+      const r = R[first + i], sel = first + i === m.at, v = r.value ? "< " + r.value() + " >" : "";
       text(x0 + 3, top + 3 + i, (sel ? "> " : "  ") + r.label.padEnd(18) + v, sel ? accent : normal);
-    });
+    }
+    if (first > 0) text(x0 + w - 3, top + 3, "^", dim);
+    if (first + n < R.length) text(x0 + w - 3, top + 2 + n, "v", dim);
     if (note) text(x0 + ((w - note.length) >> 1), top + h - 2, note, dim);
-    m.box = { x0, w, top, h, y0: top + 3 };
+    m.box = { x0, w, top, h, y0: top + 3, first, n };
   };
   return m;
 }

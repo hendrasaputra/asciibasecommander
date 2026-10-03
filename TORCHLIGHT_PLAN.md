@@ -12,6 +12,14 @@ The plan runs in ten phases. Phase 1 is the small "Moria-lite" recommended earli
 shelf on its own. Each later phase adds one Moria system and ships as an update, so the game is playable at every
 step.
 
+## Progress
+
+| Phase | State |
+|---|---|
+| 0 Groundwork | Done. Field of view, light, the scheduler and levels have node checks in `tests/torch.js`. Light lives in `fov.js` next to field of view, instead of its own `light.js`. Not yet: the "-more-" prompt (long turns show their newest lines, and the full log is under Messages). |
+| 1 First descent | Done. On the shelf as an early version: a human fighter, 15 monsters to 500 ft and a little beyond, 16 item kinds, food and light fuel, running and resting, high scores. A playing bot ran thousands of turns without errors. Not checked yet: a full game on a real phone. |
+| 2 to 9 | Not started |
+
 ## Ground rules
 
 ### Licence

@@ -115,4 +115,6 @@ debris.
   bonuses, high scores, synthesised sound and music. Not yet: ground tanks, rolling boulders, alien fighters that
   dive, a starting-point choice. The wheel suspension lives in the game, not as engine spring joints, and the
   scrolling camera shifts the rubble by whole columns as the ground scrolls.
+- Torchlight Dungeons, phases 0 and 1 of [TORCHLIGHT_PLAN.md](TORCHLIGHT_PLAN.md): a torch-lit dungeon crawl after
+  Moria, with symmetric field of view, a light field with shadows, glowing monsters, lit rooms, and a speed scheduler.
 - Engine: box shapes, destructible terrain grid, sensors, open top; checks in `tests/physics.js`.

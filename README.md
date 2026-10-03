@@ -1,7 +1,7 @@
 # ASCII Physics Engine and Arcade
 
 A small physics engine that draws with characters: lit balls and boxes, 24-bit colour, and soft glow, all made of
-text. Six games are built on it so far.
+text. Seven games are built on it so far.
 
 **Play online:** https://games.hendrasaputra.com/
 
@@ -20,10 +20,12 @@ ASCII label instead.
 | [Crater Duel](crater-duel.html) | Scorched Earth | Hills that collapse after each blast, falling tanks, four weapons |
 | [Stack Smash](stack-smash.html) | Tetris | Blocks as lit slabs; cleared lines burst into boxes that land on the stack |
 | [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble |
+| [Torchlight Dungeons](torchlight-dungeons.html) | Moria | A torch that lights only what it reaches: walls cast shadows, rooms can be lit, some monsters glow; kills burst into bits. Early version (phases 0 and 1 of [TORCHLIGHT_PLAN.md](TORCHLIGHT_PLAN.md)) |
 | [Physics Sandbox](ascii-physics.html) | | The engine itself: throw balls and boxes under a lamp |
 
 All games are original code and art. Rover Patrol takes its idea from msokalski's
-[Ascii Patrol](https://github.com/msokalski/ascii-patrol), but copies nothing from it, because that project is GPL.
+[Ascii Patrol](https://github.com/msokalski/ascii-patrol), and Torchlight Dungeons from
+[Umoria](https://github.com/dungeons-of-moria/umoria). Both are GPL, so nothing is copied from either.
 
 ### Playing
 
@@ -44,7 +46,7 @@ All games are original code and art. Rover Patrol takes its idea from msokalski'
 ## Editing
 
 Edit the files in `src/`, then run `./build.sh` to rebuild every page. Run `node tests/physics.js` to check the
-physics.
+physics, and `node tests/torch.js` for Torchlight Dungeons.
 
 - `src/core.js`: shared by every page.
   - Physics (`World`): balls and boxes, a terrain grid, and sensors.
@@ -57,6 +59,9 @@ physics.
 - `src/menu.js`: the pause menu, used by every game.
 - `src/game/`, `src/rooftop/`, `src/crater/`, `src/stack/`, `src/rover/`: each game's page markup (`head.html`) and rules
   (`game.js`).
+- `src/torch/`: Torchlight Dungeons, split by job: `rng.js` random numbers, `fov.js` sight and light, `turn.js` the
+  speed scheduler, `gen.js` levels, `data.js` monsters and items, `game.js` the rest. Check its rules with
+  `node tests/torch.js`.
 - `src/engine/`, `src/tutorial/`, `src/settings/`: the sandbox, the tutorial and the settings page.
 - `favicon.svg`: the site icon, a cartridge with a lit ball on its label.
 - `PLAN.md`: which games come next, and the engine features they need.
@@ -90,7 +95,8 @@ Everything is saved in the browser's localStorage. Nothing is sent anywhere.
 |---|---|
 | `arcade.v1.display` | Display settings shared by the games |
 | `asciiPhysics.v3.display` | The sandbox's own display settings |
-| `<game>.v1.scores` | High scores (Base Commander, Stack Smash, Rover Patrol) |
+| `<game>.v1.scores` | High scores (Base Commander, Stack Smash, Rover Patrol, Torchlight Dungeons) |
+| `torchlightDungeons.v1.keys` | Original or roguelike keys |
 | `<game>.v1.muted`, `<game>.v1.controls` | Sound on or off, touch or keyboard, per game |
 
 ## Notes

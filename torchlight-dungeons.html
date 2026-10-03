@@ -1,0 +1,1652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Torchlight Dungeons</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+:root{
+  --ground:#E9EDF1; --ink:#20304A; --muted:#5E6A7D; --line:#C9D1DB;
+  --btn:#DCE2E9; --btn-on:#20304A; --btn-on-ink:#F4F6F8; --accent:#2F5BD3;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#151B26; --ink:#D9E1EC; --muted:#8792A3; --line:#2A3445;
+    --btn:#222B3A; --btn-on:#D9E1EC; --btn-on-ink:#151B26; --accent:#7FA2FF;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#151B26; --ink:#D9E1EC; --muted:#8792A3; --line:#2A3445;
+  --btn:#222B3A; --btn-on:#D9E1EC; --btn-on-ink:#151B26; --accent:#7FA2FF;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;overscroll-behavior:none}
+body{height:100%;height:100svh;margin:0;touch-action:manipulation;overscroll-behavior:none;-webkit-touch-callout:none;background:var(--ground);color:var(--ink);
+  font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;-webkit-user-select:none;user-select:none}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px;padding:10px 14px 6px}
+h1{font-size:17px;font-weight:650;margin:0;letter-spacing:-0.01em}
+h1 a{color:inherit;text-decoration:none}h1 a:hover{text-decoration:underline}
+#hud{font:12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted);white-space:nowrap}
+#stage{flex:1;position:relative;touch-action:none;margin:0 8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:0;background:#0B0F16}
+#cv{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;touch-action:none}
+nav{padding:8px 8px 10px;display:flex;flex-direction:column;gap:6px}
+button{flex:1 1 auto;min-width:60px;min-height:40px;padding:6px 8px;border:0;border-radius:8px;background:var(--btn);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;touch-action:none}
+button[aria-pressed="true"]{background:var(--btn-on);color:var(--btn-on-ink);font-weight:600}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Touch gamepad, styled after a handheld console: cross-shaped D-pad, slanted A/B, pill SELECT/START */
+#gamepad{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"dpad . ab" "mid mid mid";align-items:center;row-gap:4px;padding:4px 12px 20px;touch-action:none}
+#gamepad[hidden]{display:none}
+#dpad{grid-area:dpad;position:relative;width:120px;height:120px;touch-action:none;cursor:pointer}
+#dpad::before,#dpad::after{content:"";position:absolute;background:#2A2A31;border-radius:7px;box-shadow:0 4px 0 #0E0E12}
+#dpad::before{left:0;right:0;top:40px;height:40px}
+#dpad::after{top:0;bottom:0;left:40px;width:40px}
+#dpad span{position:absolute;z-index:1;color:#6E6E78;font-size:13px;line-height:1;pointer-events:none;transition:color .05s}
+#dpad .l{left:11px;top:53px}#dpad .r{right:11px;top:53px}#dpad .u{left:54px;top:11px}#dpad .d{left:54px;bottom:11px}
+#dpad[data-dir="left"] .l,#dpad[data-dir="right"] .r,#dpad[data-dir="up"] .u,#dpad[data-dir="down"] .d{color:#F4F4F8}
+#dpad[data-dir="left"]{transform:perspective(300px) rotateY(-8deg)}
+#dpad[data-dir="right"]{transform:perspective(300px) rotateY(8deg)}
+#dpad[data-dir="up"]{transform:perspective(300px) rotateX(8deg)}
+#dpad[data-dir="down"]{transform:perspective(300px) rotateX(-8deg)}
+.mid{grid-area:mid;justify-self:center;display:flex;gap:18px;transform:rotate(-22deg)}
+.mid button{min-width:0;min-height:0;width:52px;height:16px;padding:0;border-radius:8px;background:#8D8C94;box-shadow:0 3px 0 #55545B;font-size:0;position:relative}
+.mid button::after{content:attr(data-label);position:absolute;top:22px;left:50%;transform:translateX(-50%);font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;color:var(--muted)}
+.ab{grid-area:ab;display:flex;gap:14px;transform:rotate(-22deg)}
+.ab button{min-width:0;min-height:0;width:60px;height:60px;padding:0;border-radius:50%;background:#A3245C;color:#F7D7E6;font:700 19px/1 ui-monospace,Menlo,monospace;box-shadow:0 5px 0 #5E1233}
+.ab button:first-child{margin-top:30px}
+#gamepad button.on{transform:translateY(3px);box-shadow:0 2px 0 #0E0E12;filter:brightness(.85)}
+body.touch #hud{display:none}
+/* Phone on its side: D-pad on the left, A/B on the right, game in the middle */
+@media (orientation: landscape) and (max-height: 600px){
+  body.touch{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:1fr auto}
+  body.touch header{display:none}
+  body.touch nav,body.touch #gamepad{display:contents}
+  body.touch #stage{grid-column:2;grid-row:1;margin:6px 0 4px}
+  body.touch #dpad{grid-column:1;grid-row:1 / 3;align-self:center;justify-self:center;margin:0 18px 70px}
+  body.touch .mid{grid-column:1;grid-row:1 / 3;align-self:end;justify-self:center;margin-bottom:46px}
+  body.touch .ab{grid-column:3;grid-row:1 / 3;align-self:center;margin:0 18px 0 10px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="./" title="Back to the cartridge shelf">&#8249; Torchlight Dungeons</a></h1>
+  <div id="hud">arrows / numpad move &middot; Shift runs &middot; g pick up &middot; i items &middot; &gt; stairs &middot; R rest &middot; ? help &middot; Esc menu</div>
+</header>
+<div id="stage">
+  <canvas id="cv" aria-label="Game screen: the dungeon around you, with messages at the top and your status at the bottom. Press question mark for the list of commands."></canvas>
+</div>
+<nav>
+  <div id="gamepad" hidden>
+    <div id="dpad" role="group" aria-label="Direction pad. Eight directions: press between two arrows to move diagonally. Hold to keep walking."><span class="l">&#9664;</span><span class="r">&#9654;</span><span class="u">&#9650;</span><span class="d">&#9660;</span></div>
+    <div class="mid"><button data-pad="select" data-label="SELECT" aria-label="Select: open the menu"></button><button data-pad="start" data-label="START" aria-label="Start: start the game, or open the menu"></button></div>
+    <div class="ab"><button data-pad="b" aria-label="B: commands">B</button><button data-pad="a" aria-label="A: act here: pick up, take the stairs, or wait a turn">A</button></div>
+  </div>
+</nav>
+<script>
+"use strict";
+/* ================= Shared core: physics, light, ink, 24-bit renderer ================= */
+const MONO = 'ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace';
+const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
+// The simulated screen is always dark: characters emit light, so they need a black background.
+const SCREEN = { bg: "#0B0F16", dot: "#1C2432", line: "#263042", text: "#DCE3EC", muted: "#7C889B", accent: "#7FA2FF", pink: "#F07FB8", lamp: "#FFC857" };
+const RAMPS = { classic: " .:-=+*#%@", detailed: " .'`^\",:;Il!i~+_-?]}1)|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@", blocks: " \u2591\u2592\u2593\u2588" };
+function norm(v){ const l = Math.hypot(...v); return v.map(x => x / l); }
+const DIR = norm([-0.5, -0.6, 0.65]), SUB = [0.25, 0.75], MREF = 2.4;
+const AMB_RGB = [0.55, 0.65, 0.9];     // room light is slightly blue
+const FLASH_RGB = [1.0, 0.75, 0.45];   // impact flashes are warm
+const FLOOR_ALB = 0.5;                 // share of light the floor reflects
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const MATS = {
+  foam:   { name: "foam",   density: 0.2, e: 0.70, mu: 0.6, kd: 0.95, ks: 0.05, shine: 4,  alb: [0.20, 0.85, 0.72], rMin: 1.6, rMax: 2.4 },
+  rubber: { name: "rubber", density: 1.0, e: 0.55, mu: 0.8, kd: 0.85, ks: 0.30, shine: 14, alb: [0.30, 0.48, 1.00], alt: [1.00, 0.38, 0.68], rMin: 1.2, rMax: 1.9 },
+  steel:  { name: "steel",  density: 7.0, e: 0.35, mu: 0.2, kd: 0.45, ks: 1.10, shine: 70, alb: [0.72, 0.76, 0.82], rMin: 0.9, rMax: 1.3 },
+  peg:    { name: "peg",    density: 0,   e: 0.50, mu: 0.3, kd: 0.80, ks: 0.20, shine: 10, alb: [0.42, 0.47, 0.56] }
+};
+const MIX = ["rubber", "rubber", "rubber", "rubber", "foam", "foam", "foam", "steel", "steel", "steel"];
+function hexToLinear(hex){
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(c => Math.pow(c / 255, 2.2));
+}
+function defaultDisplay(){
+  return { chars: RAMPS.classic, calibrate: true, dither: false, black: 0.15, exposure: 1.3, gamma: 2.2, split: 0.2, glow: 0.35, room: 0.18, lampHex: "#FFD9A0", lampRGB: hexToLinear("#FFD9A0") };
+}
+
+/* ---------- arcade display settings (settings.html), shared by the game pages ---------- */
+// One choice for every cartridge, saved in this browser: character set, ASCII or pixel drawing, tube TV filter.
+const ARCADE_KEY = "arcade.v1.display";
+const ARCADE_DEFAULTS = { ramp: "classic", custom: " .:oO0@", mode: "ascii", crt: false };
+function arcadeSettings(){
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(ARCADE_KEY) || "{}") || {}; }
+  catch (e){ console.warn("Arcade: saved display settings unreadable, using defaults", e); }
+  return { ...ARCADE_DEFAULTS, ...saved };
+}
+function saveArcadeSettings(s){
+  try { localStorage.setItem(ARCADE_KEY, JSON.stringify(s)); return true; }
+  catch (e){ console.warn("Arcade: could not save display settings", e); return false; }
+}
+function arcadeChars(s){ return s.ramp === "custom" ? (s.custom.length > 1 ? s.custom : " @") : RAMPS[s.ramp] || RAMPS.classic; }
+// The tube TV look is CSS laid over the game's #stage: scanlines, a phosphor grille, vignette, rounded glass, flicker.
+const CRT_CSS = `
+body.crt #stage{background:#050607}
+body.crt #cv{border-radius:14px;filter:saturate(1.15) contrast(1.06) brightness(1.1)}
+body.crt #stage::before,body.crt #stage::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:2}
+body.crt #stage::before{background:repeating-linear-gradient(to bottom,rgba(0,0,0,.24) 0 1px,transparent 1px 3px),
+  repeating-linear-gradient(to right,rgba(255,40,40,.06) 0 1px,rgba(40,255,40,.06) 1px 2px,rgba(60,60,255,.06) 2px 3px)}
+body.crt #stage::after{border-radius:inherit;background:radial-gradient(ellipse at center,transparent 58%,rgba(0,0,0,.55) 100%);
+  box-shadow:inset 0 0 50px rgba(0,0,0,.85),inset 0 0 6px rgba(160,200,255,.15);animation:crt-flicker 5s steps(40) infinite}
+@keyframes crt-flicker{0%,100%{opacity:1}47%{opacity:.93}50%{opacity:1}73%{opacity:.96}}
+@media (prefers-reduced-motion: reduce){body.crt #stage::after{animation:none}}`;
+// Call once at start-up with the game's display: applies the character set, pixel mode and the TV filter.
+function applyArcadeSettings(D){
+  const s = arcadeSettings();
+  D.chars = arcadeChars(s); D.pixels = s.mode === "pixels";
+  if (!document.getElementById("crt-css")){ const st = document.createElement("style"); st.id = "crt-css"; st.textContent = CRT_CSS; document.head.appendChild(st); }
+  document.body.classList.toggle("crt", !!s.crt);
+  return s;
+}
+
+/* ---------- physics (unchanged from v2) ---------- */
+function hit(b, dv){ if (dv > 220) b.flash = Math.max(b.flash, Math.min(1, (dv - 220) / 1000)); }
+class World {
+  constructor(){ this.bodies = []; this.forces = []; this.w = 300; this.h = 300; this.unit = 10; this.g = { x: 0, y: 0 };
+    this.substeps = 4; this.cell = 60; this.grid = new Map(); this.drag = 0; this.onSub = null;
+    this.openTop = false;   // true: no ceiling, bodies can fly above y = 0 and fall back
+    this.terrain = null;    // optional grid of solid cells: { cw, ch, cols, rows, solid: Uint8Array, mat } (see collideTerrain)
+  }
+  add(x, y, r, matName, alb, matOverride){
+    const M = matOverride || MATS[matName], st = matName === "peg";
+    const m = st ? 0 : M.density * (r / this.unit) ** 2;
+    const b = { x, y, vx: 0, vy: 0, r, a: Math.random() * 6.283, w: 0, mat: M, alb: alb || M.alb, static: st, m,
+      im: st ? 0 : 1 / m, iI: st ? 0 : 1 / (0.4 * m * r * r), grab: null, flash: 0, touch: false };
+    this.bodies.push(b);
+    if (this.bodies.length > 260){ const i = this.bodies.findIndex(o => !o.static && !o.grab); if (i >= 0) this.bodies.splice(i, 1); }
+    return b;
+  }
+  // A box is a rotating rectangle with half-width hw and half-height hh. Its r is the bounding radius, which the
+  // broadphase grid uses; mass uses the same area rule as circles, so equal materials have equal density.
+  addBox(x, y, hw, hh, matName, alb, matOverride){
+    const b = this.add(x, y, Math.hypot(hw, hh), matName, alb, matOverride);
+    b.box = true; b.hw = hw; b.hh = hh;
+    if (!b.static){ b.m = b.mat.density * 4 * hw * hh / Math.PI / this.unit ** 2; b.im = 1 / b.m; b.iI = 3 / (b.m * (hw * hw + hh * hh)); }
+    return b;
+  }
+  step(dt){
+    let maxR = 1; for (const b of this.bodies) if (b.r > maxR) maxR = b.r;
+    this.cell = maxR * 2 + 2;
+    const h = dt / this.substeps;
+    for (let s = 0; s < this.substeps; s++){ this.substep(h); if (this.onSub) this.onSub(); }
+    const decay = Math.pow(0.001, dt); for (const b of this.bodies) b.flash *= decay;
+  }
+  substep(h){
+    const { w, h: H, g } = this;
+    for (const b of this.bodies){
+      if (b.static) continue;
+      const mN = Math.max(0.25, b.m / MREF);
+      let ax = g.x, ay = g.y;
+      const sp = Math.hypot(b.vx, b.vy);
+      if (sp > 0 && this.drag){ const k = this.drag * b.r * sp * b.im; ax -= b.vx * k; ay -= b.vy * k; }
+      if (b.grab){ ax += (520 * (b.grab.x - b.x) - 46 * b.vx) / mN; ay += (520 * (b.grab.y - b.y) - 46 * b.vy) / mN; }
+      for (const f of this.forces){
+        const dx = b.x - f.x, dy = b.y - f.y, d = Math.hypot(dx, dy);
+        if (d > 0.001 && d < f.radius){ const k = (1 - d / f.radius) * f.strength / mN; ax += dx / d * k; ay += dy / d * k; }
+      }
+      b.vx += ax * h; b.vy += ay * h;
+      const s2 = Math.hypot(b.vx, b.vy); if (s2 > 4000){ b.vx *= 4000 / s2; b.vy *= 4000 / s2; }
+      b.x += b.vx * h; b.y += b.vy * h; b.a += b.w * h; b.w *= 0.9997;
+      if (b.box){ this.boxWalls(b); continue; }
+      if (b.x - b.r <= 0){ b.x = b.r; this.wall(b, -1, 0, h); }
+      if (b.x + b.r >= w){ b.x = w - b.r; this.wall(b, 1, 0, h); }
+      if (!this.openTop && b.y - b.r <= 0){ b.y = b.r; this.wall(b, 0, -1, h); }
+      if (b.y + b.r >= H){ b.y = H - b.r; this.wall(b, 0, 1, h); }
+    }
+    for (const b of this.bodies) b.touch = false;
+    this.collide(); this.collide(false);   // second pass reuses the grid: positions only moved by sub-pixel corrections
+    if (this.terrain) this.collideTerrain();
+    for (const b of this.bodies){
+      if (b.static) continue;
+      if (b.touch && !b.grab && b.vx * b.vx + b.vy * b.vy < 1600){ b.vx *= 0.9; b.vy *= 0.9; b.w *= 0.9; }
+      if (!b.box){ b.x = Math.min(w - b.r, Math.max(b.r, b.x)); b.y = Math.min(H - b.r, this.openTop ? b.y : Math.max(b.r, b.y)); }
+    }
+  }
+  // Boxes meet walls at their corners: push back the deepest corner, then apply one impulse at the middle of the
+  // corners past the wall, so a box lying flat gets no spurious spin.
+  boxWalls(b){
+    const c = Math.cos(b.a), s = Math.sin(b.a), ux = c * b.hw, uy = s * b.hw, vx = -s * b.hh, vy = c * b.hh;
+    const P = [b.x + ux + vx, b.y + uy + vy, b.x - ux + vx, b.y - uy + vy, b.x - ux - vx, b.y - uy - vy, b.x + ux - vx, b.y + uy - vy];
+    for (const [nx, ny, lim] of [[-1, 0, 0], [1, 0, this.w], [0, -1, 0], [0, 1, this.h]]){
+      if (ny < 0 && this.openTop) continue;
+      let depth = 0, sx = 0, sy = 0, n = 0;
+      for (let i = 0; i < 8; i += 2){
+        const d = nx ? nx * (P[i] - lim) : ny * (P[i + 1] - lim);   // how far this corner is past the wall
+        if (d > 0){ depth = Math.max(depth, d); sx += P[i]; sy += P[i + 1]; n++; }
+      }
+      if (!n) continue;
+      b.x -= nx * depth; b.y -= ny * depth;
+      for (let i = 0; i < 8; i += 2){ P[i] -= nx * depth; P[i + 1] -= ny * depth; }
+      b.touch = true;
+      this.impulse(b, null, sx / n - nx * depth, sy / n - ny * depth, nx, ny);
+    }
+  }
+  // Impulse at contact point (px, py) with normal n pointing from a towards b. b = null is an immovable wall.
+  // Includes rotation, so it works for any shape; circle pairs keep their own cheaper path in resolve().
+  impulse(a, b, px, py, nx, ny){
+    const rax = px - a.x, ray = py - a.y, rbx = b ? px - b.x : 0, rby = b ? py - b.y : 0;
+    const bim = b ? b.im : 0, biI = b ? b.iI : 0;
+    const rel = () => [(b ? b.vx - b.w * rby : 0) - (a.vx - a.w * ray), (b ? b.vy + b.w * rbx : 0) - (a.vy + a.w * rax)];
+    let [rvx, rvy] = rel();
+    const vn = rvx * nx + rvy * ny;
+    if (vn >= 0) return;
+    const ran = rax * ny - ray * nx, rbn = rbx * ny - rby * nx;
+    const e = -vn < 30 ? 0 : b ? (a.mat.e + b.mat.e) / 2 : a.mat.e;
+    const j = -(1 + e) * vn / (a.im + bim + ran * ran * a.iI + rbn * rbn * biI);
+    a.vx -= j * nx * a.im; a.vy -= j * ny * a.im; a.w -= j * ran * a.iI; hit(a, j * a.im);
+    if (b){ b.vx += j * nx * bim; b.vy += j * ny * bim; b.w += j * rbn * biI; hit(b, j * bim); }
+    [rvx, rvy] = rel();
+    const tx = -ny, ty = nx, vt = rvx * tx + rvy * ty, rat = rax * ty - ray * tx, rbt = rbx * ty - rby * tx;
+    const lim = (b ? Math.sqrt(a.mat.mu * b.mat.mu) : a.mat.mu) * j;
+    const jt = Math.max(-lim, Math.min(lim, -vt / (a.im + bim + rat * rat * a.iI + rbt * rbt * biI)));
+    a.vx -= jt * tx * a.im; a.vy -= jt * ty * a.im; a.w -= jt * rat * a.iI;
+    if (b){ b.vx += jt * tx * bim; b.vy += jt * ty * bim; b.w += jt * rbt * biI; }
+  }
+  // Terrain cells are not bodies: each moving body checks only the solid cells under its bounding box, each one
+  // treated as a fixed box. So a screen full of terrain costs nothing until something touches it.
+  collideTerrain(){
+    const T = this.terrain, cell = this.tcell || (this.tcell = { box: true, static: true, a: 0, im: 0, iI: 0, vx: 0, vy: 0, w: 0, flash: 0 });
+    cell.hw = T.cw / 2; cell.hh = T.ch / 2; cell.r = Math.hypot(cell.hw, cell.hh); cell.mat = T.mat;
+    for (const b of this.bodies){
+      if (b.static || b.sensor) continue;
+      const c0 = Math.max(0, Math.floor((b.x - b.r) / T.cw)), c1 = Math.min(T.cols - 1, Math.floor((b.x + b.r) / T.cw));
+      const r0 = Math.max(0, Math.floor((b.y - b.r) / T.ch)), r1 = Math.min(T.rows - 1, Math.floor((b.y + b.r) / T.ch));
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+        if (!T.solid[r * T.cols + c]) continue;
+        cell.x = (c + 0.5) * T.cw; cell.y = (r + 0.5) * T.ch;
+        this.resolve(cell, b);
+      }
+    }
+  }
+  resolveBox(a, b){
+    const A = a.box ? a : b, B = A === a ? b : a;   // A is always a box
+    const C = B.box ? boxBox(A, B) : boxCircle(A, B);
+    if (!C) return;
+    A.touch = B.touch = true;
+    const ws = A.im + B.im, corr = Math.max(0, C.depth - 0.3) / ws * 0.8;
+    A.x -= C.nx * corr * A.im; A.y -= C.ny * corr * A.im; B.x += C.nx * corr * B.im; B.y += C.ny * corr * B.im;
+    for (const [px, py] of C.pts) this.impulse(A, B, px, py, C.nx, C.ny);
+  }
+  wall(b, nx, ny, h){
+    const M = b.mat; let jn; b.touch = true;
+    const vn = b.vx * nx + b.vy * ny;
+    if (vn > 0){ const e = vn < 30 ? 0 : M.e, dv = (1 + e) * vn; b.vx -= dv * nx; b.vy -= dv * ny; hit(b, dv); jn = dv * b.m; }
+    else jn = Math.max(0, this.g.x * nx + this.g.y * ny) * h * b.m;
+    const tx = -ny, ty = nx, slip = b.vx * tx + b.vy * ty + b.w * b.r;
+    let jt = -slip / (b.im + b.r * b.r * b.iI);
+    const lim = M.mu * jn; jt = Math.max(-lim, Math.min(lim, jt));
+    b.vx += jt * tx * b.im; b.vy += jt * ty * b.im; b.w += jt * b.r * b.iI;
+  }
+  buildGrid(){
+    const cs = this.cell, grid = this.grid, B = this.bodies; grid.clear();
+    for (let i = 0; i < B.length; i++){
+      const key = Math.floor(B[i].x / cs) * 65536 + Math.floor(B[i].y / cs);   // numeric key: no string per lookup
+      let arr = grid.get(key); if (!arr){ arr = []; grid.set(key, arr); } arr.push(i);
+    }
+  }
+  collide(rebuild = true){
+    if (rebuild) this.buildGrid();
+    const cs = this.cell, grid = this.grid, B = this.bodies;
+    for (let i = 0; i < B.length; i++){
+      const a = B[i], cx = Math.floor(a.x / cs), cy = Math.floor(a.y / cs);
+      for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++){
+        const arr = grid.get((cx + ox) * 65536 + cy + oy);
+        if (arr) for (const j of arr) if (j > i && !(a.static && B[j].static)) this.resolve(a, B[j]);
+      }
+    }
+  }
+  resolve(a, b){
+    if (a.sensor || b.sensor) return;   // sensors fly through everything; the game checks their hits itself
+    const dx = b.x - a.x, dy = b.y - a.y, rs = a.r + b.r, d2 = dx * dx + dy * dy;
+    if (d2 >= rs * rs || d2 === 0) return;
+    const wa = a.im, wb = b.im, ws = wa + wb; if (ws === 0) return;
+    if (a.box || b.box) return this.resolveBox(a, b);
+    const d = Math.sqrt(d2), nx = dx / d, ny = dy / d; a.touch = b.touch = true;
+    const corr = Math.max(0, rs - d - 0.3) / ws * 0.8;
+    a.x -= nx * corr * wa; a.y -= ny * corr * wa; b.x += nx * corr * wb; b.y += ny * corr * wb;
+    const rvx = b.vx - a.vx, rvy = b.vy - a.vy, vn = rvx * nx + rvy * ny;
+    if (vn >= 0) return;
+    const e = -vn < 30 ? 0 : (a.mat.e + b.mat.e) / 2, j = -(1 + e) * vn / ws;
+    a.vx -= j * nx * wa; a.vy -= j * ny * wa; b.vx += j * nx * wb; b.vy += j * ny * wb;
+    hit(a, j * wa); hit(b, j * wb);
+    const tx = -ny, ty = nx, vt = rvx * tx + rvy * ty - b.w * b.r - a.w * a.r;
+    let jt = -vt / (ws + a.r * a.r * a.iI + b.r * b.r * b.iI);
+    const lim = Math.sqrt(a.mat.mu * b.mat.mu) * j; jt = Math.max(-lim, Math.min(lim, jt));
+    a.vx -= jt * tx * wa; a.vy -= jt * ty * wa; b.vx += jt * tx * wb; b.vy += jt * ty * wb;
+    a.w -= jt * a.r * a.iI; b.w -= jt * b.r * b.iI;
+  }
+  pick(x, y, slop){
+    let best = null, bestD = Infinity;
+    for (const b of this.bodies){ if (b.static || b.grab) continue;
+      const d = Math.hypot(b.x - x, b.y - y) - b.r; if (d < slop && d < bestD){ best = b; bestD = d; } }
+    return best;
+  }
+}
+function spawn(w, x, y, matName, rScale){
+  const M = MATS[matName], k = rScale ?? (M.rMin + Math.random() * (M.rMax - M.rMin));
+  return w.add(x, y, w.unit * k, matName, M.alt && Math.random() < 0.5 ? M.alt : M.alb);
+}
+// A box with the same area as the ball spawn() would make, stretched by up to 2:1.
+function spawnBox(w, x, y, matName){
+  const M = MATS[matName], r = w.unit * (M.rMin + Math.random() * (M.rMax - M.rMin)), k = Math.sqrt(1 + Math.random());
+  return w.addBox(x, y, 0.886 * r * k, 0.886 * r / k, matName, M.alt && Math.random() < 0.5 ? M.alt : M.alb);
+}
+
+/* ---------- box collision: contacts as { nx, ny, depth, pts }, normal pointing from the box A to B ---------- */
+// The two face directions of a box: normal, half-extent along it, and the face's half-length along its tangent.
+function boxFaces(b){
+  const c = Math.cos(b.a), s = Math.sin(b.a);
+  return [{ nx: c, ny: s, h: b.hw, side: b.hh }, { nx: -s, ny: c, h: b.hh, side: b.hw }];
+}
+function boxCircle(A, B){
+  const c = Math.cos(A.a), s = Math.sin(A.a), dx = B.x - A.x, dy = B.y - A.y;
+  const lx = dx * c + dy * s, ly = -dx * s + dy * c;   // circle centre in the box's own frame
+  let qx = Math.max(-A.hw, Math.min(A.hw, lx)), qy = Math.max(-A.hh, Math.min(A.hh, ly)), nlx, nly, depth;
+  if (qx === lx && qy === ly){   // centre inside the box: leave through the nearest face
+    const ex = A.hw - Math.abs(lx), ey = A.hh - Math.abs(ly);
+    if (ex < ey){ nlx = Math.sign(lx) || 1; nly = 0; qx = nlx * A.hw; depth = ex + B.r; }
+    else { nlx = 0; nly = Math.sign(ly) || 1; qy = nly * A.hh; depth = ey + B.r; }
+  } else {
+    const ox = lx - qx, oy = ly - qy, d = Math.hypot(ox, oy);
+    if (d >= B.r) return null;
+    nlx = ox / d; nly = oy / d; depth = B.r - d;
+  }
+  return { nx: nlx * c - nly * s, ny: nlx * s + nly * c, depth, pts: [[A.x + qx * c - qy * s, A.y + qx * s + qy * c]] };
+}
+function clipSegment(p, q, nx, ny, off){   // keep the part of segment pq where n . x <= off
+  const dp = nx * p[0] + ny * p[1] - off, dq = nx * q[0] + ny * q[1] - off, out = [];
+  if (dp <= 0) out.push(p);
+  if (dq <= 0) out.push(q);
+  if (dp * dq < 0){ const t = dp / (dp - dq); out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]); }
+  return out;
+}
+// Separating axes, then clip the other box's facing edge against the reference face (as in Box2D-lite),
+// which gives up to two contact points: enough for boxes to rest flat on each other.
+function boxBox(A, B){
+  const dx = B.x - A.x, dy = B.y - A.y, proj = (b, nx, ny) => boxFaces(b).reduce((t, f) => t + f.h * Math.abs(f.nx * nx + f.ny * ny), 0);
+  let best = null;
+  for (const [ref, other] of [[A, B], [B, A]]) for (const f of boxFaces(ref)){
+    const sep = Math.abs(dx * f.nx + dy * f.ny) - f.h - proj(other, f.nx, f.ny);
+    if (sep > 0) return null;
+    if (!best || sep > best.sep * 0.95 + 0.01 * f.h) best = { sep, ref, inc: other, f };   // slight preference for A's faces keeps contacts stable
+  }
+  const { ref, inc, f } = best, sg = (inc.x - ref.x) * f.nx + (inc.y - ref.y) * f.ny < 0 ? -1 : 1;
+  const nx = f.nx * sg, ny = f.ny * sg, rcx = ref.x + nx * f.h, rcy = ref.y + ny * f.h;   // reference face normal and centre
+  let ie = null, dmin = Infinity;   // incident edge: the other box's face pointing most against n
+  for (const g of boxFaces(inc)) for (const k of [1, -1]){
+    const d = (g.nx * nx + g.ny * ny) * k;
+    if (d < dmin){ dmin = d; ie = { cx: inc.x + g.nx * k * g.h, cy: inc.y + g.ny * k * g.h, tx: -g.ny, ty: g.nx, half: g.side }; }
+  }
+  let pts = [[ie.cx + ie.tx * ie.half, ie.cy + ie.ty * ie.half], [ie.cx - ie.tx * ie.half, ie.cy - ie.ty * ie.half]];
+  const tx = -ny, ty = nx, tc = tx * rcx + ty * rcy;
+  pts = clipSegment(pts[0], pts[1], tx, ty, tc + f.side); if (pts.length < 2) return null;
+  pts = clipSegment(pts[0], pts[1], -tx, -ty, -tc + f.side); if (pts.length < 2) return null;
+  const out = []; let depth = 0;
+  for (const p of pts){ const sp = (p[0] - rcx) * nx + (p[1] - rcy) * ny; if (sp <= 0){ out.push(p); depth = Math.max(depth, -sp); } }
+  if (!out.length) return null;
+  return ref === A ? { nx, ny, depth, pts: out } : { nx: -nx, ny: -ny, depth, pts: out };
+}
+
+/* ---------- ink measurement: how much of its cell each character actually fills ---------- */
+const inkCache = new Map();
+function measureInk(chars, fontPx){
+  const key = chars + "|" + fontPx;
+  if (inkCache.has(key)) return inkCache.get(key);
+  const k = 4, c = document.createElement("canvas"), x = c.getContext("2d", { willReadFrequently: true });
+  x.font = (fontPx * k) + "px " + MONO;
+  const cw = Math.ceil(x.measureText("M").width), ch = Math.round(fontPx * 1.15) * k;
+  c.width = cw; c.height = ch;
+  x.font = (fontPx * k) + "px " + MONO; x.textBaseline = "top"; x.fillStyle = "#fff";
+  const yOff = (ch - fontPx * k) / 2, out = [];
+  for (const g of new Set([...chars])){
+    x.clearRect(0, 0, cw, ch); x.fillText(g, 0, yOff);
+    const d = x.getImageData(0, 0, cw, ch).data; let s = 0;
+    for (let i = 3; i < d.length; i += 4) s += d[i];
+    out.push({ ch: g, ink: s / (255 * cw * ch) });
+  }
+  inkCache.set(key, out);
+  return out;
+}
+// Build a 256-entry table: brightness 0..255 -> character code.
+function buildLUT(chars, fontPx, calibrate){
+  if ([...chars].length < 2) chars = " @";
+  const lut = new Uint16Array(256);
+  const measured = measureInk(chars, fontPx);
+  if (calibrate){
+    const lv = measured.slice().sort((a, b) => a.ink - b.ink);
+    if (lv[0].ink > 0.001) lv.unshift({ ch: " ", ink: 0 });
+    const max = lv[lv.length - 1].ink || 1;
+    lv.forEach(l => l.level = l.ink / max);
+    let j = 0;
+    for (let i = 0; i < 256; i++){
+      const t = i / 255;
+      while (j < lv.length - 1 && Math.abs(lv[j + 1].level - t) <= Math.abs(lv[j].level - t)) j++;
+      lut[i] = lv[j].ch.charCodeAt(0);
+    }
+    return { lut, levels: lv, count: lv.length, ascii: lv.every(l => l.ch.charCodeAt(0) < 128) };
+  }
+  const arr = [...chars], n = arr.length - 1;
+  for (let i = 0; i < 256; i++) lut[i] = arr[Math.round(i / 255 * n)].charCodeAt(0);
+  const lv = arr.map((ch, i) => ({ ch, ink: (measured.find(m => m.ch === ch) || { ink: 0 }).ink, level: i / n }));
+  return { lut, levels: lv, count: arr.length, ascii: arr.every(c => c.charCodeAt(0) < 128) };
+}
+
+/* ---------- lighting ---------- */
+// Returns diffuse and highlight strength for one point on a sphere.
+function lightTerms(b, dx, dy, nz, L, out){ lightAt(b.mat, b.x + dx * b.r, b.y + dy * b.r, b.r * (1 + nz), dx, dy, nz, L, out); }
+// Same shading for any surface point (px, py, pz) with unit normal (dx, dy, nz); boxes use it for their faces.
+function lightAt(M, px, py, pz, dx, dy, nz, L, out){
+  let lx, ly, lz, att;
+  if (L && L.on){
+    lx = L.x - px; ly = L.y - py; lz = L.z - pz;
+    const d2 = lx * lx + ly * ly + lz * lz, ld = Math.sqrt(d2) || 1;
+    lx /= ld; ly /= ld; lz /= ld; att = Math.min(3, 2.5 * L.z * L.z / d2);   // inverse-square falloff
+  } else { lx = DIR[0]; ly = DIR[1]; lz = DIR[2]; att = 1; }
+  out.d = att * M.kd * Math.max(0, dx * lx + dy * ly + nz * lz);
+  const hx = lx, hy = ly, hz = lz + 1, hl = Math.sqrt(hx * hx + hy * hy + hz * hz);
+  out.s = att * M.ks * Math.pow(Math.max(0, (dx * hx + dy * hy + nz * hz) / hl), M.shine);
+}
+function shadowAt(fx, fy, B, L){
+  const dx = L.x - fx, dy = L.y - fy, lz = L.z, d2 = dx * dx + dy * dy + lz * lz;
+  let sh = 1;
+  for (const b of B){
+    const r = b.box ? (b.hw + b.hh) / 2 : b.r;   // boxes cast a round shadow of their average size
+    const cx = b.x - fx, cy = b.y - fy, cz = r, t = (cx * dx + cy * dy + cz * lz) / d2;
+    if (t <= 0 || t >= 1) continue;
+    const qx = cx - t * dx, qy = cy - t * dy, qz = cz - t * lz;
+    const o = (r * 1.15 - Math.sqrt(qx * qx + qy * qy + qz * qz)) / (r * 0.45);
+    if (o <= 0) continue;
+    sh *= 1 - 0.85 * Math.min(1, o); if (sh < 0.12) break;
+  }
+  return sh;
+}
+
+/* ---------- 24-bit character screen ---------- */
+// Layers decide who wins a cell: 0 floor light, 1 trails and rings, 2 balls, 3 lamp bulb, 4 text, 5 menus over text.
+// Text and menus (layer 4 and up) always stay characters, even when D.pixels draws everything else as solid pixels.
+const TEXT_LAYER = 4, MENU_LAYER = 5;
+class Screen {
+  constructor(fontPx, D){ this.fontPx = fontPx; this.D = D || defaultDisplay();
+    this.pixC = document.createElement("canvas");
+    this.colC = document.createElement("canvas"); this.glowC = document.createElement("canvas");
+    this.glowS = document.createElement("canvas"); this.glyphC = document.createElement("canvas"); this.t = {}; }
+  fit(W, H, dpr){
+    const probe = this.glyphC.getContext("2d"); probe.font = this.fontPx + "px " + MONO;
+    this.cw = probe.measureText("M").width; this.ch = Math.round(this.fontPx * 1.15);
+    this.cols = Math.max(1, Math.floor(W / this.cw)); this.rows = Math.max(1, Math.floor(H / this.ch));
+    const n = this.n = this.cols * this.rows;
+    this.rad = new Float32Array(3 * n); this.lum = new Float32Array(n); this.lay = new Int8Array(n);
+    this.over = new Uint16Array(n); this.glyphs = new Uint16Array(n);
+    this.w = this.cols * this.cw; this.h = this.rows * this.ch; this.W = W; this.H = H; this.dpr = dpr;
+    this.colC.width = this.glowC.width = this.cols; this.colC.height = this.glowC.height = this.rows;
+    this.glowS.width = Math.max(1, Math.ceil(this.cols / 4)); this.glowS.height = Math.max(1, Math.ceil(this.rows / 4));
+    this.colX = this.colC.getContext("2d"); this.glowX = this.glowC.getContext("2d"); this.glowSX = this.glowS.getContext("2d");
+    this.colImg = this.colX.createImageData(this.cols, this.rows); this.glowImg = this.glowX.createImageData(this.cols, this.rows);
+    this.pixC.width = this.cols; this.pixC.height = this.rows; this.pixX = this.pixC.getContext("2d"); this.pixImg = this.pixX.createImageData(this.cols, this.rows);
+    this.glyphC.width = Math.max(1, Math.round(W * dpr)); this.glyphC.height = Math.max(1, Math.round(H * dpr));
+    this.gx = this.glyphC.getContext("2d");
+    this.setRamp();
+  }
+  setRamp(){ this.ink = buildLUT(this.D.chars, this.fontPx, this.D.calibrate); }
+  clear(){ this.rad.fill(0); this.lum.fill(0); this.lay.fill(-1); this.over.fill(0); }
+  put(i, r, g, b, layer, glyph){
+    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b, lay = this.lay;
+    if (lay[i] > layer || (lay[i] === layer && L <= this.lum[i])) return;
+    const k = 3 * i; this.rad[k] = r; this.rad[k + 1] = g; this.rad[k + 2] = b;
+    this.lum[i] = L; lay[i] = layer; this.over[i] = glyph || 0;
+  }
+  add(i, r, g, b){   // light adds up: used for floor light, glows and halos
+    if (this.lay[i] > 0) return;
+    const k = 3 * i; this.rad[k] += r; this.rad[k + 1] += g; this.rad[k + 2] += b;
+    this.lum[i] = 0.2126 * this.rad[k] + 0.7152 * this.rad[k + 1] + 0.0722 * this.rad[k + 2]; this.lay[i] = 0;
+  }
+  light(L){ return L && L.on ? this.D.lampRGB : [0.95, 0.95, 0.95]; }
+  sphere(b, L, opt = {}){
+    if (b.box) return this.box(b, L, opt);
+    const { cols, rows, cw, ch } = this, t = this.t, A = b.alb, LC = this.light(L), room = this.D.room;
+    const dOn = opt.diffuse !== false, sOn = opt.spec !== false, stripe = opt.stripe !== false && !b.static;
+    const c0 = Math.max(0, Math.floor((b.x - b.r) / cw)), c1 = Math.min(cols - 1, Math.floor((b.x + b.r) / cw));
+    const r0 = Math.max(0, Math.floor((b.y - b.r) / ch)), r1 = Math.min(rows - 1, Math.floor((b.y + b.r) / ch));
+    const inv = 1 / b.r, ca = Math.cos(b.a), sa = Math.sin(b.a), fl = b.flash * 0.8;
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+      let R = 0, G = 0, Bv = 0, cov = 0;
+      for (const sy of SUB) for (const sx of SUB){
+        const dx = ((c + sx) * cw - b.x) * inv, dy = ((r + sy) * ch - b.y) * inv, d2 = dx * dx + dy * dy;
+        if (d2 >= 1) continue;
+        cov++; lightTerms(b, dx, dy, Math.sqrt(1 - d2), L, t);
+        const d = dOn ? t.d : 0, s = sOn ? t.s : 0;
+        let k = (stripe && Math.abs(-dx * sa + dy * ca) < 0.13) ? 0.45 : 1;
+        R += k * (A[0] * (AMB_RGB[0] * room + LC[0] * d) + LC[0] * s + FLASH_RGB[0] * fl);
+        G += k * (A[1] * (AMB_RGB[1] * room + LC[1] * d) + LC[1] * s + FLASH_RGB[1] * fl);
+        Bv += k * (A[2] * (AMB_RGB[2] * room + LC[2] * d) + LC[2] * s + FLASH_RGB[2] * fl);
+      }
+      if (cov) this.put(r * cols + c, R / 4, G / 4, Bv / 4, 2);
+    }
+  }
+  // A box is drawn as a raised slab: flat lit top, bevelled edges that tilt towards their side.
+  box(b, L, opt = {}){
+    const { cols, rows, cw, ch } = this, t = this.t, A = b.alb, LC = this.light(L), room = this.D.room;
+    const dOn = opt.diffuse !== false, sOn = opt.spec !== false, fl = b.flash * 0.8;
+    const c = Math.cos(b.a), s = Math.sin(b.a), bev = Math.min(b.hw, b.hh) * 0.35, top = Math.min(b.hw, b.hh) * 2;
+    const c0 = Math.max(0, Math.floor((b.x - b.r) / cw)), c1 = Math.min(cols - 1, Math.floor((b.x + b.r) / cw));
+    const r0 = Math.max(0, Math.floor((b.y - b.r) / ch)), r1 = Math.min(rows - 1, Math.floor((b.y + b.r) / ch));
+    for (let r = r0; r <= r1; r++) for (let col = c0; col <= c1; col++){
+      let R = 0, G = 0, Bv = 0, cov = 0;
+      for (const sy of SUB) for (const sx of SUB){
+        const wx = (col + sx) * cw, wy = (r + sy) * ch, dx = wx - b.x, dy = wy - b.y;
+        const lx = dx * c + dy * s, ly = -dx * s + dy * c;
+        if (Math.abs(lx) > b.hw || Math.abs(ly) > b.hh) continue;
+        cov++;
+        const ex = Math.sign(lx) * Math.max(0, 1 - (b.hw - Math.abs(lx)) / bev), ey = Math.sign(ly) * Math.max(0, 1 - (b.hh - Math.abs(ly)) / bev);
+        const k = 1 / Math.hypot(ex, ey, 1);
+        lightAt(b.mat, wx, wy, top, (ex * c - ey * s) * k, (ex * s + ey * c) * k, k, L, t);
+        const d = dOn ? t.d : 0, sp = sOn ? t.s : 0;
+        R += A[0] * (AMB_RGB[0] * room + LC[0] * d) + LC[0] * sp + FLASH_RGB[0] * fl;
+        G += A[1] * (AMB_RGB[1] * room + LC[1] * d) + LC[1] * sp + FLASH_RGB[1] * fl;
+        Bv += A[2] * (AMB_RGB[2] * room + LC[2] * d) + LC[2] * sp + FLASH_RGB[2] * fl;
+      }
+      if (cov) this.put(r * cols + col, R / 4, G / 4, Bv / 4, 2);
+    }
+  }
+  floor(B, L, shadows = true){
+    const { cols, rows, cw, ch } = this;
+    if (L && L.on){
+      const LC = this.D.lampRGB, lz2 = L.z * L.z;
+      for (let r = 0; r < rows; r++){
+        const fy = (r + 0.5) * ch;
+        for (let c = 0; c < cols; c++){
+          const fx = (c + 0.5) * cw, dx = L.x - fx, dy = L.y - fy, d2 = dx * dx + dy * dy + lz2, d = Math.sqrt(d2);
+          // point light on a flat floor: cosine of the angle times inverse square = (z / d)^3
+          const q = L.z / d; let v = 0.25 * q * q * q;
+          if (v < 0.002) continue;
+          if (shadows) v *= shadowAt(fx, fy, B, L);
+          v *= FLOOR_ALB;
+          this.add(r * cols + c, LC[0] * v, LC[1] * v, LC[2] * v);
+        }
+      }
+    }
+    for (const g of B){
+      if (g.flash < 0.12) continue;
+      const R = g.r * 4.5, c0 = Math.max(0, Math.floor((g.x - R) / cw)), c1 = Math.min(cols - 1, Math.floor((g.x + R) / cw));
+      const r0 = Math.max(0, Math.floor((g.y - R) / ch)), r1 = Math.min(rows - 1, Math.floor((g.y + R) / ch));
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+        const dd = Math.hypot((c + 0.5) * cw - g.x, (r + 0.5) * ch - g.y); if (dd >= R) continue;
+        const v = g.flash * 0.35 * (1 - dd / R);
+        this.add(r * cols + c, FLASH_RGB[0] * v, FLASH_RGB[1] * v, FLASH_RGB[2] * v);
+      }
+    }
+  }
+  streak(b, unit){
+    if (b.static) return;
+    const sp = Math.hypot(b.vx, b.vy); if (sp < 320) return;
+    const len = Math.min((sp - 320) * 0.045, unit * 7); if (len < 2) return;
+    const { cols, rows, cw, ch } = this, ux = -b.vx / sp, uy = -b.vy / sp, P = Math.PI, A = b.alb;
+    let ang = Math.atan2(b.vy, b.vx); ang = ((ang % P) + P) % P;
+    const glyph = (ang < P / 8 || ang > 7 * P / 8) ? 45 : ang < 3 * P / 8 ? 92 : ang < 5 * P / 8 ? 124 : 47;
+    const step = Math.min(cw, ch) * 0.7;
+    for (let s = b.r * 0.9; s < b.r + len; s += step){
+      const c = Math.floor((b.x + ux * s) / cw), r = Math.floor((b.y + uy * s) / ch);
+      if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+      const v = 0.7 * (1 - (s - b.r) / len);
+      this.put(r * cols + c, A[0] * v, A[1] * v, A[2] * v, 1, glyph);
+    }
+  }
+  ring(x, y, radius, rgb){
+    const { cols, rows, cw, ch } = this, steps = Math.ceil(radius * 0.5);
+    for (let k = 0; k < steps; k++){
+      const a = k / steps * Math.PI * 2, c = Math.floor((x + Math.cos(a) * radius) / cw), r = Math.floor((y + Math.sin(a) * radius) / ch);
+      if (c >= 0 && r >= 0 && c < cols && r < rows) this.put(r * cols + c, rgb[0], rgb[1], rgb[2], 1);
+    }
+  }
+  bulb(L, unit){
+    if (!L.on) return;
+    const { cols, rows, cw, ch } = this, LC = this.D.lampRGB, R = unit * 2.4, Rb = Math.max(unit * 0.9, cw * 1.2);
+    const c0 = Math.max(0, Math.floor((L.x - R) / cw)), c1 = Math.min(cols - 1, Math.floor((L.x + R) / cw));
+    const r0 = Math.max(0, Math.floor((L.y - R) / ch)), r1 = Math.min(rows - 1, Math.floor((L.y + R) / ch));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+      const d = Math.hypot((c + 0.5) * cw - L.x, (r + 0.5) * ch - L.y), i = r * cols + c;
+      if (d < Rb){ const v = 3 * (1 - 0.5 * d / Rb); this.put(i, LC[0] * v, LC[1] * v, LC[2] * v, 3); }
+      else if (d < R){ const v = 0.35 * (1 - d / R); this.add(i, LC[0] * v, LC[1] * v, LC[2] * v); }
+    }
+  }
+  // Light (linear, can exceed 1) -> screen colour -> character + colour per cell -> pixels.
+  render(ctx, opt = {}){
+    const { cols, rows, cw, ch, n, rad, lay, over, glyphs, D } = this;
+    const ex = D.exposure, ig = 1 / D.gamma, split = D.split, black = D.black, lut = this.ink.lut, amp = 1 / Math.max(1, this.ink.count - 1);
+    const cd = this.colImg.data, gd = this.glowImg.data, pix = !!D.pixels, pd = this.pixImg.data;
+    for (let i = 0; i < n; i++){
+      const p = i * 4;
+      if (pix) pd[p + 3] = 0;
+      if (lay[i] < 0){ cd[p + 3] = 0; gd[p] = gd[p + 1] = gd[p + 2] = 0; gd[p + 3] = 255; glyphs[i] = 32; continue; }
+      const k = 3 * i;
+      // 1. tone map: squeeze unlimited light into 0..1, then gamma-encode for the screen
+      const R = Math.pow(1 - Math.exp(-rad[k] * ex), ig), G = Math.pow(1 - Math.exp(-rad[k + 1] * ex), ig), B = Math.pow(1 - Math.exp(-rad[k + 2] * ex), ig);
+      gd[p] = R * 255; gd[p + 1] = G * 255; gd[p + 2] = B * 255; gd[p + 3] = 255;
+      const Y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+      if (Y <= black){ cd[p + 3] = 0; glyphs[i] = 32; continue; }   // darker than the cutoff: leave blank
+      // 2. split brightness: part carried by character density, part by colour
+      const Yc = (Y - black) / (1 - black), gl = Yc + split * (1 - Yc);
+      let code = over[i];
+      if (!code){
+        let tt = gl;
+        if (D.dither){ const c = i % cols, r = (i / cols) | 0; tt += ((BAYER[(r & 3) * 4 + (c & 3)] + 0.5) / 16 - 0.5) * amp; }
+        code = lut[Math.max(0, Math.min(255, Math.round(tt * 255)))];
+      }
+      glyphs[i] = code;
+      if (code === 32){ cd[p + 3] = 0; continue; }
+      if (pix && lay[i] < TEXT_LAYER){   // pixel mode: the cell becomes one solid pixel in its full colour
+        glyphs[i] = 32; cd[p + 3] = 0;
+        pd[p] = R * 255; pd[p + 1] = G * 255; pd[p + 2] = B * 255; pd[p + 3] = 255;
+        continue;
+      }
+      // colour keeps the cell's hue; its brightness supplies whatever the character's ink does not
+      const kc = Yc / gl / Y; let dr = R * kc, dg = G * kc, db = B * kc; const m = Math.max(dr, dg, db);
+      if (m > 1){ dr /= m; dg /= m; db /= m; }
+      cd[p] = dr * 255; cd[p + 1] = dg * 255; cd[p + 2] = db * 255; cd[p + 3] = 255;
+    }
+    this.colX.putImageData(this.colImg, 0, 0); this.glowX.putImageData(this.glowImg, 0, 0);
+    if (pix) this.pixX.putImageData(this.pixImg, 0, 0);
+    // 3. draw every character in white on its own layer...
+    const g = this.gx, dpr = this.dpr, yOff = (ch - this.fontPx) / 2;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "source-over"; g.clearRect(0, 0, this.glyphC.width, this.glyphC.height);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.font = this.fontPx + "px " + MONO; g.textBaseline = "top"; g.textAlign = "left"; g.fillStyle = "#fff";
+    if ("fontKerning" in g) g.fontKerning = "none";
+    if (this.ink.ascii){
+      for (let r = 0; r < rows; r++){   // one call per row: monospace ASCII keeps every character on its cell
+        const s = String.fromCharCode.apply(null, glyphs.subarray(r * cols, (r + 1) * cols));
+        if (s.trim()) g.fillText(s, 0, r * ch + yOff);
+      }
+    } else {
+      for (let i = 0; i < n; i++) if (glyphs[i] !== 32) g.fillText(String.fromCharCode(glyphs[i]), (i % cols) * cw, ((i / cols) | 0) * ch + yOff);
+    }
+    // ...then keep the white pixels only, painted with each cell's 24-bit colour
+    g.globalCompositeOperation = "source-in"; g.imageSmoothingEnabled = false;
+    g.drawImage(this.colC, 0, 0, cols * cw, rows * ch);
+    g.globalCompositeOperation = "source-over";
+    // 4. compose: background, soft glow, grid dots, coloured characters
+    ctx.fillStyle = SCREEN.bg; ctx.fillRect(0, 0, this.W, this.H);
+    if (D.glow > 0){
+      ctx.imageSmoothingEnabled = true; this.glowSX.imageSmoothingEnabled = true;
+      this.glowSX.clearRect(0, 0, this.glowS.width, this.glowS.height);
+      this.glowSX.drawImage(this.glowC, 0, 0, this.glowS.width, this.glowS.height);
+      ctx.globalAlpha = D.glow * 0.35; ctx.drawImage(this.glowC, 0, 0, cols * cw, rows * ch);
+      ctx.globalAlpha = D.glow * 0.8; ctx.drawImage(this.glowS, 0, 0, cols * cw, rows * ch);
+      ctx.globalAlpha = 1;
+    }
+    if (pix){ ctx.imageSmoothingEnabled = false; ctx.drawImage(this.pixC, 0, 0, cols * cw, rows * ch); }
+    if (opt.grid){
+      ctx.fillStyle = SCREEN.dot; ctx.font = this.fontPx + "px " + MONO; ctx.textBaseline = "top";
+      for (let i = 0; i < n; i++) if (glyphs[i] === 32) ctx.fillText("\u00b7", (i % cols) * cw, ((i / cols) | 0) * ch + yOff);
+    }
+    ctx.drawImage(this.glyphC, 0, 0, this.W, this.H);
+  }
+}
+/* ---------- in-game pause menu, shared by the games ---------- */
+// Drawn into the game's own screen through a text() writer the game passes in (on MENU_LAYER, above game text),
+// so it matches ASCII or pixel mode and stays readable.
+// The game supplies the rows as a function (labels and values can change): each row is
+// { label, value?: () => string, change?: dir => void, select?: () => void }.
+// Keys while open: up/down move, left/right change a value, Enter/Space choose, Esc/P close.
+function createMenu(rows, { onOpen, onClose, onChange } = {}){
+  const m = { open: false, at: 0, box: null };
+  const touched = () => onChange && onChange();
+  m.show = () => { if (m.open) return; m.open = true; m.at = 0; onOpen && onOpen(); touched(); };
+  m.hide = () => { if (!m.open) return; m.open = false; onClose && onClose(); touched(); };
+  m.toggle = () => (m.open ? m.hide() : m.show());
+  m.move = d => { const n = rows().length; m.at = (m.at + d + n) % n; touched(); };
+  m.change = d => { const r = rows()[m.at]; if (r.change) r.change(d); else if (d > 0 && r.select) r.select(); touched(); };
+  m.choose = () => { const r = rows()[m.at]; if (r.select) r.select(); else if (r.change) r.change(1); touched(); };
+  // Returns true when the menu used the key, so the game ignores it.
+  m.key = e => {
+    if (!m.open) return false;
+    const k = e.key;
+    if (k === "ArrowUp" || k === "w" || k === "W") m.move(-1);
+    else if (k === "ArrowDown" || k === "s" || k === "S") m.move(1);
+    else if (k === "ArrowLeft" || k === "a" || k === "A") m.change(-1);
+    else if (k === "ArrowRight" || k === "d" || k === "D") m.change(1);
+    else if (k === "Enter" || k === " ") m.choose();
+    else if (k === "Escape" || k === "p" || k === "P") m.hide();
+    return true;   // other keys do nothing while the menu is open
+  };
+  // A tap or click at grid cell (gx, gy): picks that row and changes or chooses it. Taps outside the box close it.
+  m.tap = (gx, gy) => {
+    if (!m.open || !m.box) return false;
+    const b = m.box, i = gy - b.y0;
+    if (gx < b.x0 || gx >= b.x0 + b.w || gy < b.top || gy >= b.top + b.h){ m.hide(); return true; }
+    if (i >= 0 && i < b.n){ m.at = b.first + i; m.choose(); }
+    return true;
+  };
+  m.draw = ({ text, GW, GH, accent, normal, dim, title = "PAUSED", note = "" }) => {
+    const R = rows(); m.at = Math.min(m.at, R.length - 1);
+    // a list longer than the screen shows a window around the chosen row, with ^ and v marks
+    const n = Math.min(R.length, Math.max(3, GH - 8 - (note ? 1 : 0))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
+    const w = 40, h = n + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
+    const edge = "+" + "-".repeat(w - 2) + "+";
+    text(x0, top, edge, dim); text(x0, top + h - 1, edge, dim);
+    for (let y = 1; y < h - 1; y++){
+      // Spaces blank the game behind. They are drawn black: on a shared layer the brighter text wins, so anything
+      // written on top later (including dim notes) still shows.
+      text(x0, top + y, "|", dim); text(x0 + 1, top + y, " ".repeat(w - 2), [0, 0, 0]); text(x0 + w - 1, top + y, "|", dim);
+    }
+    text(x0 + ((w - title.length) >> 1), top + 1, title, accent);
+    for (let i = 0; i < n; i++){
+      const r = R[first + i], sel = first + i === m.at, v = r.value ? "< " + r.value() + " >" : "";
+      text(x0 + 3, top + 3 + i, (sel ? "> " : "  ") + r.label.padEnd(18) + v, sel ? accent : normal);
+    }
+    if (first > 0) text(x0 + w - 3, top + 3, "^", dim);
+    if (first + n < R.length) text(x0 + w - 3, top + 2 + n, "v", dim);
+    if (note) text(x0 + ((w - note.length) >> 1), top + h - 2, note, dim);
+    m.box = { x0, w, top, h, y0: top + 3, first, n };
+  };
+  return m;
+}
+// Grid cell under a pointer event on the game canvas (handles the canvas being scaled to fit).
+function gridAt(e, canvas, GW, GH){
+  const r = canvas.getBoundingClientRect();
+  return [Math.floor((e.clientX - r.left) / r.width * GW), Math.floor((e.clientY - r.top) / r.height * GH)];
+}
+/* ---------- Torchlight Dungeons: seeded random numbers ---------- */
+// One small generator (mulberry32), so a level or a whole game can be replayed from its seed, and its state saved.
+class RNG {
+  constructor(seed){ this.s = (seed >>> 0) || 1; }
+  next(){
+    let a = (this.s = (this.s + 0x6D2B79F5) >>> 0);
+    a = Math.imul(a ^ a >>> 15, a | 1); a ^= a + Math.imul(a ^ a >>> 7, a | 61);
+    return ((a ^ a >>> 14) >>> 0) / 4294967296;
+  }
+  int(n){ return Math.floor(this.next() * n); }              // 0 .. n - 1
+  range(a, b){ return a + this.int(b - a + 1); }             // a .. b
+  chance(p){ return this.next() < p; }
+  pick(arr){ return arr[this.int(arr.length)]; }
+  dice(s){ const [n, d] = s.split("d").map(Number); let t = 0; for (let i = 0; i < n; i++) t += 1 + this.int(d); return t; }   // "2d6"
+  shuffle(a){ for (let i = a.length - 1; i > 0; i--){ const j = this.int(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  weighted(list, w){ let sum = 0; for (const x of list) sum += w(x); let r = this.next() * sum; for (const x of list){ r -= w(x); if (r < 0) return x; } return list[list.length - 1]; }
+}
+/* ---------- Torchlight Dungeons: field of view and the light field ---------- */
+// Symmetric shadowcasting, written from Albert Ford's public description of the algorithm: if A can see B, B can see
+// A, so "the monster sees you" and "you see the monster" always agree. Walls that bound the view are seen too.
+// blocks(x, y) says whether a cell stops sight (out-of-bounds cells must block); see(x, y) is called once per cell.
+let fovStamp = null, fovMark = 0, fovW = 0;
+function fov(ox, oy, radius, blocks, see, w, h){
+  if (!fovStamp || fovStamp.length !== w * h){ fovStamp = new Uint32Array(w * h); fovMark = 0; }
+  fovW = w; fovMark++;
+  const r2 = radius * (radius + 1), mark = fovMark;
+  const show = (x, y) => { if (x < 0 || y < 0 || x >= w || y >= h) return; const i = y * fovW + x; if (fovStamp[i] !== mark){ fovStamp[i] = mark; see(x, y); } };
+  show(ox, oy);
+  for (let q = 0; q < 4; q++){
+    // the four quadrants: north, east, south, west; (depth, col) -> map cell
+    const tx = (d, c) => q === 0 ? ox + c : q === 1 ? ox + d : q === 2 ? ox + c : ox - d;
+    const ty = (d, c) => q === 0 ? oy - d : q === 1 ? oy + c : q === 2 ? oy + d : oy + c;
+    const scan = (depth, start, end) => {
+      if (depth > radius) return;
+      let prev = 0;   // 0 none yet, 1 wall, 2 floor
+      const c0 = Math.floor(depth * start + 0.5), c1 = Math.ceil(depth * end - 0.5);
+      for (let c = c0; c <= c1; c++){
+        const x = tx(depth, c), y = ty(depth, c), wall = blocks(x, y);
+        if ((wall || (c >= depth * start && c <= depth * end)) && c * c + depth * depth <= r2) show(x, y);
+        if (prev === 1 && !wall) start = (2 * c - 1) / (2 * depth);
+        if (prev === 2 && wall) scan(depth + 1, start, (2 * c - 1) / (2 * depth));
+        prev = wall ? 1 : 2;
+      }
+      if (prev === 2) scan(depth + 1, start, end);
+    };
+    scan(1, -1, 1);
+  }
+}
+// Adds one light source into a field of RGB light (3 floats per cell): it lights every cell it can see, fading
+// with distance, so walls cast real shadows. src: { x, y, r: radius in cells, i: intensity, rgb }.
+function addLight(field, w, h, blocks, src){
+  if (src.r <= 0) return;
+  const R = src.r + 0.5;
+  fov(src.x, src.y, Math.ceil(src.r), blocks, (x, y) => {
+    const k = 1 - Math.hypot(x - src.x, y - src.y) / R; if (k <= 0) return;
+    const v = src.i * k * k, j = 3 * (y * w + x);
+    field[j] += src.rgb[0] * v; field[j + 1] += src.rgb[1] * v; field[j + 2] += src.rgb[2] * v;
+  }, w, h);
+}
+const lum = (f, j) => 0.2126 * f[j] + 0.7152 * f[j + 1] + 0.0722 * f[j + 2];
+/* ---------- Torchlight Dungeons: turns ---------- */
+// Energy scheduler: every tick each actor gains energy by its speed, and whoever reaches 100 acts. Speed +10 acts
+// twice as often as speed 0, and -10 half as often.
+const energyGain = speed => 10 * Math.pow(2, speed / 10);
+function nextActor(actors){
+  for (;;){
+    let best = null;
+    for (const a of actors) if (a.energy >= 100 && (!best || a.energy > best.energy)) best = a;
+    if (best) return best;
+    for (const a of actors) a.energy += energyGain(a.speed);
+  }
+}
+/* ---------- Torchlight Dungeons: level generation ---------- */
+// Rooms of a few shapes joined by corridors, with doors where a corridor passes through a room's wall, and stairs.
+// Original code: the layout ideas (rooms, tunnels, lit rooms that get rarer with depth) are common to the genre.
+const MW = 198, MH = 66;   // map size, as in Moria
+const T = { EDGE: 0, WALL: 1, FLOOR: 2, DOOR: 3, OPEN: 4, DOWN: 5, UP: 6 };
+const passable = t => t >= T.FLOOR && t !== T.DOOR;   // closed doors open when you walk into them
+const opaque = t => t <= T.WALL || t === T.DOOR;
+
+function generateLevel(rng, depth){
+  const tiles = new Uint8Array(MW * MH).fill(T.WALL), room = new Int16Array(MW * MH).fill(-1), lit = new Uint8Array(MW * MH);
+  for (let x = 0; x < MW; x++){ tiles[x] = T.EDGE; tiles[(MH - 1) * MW + x] = T.EDGE; }
+  for (let y = 0; y < MH; y++){ tiles[y * MW] = T.EDGE; tiles[y * MW + MW - 1] = T.EDGE; }
+  const rooms = [];
+  const free = (x0, y0, x1, y1) => {   // inside the map, and not touching another room (one cell of wall between)
+    if (x0 < 2 || y0 < 2 || x1 > MW - 3 || y1 > MH - 3) return false;
+    for (let y = y0 - 2; y <= y1 + 2; y++) for (let x = x0 - 2; x <= x1 + 2; x++) if (room[y * MW + x] >= 0) return false;
+    return true;
+  };
+  const target = 20 + rng.int(10);
+  for (let tries = 0; rooms.length < target && tries < 600; tries++){
+    const w = 4 + rng.int(14), h = 3 + rng.int(7), x0 = 2 + rng.int(MW - w - 4), y0 = 2 + rng.int(MH - h - 4), x1 = x0 + w - 1, y1 = y0 + h - 1;
+    if (!free(x0, y0, x1, y1)) continue;
+    const id = rooms.length, isLit = rng.int(28) + 1 > depth;   // lit rooms are common near the top, rare deep down
+    const shape = w >= 9 && h >= 5 ? rng.pick(["plain", "plain", "plain", "cross", "pillars"]) : "plain";
+    const cells = [];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++){
+      if (shape === "cross"){   // a plus shape: drop the four corners
+        const cxw = Math.floor(w / 4), cyh = Math.floor(h / 3);
+        if ((x < x0 + cxw || x > x1 - cxw) && (y < y0 + cyh || y > y1 - cyh)) continue;
+      }
+      if (shape === "pillars" && (x - x0) % 2 === 1 && (y - y0) % 2 === 1 && x < x1 && y < y1) continue;   // a pillared hall
+      cells.push(y * MW + x);
+    }
+    for (const i of cells){ tiles[i] = T.FLOOR; room[i] = id; }
+    // the room's walls belong to it too, so they are lit with it and doors can be placed in them
+    for (const i of cells) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++){
+      const j = i + dy * MW + dx; if (tiles[j] === T.WALL && room[j] < 0) room[j] = id;
+    }
+    if (isLit) for (let y = y0 - 1; y <= y1 + 1; y++) for (let x = x0 - 1; x <= x1 + 1; x++) if (room[y * MW + x] === id) lit[y * MW + x] = 1;
+    rooms.push({ id, x0, y0, x1, y1, lit: isLit, cells, cx: (x0 + x1) >> 1, cy: (y0 + y1) >> 1 });
+  }
+  // corridors: each room to the next one from left to right, then a few extra links so there are loops
+  const order = [...rooms].sort((a, b) => a.cx - b.cx);
+  const carved = new Uint8Array(MW * MH);
+  const dig = i => { if (tiles[i] === T.WALL){ tiles[i] = T.FLOOR; carved[i] = 1; } };
+  const tunnel = (a, b) => {
+    let x = a.cx, y = a.cy;
+    const hFirst = rng.chance(0.5), bendX = hFirst ? b.cx : a.cx, bendY = hFirst ? a.cy : b.cy;
+    const walk = (tx, ty) => { while (x !== tx || y !== ty){ if (x !== tx) x += Math.sign(tx - x); else y += Math.sign(ty - y); dig(y * MW + x); } };
+    walk(bendX, bendY); walk(b.cx, b.cy);
+  };
+  for (let i = 1; i < order.length; i++) tunnel(order[i - 1], order[i]);
+  for (let k = 0; k < 3 + rng.int(4); k++) tunnel(rng.pick(rooms), rng.pick(rooms));
+  // doors: a carved cell in a room's wall that a corridor passes straight through
+  for (let i = 0; i < tiles.length; i++){
+    if (!carved[i] || room[i] < 0 || tiles[i] !== T.FLOOR) continue;
+    const ns = passable(tiles[i - MW]) && passable(tiles[i + MW]) && opaque(tiles[i - 1]) && opaque(tiles[i + 1]);
+    const ew = passable(tiles[i - 1]) && passable(tiles[i + 1]) && opaque(tiles[i - MW]) && opaque(tiles[i + MW]);
+    if ((ns || ew) && rng.chance(0.75)) tiles[i] = rng.chance(0.65) ? T.DOOR : T.OPEN;
+  }
+  // stairs, on room floor away from doors
+  const spot = () => {
+    for (let tries = 0; tries < 500; tries++){
+      const r = rng.pick(rooms), i = rng.pick(r.cells);
+      if (tiles[i] !== T.FLOOR) continue;
+      let nearDoor = false; for (const d of [1, -1, MW, -MW]) if (tiles[i + d] === T.DOOR || tiles[i + d] === T.OPEN) nearDoor = true;
+      if (!nearDoor) return i;
+    }
+    return rooms[0].cells[0];
+  };
+  for (let k = 0; k < 1 + rng.int(2); k++) tiles[spot()] = T.DOWN;
+  if (depth > 1) for (let k = 0; k < 1 + rng.int(2); k++) tiles[spot()] = T.UP;
+  return { tiles, room, lit, rooms, spot };
+}
+// Every cell a player can stand on, reached from the first room (closed doors count as passable).
+function reachable(L){
+  const seen = new Uint8Array(MW * MH), stack = [L.rooms[0].cells[0]]; seen[stack[0]] = 1;
+  while (stack.length){
+    const i = stack.pop();
+    for (const d of [1, -1, MW, -MW, MW + 1, MW - 1, -MW + 1, -MW - 1]){
+      const j = i + d; if (seen[j] || !(passable(L.tiles[j]) || L.tiles[j] === T.DOOR)) continue;
+      seen[j] = 1; stack.push(j);
+    }
+  }
+  return seen;
+}
+/* ---------- Torchlight Dungeons: game data (phase 1) ---------- */
+// Original content, written for this game: no names, numbers or descriptions are taken from Moria or Umoria.
+// Depth is in levels (one level is 50 ft). Speed: 0 normal, +10 twice as fast, -10 half as fast.
+// Monster flags: erratic (share of random moves), pack [min, max], still (never moves), flee (runs when hurt),
+// glow { r, rgb } (gives off light), drop (chance to carry gold or an item).
+const MONSTERS = [
+  { id: "rat", name: "cave rat", glyph: "r", rgb: [0.75, 0.55, 0.4], depth: 1, rarity: 1, speed: 0, hp: "2d3", ac: 2, exp: 1,
+    blows: [["1d3", "bites"]], erratic: 0.3, desc: "A mangy rat with yellow teeth, bolder in the dark." },
+  { id: "slug", name: "mire slug", glyph: "w", rgb: [0.45, 0.75, 0.35], depth: 1, rarity: 1, speed: -10, hp: "3d4", ac: 1, exp: 1,
+    blows: [["1d2", "slimes"]], desc: "A fat slug that leaves a glistening trail across the stone." },
+  { id: "moth", name: "glimmer moth", glyph: "I", rgb: [0.75, 1.0, 0.55], depth: 1, rarity: 2, speed: 10, hp: "1d4", ac: 3, exp: 2,
+    blows: [["1d2", "brushes"]], erratic: 0.6, glow: { r: 3, rgb: [0.45, 0.8, 0.35] }, desc: "Its wings shed a pale green light as it flutters about." },
+  { id: "jackal", name: "tunnel jackal", glyph: "C", rgb: [0.8, 0.65, 0.4], depth: 2, rarity: 1, speed: 0, hp: "2d5", ac: 3, exp: 2,
+    blows: [["1d3", "bites"]], pack: [3, 5], desc: "Lean scavengers that hunt in yapping packs." },
+  { id: "mold", name: "weeping mold", glyph: "m", rgb: [0.55, 0.8, 0.7], depth: 2, rarity: 2, speed: 0, hp: "6d6", ac: 1, exp: 4,
+    blows: [["1d6", "stings"]], still: true, desc: "A damp grey-green growth that oozes when touched." },
+  { id: "goblin", name: "pit goblin", glyph: "g", rgb: [0.55, 0.85, 0.45], depth: 3, rarity: 1, speed: 0, hp: "3d6", ac: 6, exp: 4,
+    blows: [["1d6", "hits"]], drop: 0.5, flee: true, desc: "A wiry goblin in rags, clutching a rusty blade and a stolen purse." },
+  { id: "spider", name: "cave spider", glyph: "S", rgb: [0.6, 0.55, 0.7], depth: 4, rarity: 2, speed: 10, hp: "1d6", ac: 4, exp: 2,
+    blows: [["1d4", "bites"]], pack: [3, 5], desc: "Quick black spiders that pour out of cracks in swarms." },
+  { id: "skeleton", name: "bone rattler", glyph: "s", rgb: [0.95, 0.95, 0.85], depth: 4, rarity: 1, speed: 0, hp: "4d6", ac: 9, exp: 8,
+    blows: [["1d6", "claws"]], desc: "Old bones held together by spite, clicking as they walk." },
+  { id: "beetle", name: "ember beetle", glyph: "K", rgb: [1.0, 0.45, 0.2], depth: 4, rarity: 2, speed: 0, hp: "5d6", ac: 12, exp: 10,
+    blows: [["2d4", "burns"]], glow: { r: 2, rgb: [1.0, 0.35, 0.1] }, desc: "Its shell glows like a coal from the fire in its belly." },
+  { id: "wolf", name: "grey wolf", glyph: "C", rgb: [0.7, 0.7, 0.75], depth: 6, rarity: 1, speed: 10, hp: "5d6", ac: 10, exp: 15,
+    blows: [["1d6", "bites"], ["1d4", "bites"]], pack: [3, 6], desc: "A hungry wolf, one of many, with eyes that catch your light." },
+  { id: "brute", name: "goblin brute", glyph: "g", rgb: [0.9, 0.6, 0.35], depth: 6, rarity: 1, speed: 0, hp: "8d8", ac: 14, exp: 18,
+    blows: [["1d10", "smashes"]], drop: 0.6, desc: "A hulking goblin who wears a door as a shield." },
+  { id: "bear", name: "cave bear", glyph: "q", rgb: [0.65, 0.45, 0.3], depth: 7, rarity: 2, speed: 0, hp: "10d8", ac: 16, exp: 25,
+    blows: [["1d8", "claws"], ["1d8", "claws"], ["1d10", "bites"]], desc: "It rears up on its hind legs, filling the corridor." },
+  { id: "wisp", name: "marsh wisp", glyph: "*", rgb: [0.6, 0.8, 1.2], depth: 8, rarity: 3, speed: 10, hp: "6d6", ac: 20, exp: 30,
+    blows: [["2d6", "shocks"]], erratic: 0.5, glow: { r: 4, rgb: [0.35, 0.55, 1.0] }, desc: "A drifting ball of cold blue light that crackles as it nears." },
+  { id: "ghoul", name: "crypt ghoul", glyph: "z", rgb: [0.6, 0.75, 0.55], depth: 9, rarity: 2, speed: 0, hp: "12d8", ac: 18, exp: 40,
+    blows: [["1d8", "claws"], ["1d8", "claws"]], drop: 0.4, desc: "A grey, stooped corpse-eater that smells you long before it sees you." },
+  { id: "troll", name: "stone troll", glyph: "T", rgb: [0.6, 0.6, 0.6], depth: 10, rarity: 2, speed: 0, hp: "16d10", ac: 24, exp: 70,
+    blows: [["1d10", "hits"], ["1d10", "hits"], ["2d6", "bites"]], drop: 0.5, desc: "Grey hide like weathered rock, and a club made from a stalactite." }
+];
+// Items. Every kind is known on sight in phase 1 (identification comes in phase 3).
+const ITEMS = [
+  { id: "dagger", name: "Dagger", glyph: "|", rgb: [0.8, 0.8, 0.9], slot: "weapon", dice: "1d4", depth: 1, rarity: 1 },
+  { id: "shortsword", name: "Short sword", glyph: "|", rgb: [0.8, 0.8, 0.9], slot: "weapon", dice: "1d7", depth: 2, rarity: 1 },
+  { id: "mace", name: "Mace", glyph: "\\", rgb: [0.7, 0.7, 0.75], slot: "weapon", dice: "2d4", depth: 3, rarity: 1 },
+  { id: "longsword", name: "Long sword", glyph: "|", rgb: [0.85, 0.85, 1.0], slot: "weapon", dice: "2d5", depth: 6, rarity: 2 },
+  { id: "axe", name: "Broad axe", glyph: "/", rgb: [0.8, 0.75, 0.7], slot: "weapon", dice: "2d6", depth: 8, rarity: 2 },
+  { id: "jerkin", name: "Padded jerkin", glyph: "(", rgb: [0.7, 0.55, 0.4], slot: "body", ac: 3, depth: 1, rarity: 1 },
+  { id: "leather", name: "Leather coat", glyph: "(", rgb: [0.65, 0.45, 0.3], slot: "body", ac: 6, depth: 3, rarity: 1 },
+  { id: "scale", name: "Scale coat", glyph: "[", rgb: [0.7, 0.7, 0.75], slot: "body", ac: 10, depth: 6, rarity: 2 },
+  { id: "chain", name: "Chain shirt", glyph: "[", rgb: [0.8, 0.8, 0.85], slot: "body", ac: 14, depth: 9, rarity: 2 },
+  { id: "torch", name: "Torch", glyph: "~", rgb: [1.0, 0.6, 0.25], slot: "light", radius: 3, fuel: 4000, depth: 1, rarity: 1 },
+  { id: "lantern", name: "Lantern", glyph: "~", rgb: [1.0, 0.85, 0.4], slot: "light", radius: 4, fuel: 7500, maxFuel: 15000, depth: 5, rarity: 3 },
+  { id: "oil", name: "Flask of oil", glyph: "!", rgb: [0.9, 0.8, 0.4], use: "fuel", fuel: 7500, depth: 1, rarity: 1 },
+  { id: "ration", name: "Ration of food", glyph: ",", rgb: [0.85, 0.7, 0.45], use: "eat", food: 3000, depth: 1, rarity: 1 },
+  { id: "jerky", name: "Strip of dried meat", glyph: ",", rgb: [0.75, 0.45, 0.35], use: "eat", food: 1500, depth: 1, rarity: 1 },
+  { id: "heal", name: "Healing draught", glyph: "!", rgb: [1.0, 0.4, 0.45], use: "quaff", heal: "4d6", depth: 1, rarity: 1 },
+  { id: "bigheal", name: "Greater healing draught", glyph: "!", rgb: [1.0, 0.6, 0.9], use: "quaff", heal: "10d8", depth: 6, rarity: 2 }
+];
+const MONSTER = Object.fromEntries(MONSTERS.map(m => [m.id, m])), ITEM = Object.fromEntries(ITEMS.map(k => [k.id, k]));
+// Experience needed for each character level, and the depth in feet shown to the player.
+const expFor = lvl => Math.round(8 * Math.pow(lvl - 1, 2.1));
+const feet = depth => depth * 50;
+(() => {
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
+// Torchlight Dungeons, phase 1: a turn-based dungeon crawl after Moria. The rules run on the 198 x 66 map in
+// gen.js; you see what your light (or a lit room, or a glowing monster) shows you. The engine draws the light and
+// throws a little physics debris when something dies. See TORCHLIGHT_PLAN.md for what comes next.
+const TORCH_RGB = [1.0, 0.62, 0.3], ROOM_RGB = [0.42, 0.42, 0.47], MEM_RGB = [0.07, 0.08, 0.12];
+const WHITE = [1.6, 1.6, 1.6], DIM = [0.45, 0.48, 0.6], ACCENT = [1.6, 1.15, 0.5], RED = [1.6, 0.4, 0.35], GREEN = [0.6, 1.4, 0.6];
+const TILE = {   // glyph and base colour per tile
+  [T.EDGE]: ["#", [0.5, 0.46, 0.42]], [T.WALL]: ["#", [0.55, 0.5, 0.45]], [T.FLOOR]: [".", [0.32, 0.32, 0.32]],
+  [T.DOOR]: ["+", [0.75, 0.48, 0.22]], [T.OPEN]: ["'", [0.75, 0.48, 0.22]], [T.DOWN]: [">", [1.2, 1.2, 1.2]], [T.UP]: ["<", [1.2, 1.2, 1.2]]
+};
+const BITS = { name: "bits", density: 0.6, e: 0.45, mu: 0.5, kd: 0.9, ks: 0.5, shine: 20 };
+const DIRS = { 1: [-1, 1], 2: [0, 1], 3: [1, 1], 4: [-1, 0], 6: [1, 0], 7: [-1, -1], 8: [0, -1], 9: [1, -1] };
+const VY = 2;   // map rows start under the two message rows; the status bar takes the last two rows
+
+const D = defaultDisplay(); D.room = 0.15; D.glow = 0.3; D.lampRGB = TORCH_RGB;
+applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
+if (D.pixels) TILE[T.FLOOR][1] = [0.09, 0.09, 0.1];   // as solid pixels, floor must be much darker than wall to read the map
+const world = new World(); world.openTop = true;
+const lamp = { x: 0, y: 0, z: 0, on: true };   // the player's torch, for lighting the debris
+let screen = null, GW = 80, GH = 30, VH = 26, state = "title", stateT = 0;
+let rng = new RNG(Date.now() & 0xffffffff), L = null, depth = 1, player = null, mons = [], floor = [], cam = { x: 0, y: 0 };
+let roomLight = new Float32Array(3 * MW * MH), lightNow = new Float32Array(3 * MW * MH), lightTurn = new Float32Array(3 * MW * MH);
+let seenAt = new Uint32Array(MW * MH), inFov = new Uint32Array(MW * MH), mem = new Uint8Array(MW * MH), turnNo = 1;
+let msgs = [], oldMsgs = [], log = [], killer = "", tomb = null;
+const idx = (x, y) => y * MW + x;
+const blocks = (x, y) => x < 0 || y < 0 || x >= MW || y >= MH || opaque(L.tiles[y * MW + x]);
+const visible = i => seenAt[i] === turnNo;
+const monAt = (x, y) => mons.find(m => m.x === x && m.y === y);
+const itemsAt = (x, y) => floor.filter(f => f.x === x && f.y === y);
+const dist = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+function say(s){ msgs.push(s); log.push(s); if (log.length > 200) log.shift(); }
+
+/* ---------- saved preferences and high scores ---------- */
+const PREFIX = "torchlightDungeons.v1.";
+const load = (k, d) => { try { const v = localStorage.getItem(PREFIX + k); return v === null ? d : JSON.parse(v); } catch (e){ return d; } };
+const store = (k, v) => { try { localStorage.setItem(PREFIX + k, JSON.stringify(v)); } catch (e){ console.warn("Torchlight Dungeons: could not save", k, e); } };
+let keySet = load("keys", "original"), scores = load("scores", []);
+
+/* ---------- items ---------- */
+function makeItem(k, n = 1){ const K = ITEM[k], it = { k, n }; if (K.slot === "light") it.fuel = K.fuel; return it; }
+function plural(name){ const i = name.indexOf(" of "), w = i > 0 ? name.slice(0, i) : name, rest = i > 0 ? name.slice(i) : ""; return w + (/(ch|sh|s|x)$/.test(w) ? "es" : "s") + rest; }
+function itemName(it){
+  const K = ITEM[it.k], base = it.n > 1 ? it.n + " " + plural(K.name) : (/^[AEIOU]/.test(K.name) ? "an " : "a ") + K.name;
+  return base + (K.dice ? " (" + K.dice + ")" : "") + (K.ac ? " [" + K.ac + "]" : "") + (it.fuel !== undefined ? " (" + it.fuel + " turns)" : "");
+}
+const stackable = (a, b) => a.k === b.k && a.fuel === b.fuel;
+function carry(it){
+  const same = player.inv.find(o => stackable(o, it));
+  if (same){ same.n += it.n; return same; }
+  if (player.inv.length >= 22) return null;
+  player.inv.push(it); return it;
+}
+function pickItem(d){
+  const pool = ITEMS.filter(k => k.depth <= d);
+  return makeItem(rng.weighted(pool, k => 1 / k.rarity * (k.depth >= d - 3 ? 1.5 : 1)).id, 1);
+}
+const weaponDice = () => player.eq.weapon ? ITEM[player.eq.weapon.k].dice : "1d2";
+const armour = () => (player.eq.body ? ITEM[player.eq.body.k].ac : 0) + Math.floor(player.lvl / 3);
+function lightRadius(){
+  const it = player.eq.light; if (!it || it.fuel <= 0) return 0;
+  const R = ITEM[it.k].radius; return it.fuel < 100 ? 1 : it.fuel < 500 ? R - 1 : R;
+}
+
+/* ---------- levels ---------- */
+function newLevel(d){
+  depth = d; player.maxDepth = Math.max(player.maxDepth, d);
+  L = generateLevel(rng, d);
+  mem.fill(0); mons = [player]; floor = []; world.bodies.length = 0;
+  // light from lit rooms is fixed for the whole level
+  roomLight.fill(0);
+  for (let i = 0; i < MW * MH; i++) if (L.lit[i]){ roomLight[3 * i] = ROOM_RGB[0]; roomLight[3 * i + 1] = ROOM_RGB[1]; roomLight[3 * i + 2] = ROOM_RGB[2]; }
+  const at = L.spot(); player.x = at % MW; player.y = Math.floor(at / MW);
+  for (let k = 0, n = 14 + d + rng.int(8); k < n; k++) spawnMonster(false);
+  for (let k = 0, n = 8 + rng.int(6); k < n; k++) dropAt(freeSpot(0), rng.chance(0.35) ? { k: "gold", n: rng.range(8, 25) * d } : pickItem(d));
+  centerCamera(true); updateSight();
+  say(d === 1 ? "You enter the dungeon at 50 ft. Your torch hisses in the damp air." : "You are now at " + feet(d) + " ft.");
+}
+function freeSpot(minDist){
+  for (let tries = 0; tries < 400; tries++){
+    const r = rng.pick(L.rooms), i = rng.pick(r.cells), x = i % MW, y = Math.floor(i / MW);
+    if (L.tiles[i] === T.FLOOR && !monAt(x, y) && dist(x, y, player.x, player.y) >= minDist && !(minDist && visible(i))) return i;
+  }
+  return -1;
+}
+function dropAt(i, it){ if (i >= 0) floor.push({ x: i % MW, y: Math.floor(i / MW), it }); }
+function pickMonster(d){
+  const deep = rng.chance(0.1) ? 3 : 0;   // now and then, something from deeper down
+  const pool = MONSTERS.filter(m => m.depth <= d + deep);
+  return rng.weighted(pool, m => 1 / m.rarity * (m.depth >= d - 4 ? 1.5 : 0.6));
+}
+function spawnMonster(awake){
+  const K = pickMonster(depth), at = freeSpot(10); if (at < 0) return;
+  const n = K.pack ? rng.range(K.pack[0], K.pack[1]) : 1;
+  let x = at % MW, y = Math.floor(at / MW);
+  for (let k = 0; k < n; k++){
+    // a pack gathers around the first one
+    let px = x, py = y;
+    for (let t = 0; t < 12 && (k > 0) && (monAt(px, py) || !passable(L.tiles[idx(px, py)])); t++){ px = x + rng.range(-2, 2); py = y + rng.range(-2, 2); }
+    if (monAt(px, py) || !passable(L.tiles[idx(px, py)])) continue;
+    const hp = rng.dice(K.hp);
+    mons.push({ K, x: px, y: py, hp, mhp: hp, energy: rng.int(100), speed: K.speed, sleep: awake || K.pack ? 0 : rng.range(0, 30), seen: false });
+  }
+}
+
+/* ---------- sight and light ---------- */
+function computeLight(field, t){
+  field.set(roomLight);
+  const R = lightRadius();
+  if (R > 0){
+    const f = t ? 0.06 * Math.sin(t * 0.011) + 0.04 * Math.sin(t * 0.029 + 1.3) + 0.03 * Math.sin(t * 0.071) : 0;   // the flame flickers
+    addLight(field, MW, MH, blocks, { x: player.x, y: player.y, r: R + f * 4, i: 1.3 * (1 + f), rgb: TORCH_RGB });
+  }
+  for (const m of mons) if (m.K && m.K.glow) addLight(field, MW, MH, blocks, { x: m.x, y: m.y, r: m.K.glow.r, i: 1.0, rgb: m.K.glow.rgb });
+}
+// After each turn: what the player can see is what is in their line of sight AND has light on it.
+function updateSight(){
+  turnNo++;
+  computeLight(lightTurn, 0);
+  fov(player.x, player.y, 45, blocks, (x, y) => {
+    const i = idx(x, y); inFov[i] = turnNo;
+    if (lum(lightTurn, 3 * i) > 0.03){ seenAt[i] = turnNo; mem[i] = 1; }
+  }, MW, MH);
+  rebuildTerrain();
+}
+function centerCamera(force){
+  const ox = cam.x, oy = cam.y, mx = Math.max(0, MW - GW), my = Math.max(0, MH - VH);
+  // the view moves in steps when you near its edge, like Moria's panels, rather than on every step
+  if (force || player.x - cam.x < GW * 0.2 || player.x - cam.x > GW * 0.8) cam.x = Math.max(0, Math.min(mx, player.x - (GW >> 1)));
+  if (force || player.y - cam.y < VH * 0.2 || player.y - cam.y > VH * 0.8) cam.y = Math.max(0, Math.min(my, player.y - (VH >> 1)));
+  if (screen && (ox !== cam.x || oy !== cam.y)) for (const b of world.bodies){ b.x += (ox - cam.x) * screen.cw; b.y += (oy - cam.y) * screen.ch; }
+}
+// The engine's terrain for the debris: the walls on screen, plus the message and status rows.
+function rebuildTerrain(){
+  if (!screen || !L) return;
+  const solid = new Uint8Array(GW * GH);
+  for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++){
+    const my = cam.y + r - VY, mx = cam.x + c;
+    solid[r * GW + c] = r < VY || r >= VY + VH || mx >= MW || my >= MH || opaque(L.tiles[idx(mx, my)]) ? 1 : 0;
+  }
+  world.terrain = { cw: screen.cw, ch: screen.ch, cols: GW, rows: GH, solid, mat: BITS };
+}
+
+/* ---------- the player's actions: each returns true when it took a turn ---------- */
+function tryMove(dx, dy){
+  const x = player.x + dx, y = player.y + dy, i = idx(x, y), t = L.tiles[i], m = monAt(x, y);
+  if (m) return attack(m);
+  if (t === T.DOOR){ L.tiles[i] = T.OPEN; say("You open the door."); return true; }
+  if (!passable(t)){ say(t <= T.WALL ? "There is a wall in the way." : "Something is in the way."); return false; }
+  player.x = x; player.y = y;
+  for (const f of itemsAt(x, y)) if (f.it.k === "gold"){ player.gold += f.it.n; say("You find " + f.it.n + " gold pieces."); floor.splice(floor.indexOf(f), 1); }
+  const here = itemsAt(x, y);
+  if (here.length === 1) say("You see " + itemName(here[0].it) + ".");
+  else if (here.length > 1) say("You see several items here.");
+  if (t === T.DOWN) say("There is a staircase down here.");
+  if (t === T.UP) say("There is a staircase up here.");
+  return true;
+}
+function attack(m){
+  const K = m.K, name = visible(idx(m.x, m.y)) ? "the " + K.name : "it";
+  const weak = player.food < 1000 ? 10 : 0;
+  if (rng.int(100) < Math.max(10, Math.min(95, 60 + 3 * player.lvl - K.ac - weak))){
+    const dmg = rng.dice(weaponDice()) + Math.floor(player.lvl / 5);
+    m.hp -= dmg; m.sleep = 0;
+    if (m.hp <= 0) return kill(m, name), true;
+    say("You hit " + name + ".");
+    if (K.flee && m.hp < m.mhp * 0.3) m.afraid = 10;
+  } else say("You miss " + name + ".");
+  return true;
+}
+function kill(m, name){
+  say("You have slain " + name + ".");
+  mons.splice(mons.indexOf(m), 1); player.kills++;
+  gainExp(m.K.exp * m.K.depth / player.lvl);
+  if (m.K.drop && rng.chance(m.K.drop)) dropAt(idx(m.x, m.y), rng.chance(0.6) ? { k: "gold", n: rng.range(5, 20) * depth } : pickItem(depth));
+  burst(m.x, m.y, m.K.rgb);
+}
+function gainExp(e){
+  player.exp += e;
+  while (player.exp >= expFor(player.lvl + 1) && player.lvl < 40){
+    player.lvl++; const up = rng.range(5, 11); player.mhp += up; player.hp += up;
+    say("Welcome to level " + player.lvl + ".");
+  }
+}
+// A kill bursts into a few tumbling bits in the monster's colour, lit by your torch.
+function burst(x, y, rgb){
+  if (!screen) return;
+  const px = (x - cam.x + 0.5) * screen.cw, py = (y - cam.y + VY + 0.5) * screen.ch;
+  for (let k = 0; k < 7; k++){
+    const a = Math.random() * 6.283, sp = 80 + Math.random() * 220, b = world.add(px, py, screen.ch * (0.18 + Math.random() * 0.15), "bits", rgb.map(v => v * 0.45), BITS);
+    b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp - 120; b.w = (Math.random() - 0.5) * 20; b.flash = 0.6; b.life = 1.2 + Math.random() * 0.8;
+  }
+}
+function pickUp(){
+  const here = itemsAt(player.x, player.y);
+  if (!here.length){ say("There is nothing here to pick up."); return false; }
+  for (const f of here){
+    const got = carry(f.it);
+    if (!got){ say("You cannot carry any more."); break; }
+    floor.splice(floor.indexOf(f), 1);
+    say("You have " + itemName(got) + " (" + String.fromCharCode(97 + player.inv.indexOf(got)) + ").");
+  }
+  return true;
+}
+function takeStairs(down){
+  const t = L.tiles[idx(player.x, player.y)];
+  if (t !== (down ? T.DOWN : T.UP)){ say("There is no staircase " + (down ? "down" : "up") + " here."); return false; }
+  say(down ? "You descend the stairs." : "You climb the stairs.");
+  newLevel(depth + (down ? 1 : -1));
+  return "level";
+}
+function useItem(it, how){
+  const K = ITEM[it.k], take = () => { if (--it.n <= 0) player.inv.splice(player.inv.indexOf(it), 1); };
+  if (how === "eat"){ player.food = Math.min(15000, player.food + K.food); say("That tastes good."); take(); return true; }
+  if (how === "quaff"){
+    const h = rng.dice(K.heal); player.hp = Math.min(player.mhp, player.hp + h);
+    say(player.hp >= player.mhp ? "You feel very good." : "You feel better."); take(); return true;
+  }
+  if (how === "fuel"){
+    const lt = player.eq.light;
+    if (!lt || !ITEM[lt.k].maxFuel){ say("You need a lantern to pour the oil into."); return false; }
+    lt.fuel = Math.min(ITEM[lt.k].maxFuel, lt.fuel + K.fuel); say("You fill your lantern."); take(); return true;
+  }
+  if (how === "wield"){
+    const slot = K.slot, one = { ...it, n: 1 };
+    take();
+    const old = player.eq[slot]; player.eq[slot] = one;
+    if (old) carry(old);
+    say((slot === "body" ? "You are wearing " : slot === "light" ? "Your light source is " : "You are wielding ") + itemName(one) + ".");
+    return true;
+  }
+  if (how === "drop"){
+    floor.push({ x: player.x, y: player.y, it: { ...it } }); player.inv.splice(player.inv.indexOf(it), 1);
+    say("You drop " + itemName(it) + "."); return true;
+  }
+  return false;
+}
+
+/* ---------- a turn: the player acts, then everyone faster or as fast acts until it is the player's turn again ---------- */
+function act(fn){
+  if (state !== "play") return false;
+  oldMsgs = msgs.length ? msgs : oldMsgs; msgs = [];
+  const r = fn();
+  if (!r) return false;
+  if (r !== "level") endTurn();
+  return true;
+}
+function endTurn(){
+  player.energy -= 100; player.turns++;
+  everyTurn();
+  for (let guard = 0; guard < 500 && state === "play"; guard++){
+    const a = nextActor(mons);
+    if (a === player) break;
+    monsterTurn(a); a.energy -= 100;
+  }
+  if (state !== "play") return;
+  if (rng.int(300) === 0) spawnMonster(true);   // the dungeon is never quite empty
+  centerCamera(false); updateSight();
+  for (const m of mons) if (m.K){ const v = visible(idx(m.x, m.y)); if (v && !m.seen) disturbed = true; m.seen = v; }
+}
+let disturbed = false, hpBefore = 0;
+function everyTurn(){
+  // food and light burn away, and wounds slowly heal
+  player.food--;
+  if (player.food === 2000) say("You are getting hungry.");
+  if (player.food === 1000) say("You are getting weak from hunger.");
+  if (player.food === 0) say("You are starving!");
+  if (player.food < 0 && player.food % 10 === 0) hurt(1, "starvation");
+  const lt = player.eq.light;
+  if (lt && lt.fuel > 0){
+    lt.fuel--;
+    if (lt.fuel === 500) say("Your light is growing faint.");
+    if (lt.fuel === 0) say("Your light has gone out!");
+  }
+  if (player.food > 1000 && player.hp < player.mhp){
+    player.regen += 0.03 + player.mhp * 0.004 * (resting ? 2 : 1);
+    while (player.regen >= 1 && player.hp < player.mhp){ player.hp++; player.regen--; }
+  }
+}
+function hurt(n, by){
+  player.hp -= n; disturbed = true;
+  if (player.hp <= 0){ killer = by; die(); }
+}
+function die(){
+  state = "dead"; stateT = 0;
+  const entry = { score: Math.floor(player.exp) + 100 * player.maxDepth, lvl: player.lvl, depth: feet(player.maxDepth), killer };
+  scores.push(entry); scores.sort((a, b) => b.score - a.score); scores = scores.slice(0, 5); store("scores", scores);
+  tomb = { ...entry, best: scores[0] === entry, turns: player.turns };
+  say("You die.");
+}
+function monsterTurn(m){
+  const K = m.K, d = dist(m.x, m.y, player.x, player.y);
+  if (m.sleep > 0){ if (d < 14) m.sleep -= rng.range(1, 3); return; }   // noise nearby wakes it, sooner the closer you are
+  if (K.still){ if (d <= 1) monsterAttack(m); return; }
+  if (d <= 1 && !m.afraid) return monsterAttack(m);
+  const seesYou = inFov[idx(m.x, m.y)] === turnNo && d < 20;   // sight is symmetric: if you could see it, it can see you
+  let tx = player.x, ty = player.y, away = false;
+  if (m.afraid){ m.afraid--; away = true; }
+  if ((K.erratic && rng.chance(K.erratic)) || (!seesYou && d > 6)){   // wander
+    const [dx, dy] = DIRS[rng.pick([1, 2, 3, 4, 6, 7, 8, 9])]; tx = m.x + dx; ty = m.y + dy;
+    return step(m, tx, ty);
+  }
+  // step to the neighbour that gets closest to (or furthest from) the player
+  let best = null, bestD = away ? -1 : 1e9;
+  for (const k of [1, 2, 3, 4, 6, 7, 8, 9]){
+    const [dx, dy] = DIRS[k], x = m.x + dx, y = m.y + dy, t = L.tiles[idx(x, y)];
+    if (!(passable(t) || t === T.DOOR) || (monAt(x, y) && !(x === player.x && y === player.y))) continue;
+    const nd = Math.hypot(x - tx, y - ty);
+    if (away ? nd > bestD : nd < bestD){ bestD = nd; best = [x, y]; }
+  }
+  if (best) step(m, best[0], best[1]);
+}
+function step(m, x, y){
+  const i = idx(x, y), t = L.tiles[i];
+  if (x === player.x && y === player.y) return m.afraid ? null : monsterAttack(m);
+  if (t === T.DOOR){ L.tiles[i] = T.OPEN; if (visible(i)) say("A door opens."); return; }
+  if (!passable(t) || monAt(x, y)) return;
+  m.x = x; m.y = y;
+}
+function monsterAttack(m){
+  const K = m.K, name = visible(idx(m.x, m.y)) ? "The " + K.name : "It";
+  for (const [dice, verb] of K.blows){
+    if (state !== "play") return;
+    if (rng.int(100) < Math.max(15, Math.min(95, 60 + 2 * K.depth - armour()))){ say(name + " " + verb + " you."); hurt(rng.dice(dice), "a " + K.name); }
+    else say(name + " misses you.");
+  }
+}
+
+/* ---------- longer actions: running and resting stop when something happens ---------- */
+let resting = false;
+function run(dx, dy){
+  if (state !== "play") return;
+  disturbed = false;
+  const open = (x, y) => passable(L.tiles[idx(x, y)]) && !monAt(x, y);
+  for (let n = 0; n < 200 && state === "play" && !disturbed; n++){
+    if (mons.some(m => m.K && visible(idx(m.x, m.y)) && !m.K.still)) break;
+    if (!open(player.x + dx, player.y + dy)){
+      // in a corridor, follow a single bend
+      if (dx && dy) break;
+      const turns = (dx ? [[0, 1], [0, -1]] : [[1, 0], [-1, 0]]).filter(([a, b]) => open(player.x + a, player.y + b));
+      if (turns.length !== 1) break;
+      [dx, dy] = turns[0];
+    }
+    if (!act(() => tryMove(dx, dy))) break;
+    const t = L.tiles[idx(player.x, player.y)];
+    if (t === T.DOWN || t === T.UP || itemsAt(player.x, player.y).length) break;
+    let doors = 0; for (const k of [1, 2, 3, 4, 6, 7, 8, 9]){ const [a, b] = DIRS[k], u = L.tiles[idx(player.x + a, player.y + b)]; if (u === T.DOOR || u === T.OPEN) doors++; }
+    if (doors) break;
+  }
+}
+function rest(){
+  if (state !== "play") return;
+  if (player.hp >= player.mhp){ say("You are already fully rested."); return; }
+  disturbed = false; resting = true;
+  for (let n = 0; n < 1000 && state === "play" && !disturbed && player.hp < player.mhp; n++){
+    if (mons.some(m => m.K && visible(idx(m.x, m.y)))){ say("You cannot rest with monsters nearby."); break; }
+    act(() => true);
+  }
+  resting = false;
+}
+function contextAction(){   // the touch A button: whatever makes sense here
+  const t = L.tiles[idx(player.x, player.y)];
+  if (t === T.DOWN || t === T.UP) return act(() => takeStairs(t === T.DOWN));
+  if (itemsAt(player.x, player.y).length) return act(pickUp);
+  act(() => true);   // otherwise wait a turn
+}
+function look(){
+  const seen = mons.filter(m => m.K && visible(idx(m.x, m.y)));
+  oldMsgs = []; msgs = [];
+  if (!seen.length) say("You see no monsters.");
+  for (const m of seen.slice(0, 4)) say("You see a " + m.K.name + (m.sleep > 0 ? " (asleep)" : "") + ". " + m.K.desc);
+}
+
+/* ---------- a new character (phase 1: a human fighter) ---------- */
+function newGame(){
+  rng = new RNG((Date.now() ^ (Math.random() * 1e9)) >>> 0);
+  player = { x: 0, y: 0, hp: 24, mhp: 24, lvl: 1, exp: 0, energy: 100, speed: 0, food: 5000, gold: rng.range(40, 120), regen: 0,
+    inv: [], eq: { weapon: makeItem("shortsword"), body: makeItem("jerkin"), light: makeItem("torch") }, maxDepth: 1, kills: 0, turns: 0 };
+  for (const [k, n] of [["torch", 2], ["ration", 4], ["heal", 2]]) carry(makeItem(k, n));
+  log = []; msgs = []; oldMsgs = []; killer = ""; tomb = null;
+  state = "play"; stateT = 0;
+  newLevel(1);
+}
+
+/* ---------- drawing ---------- */
+function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
+function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
+const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
+function drawMap(t){
+  computeLight(lightNow, t);
+  for (let r = 0; r < VH; r++) for (let c = 0; c < GW; c++){
+    const x = cam.x + c, y = cam.y + r; if (x >= MW || y >= MH) continue;
+    const i = idx(x, y), tile = L.tiles[i], [g, base] = TILE[tile];
+    if (visible(i)){
+      const j = 3 * i, k = 1.7;
+      put(c, VY + r, [base[0] * lightNow[j] * k, base[1] * lightNow[j + 1] * k, base[2] * lightNow[j + 2] * k], 1, 1, g.charCodeAt(0));
+    } else if (mem[i]) put(c, VY + r, [base[0] * MEM_RGB[0] * 2, base[1] * MEM_RGB[1] * 2, base[2] * MEM_RGB[2] * 2], 1, 1, g.charCodeAt(0));   // remembered: dim and blue
+  }
+  const shade = i => Math.max(0.55, Math.min(1.3, 0.45 + lum(lightNow, 3 * i) * 1.2));
+  for (const f of floor){ const i = idx(f.x, f.y); if (!visible(i)) continue;
+    const K = f.it.k === "gold" ? { glyph: "$", rgb: [1.4, 1.15, 0.3] } : ITEM[f.it.k];
+    put(f.x - cam.x, VY + f.y - cam.y, K.rgb, shade(i), TEXT_LAYER, K.glyph.charCodeAt(0)); }
+  for (const m of mons){ if (!m.K) continue; const i = idx(m.x, m.y); if (!visible(i)) continue;
+    put(m.x - cam.x, VY + m.y - cam.y, m.K.rgb, m.K.glow ? 1.4 : shade(i) * 1.15, TEXT_LAYER, m.K.glyph.charCodeAt(0)); }
+  if (state === "play") put(player.x - cam.x, VY + player.y - cam.y, [1.7, 1.55, 1.2], 1, TEXT_LAYER, 64);
+  lamp.x = (player.x - cam.x + 0.5) * screen.cw; lamp.y = (player.y - cam.y + VY + 0.5) * screen.ch; lamp.z = screen.ch * 3;
+  for (const b of world.bodies) screen.sphere(b, lamp, { stripe: false });
+}
+function wrap(s, w){ const out = []; let line = ""; for (const word of s.split(" ")){ if ((line + " " + word).trim().length > w){ out.push(line); line = word; } else line = (line + " " + word).trim(); } if (line) out.push(line); return out; }
+function drawUI(){
+  // messages: this turn's in white; if nothing happened, the last turn's in grey. Long turns keep the newest lines.
+  const fresh = msgs.length > 0, lines = wrap((fresh ? msgs : oldMsgs).join("  "), GW - 1);
+  lines.slice(-2).forEach((s, k) => text(0, k, s, fresh ? WHITE : DIM));
+  const p = player, low = p.hp < p.mhp * 0.3, lt = p.eq.light;
+  const food = p.food < 0 ? "Starving" : p.food < 1000 ? "Weak" : p.food < 2000 ? "Hungry" : "";
+  const s1 = `Fighter  LV ${p.lvl}  EXP ${Math.floor(p.exp)}/${expFor(p.lvl + 1)}  `, hp = `HP ${Math.max(0, p.hp)}/${p.mhp}`, s2 = `  AC ${armour()}  ${feet(depth)} ft`;
+  text(0, GH - 2, s1, WHITE); text(s1.length, GH - 2, hp, low ? RED : GREEN); text(s1.length + hp.length, GH - 2, s2, WHITE);
+  const lightTxt = lt ? (ITEM[lt.k].name + " " + lt.fuel) : "No light";
+  text(0, GH - 1, lightTxt, lt && lt.fuel > 500 ? ACCENT : RED);
+  if (food) text(lightTxt.length + 2, GH - 1, food, RED);
+  const gold = "Gold " + p.gold; text(lightTxt.length + (food ? food.length + 4 : 2), GH - 1, gold, DIM);
+  const hint = touchMode ? "B COMMANDS  START MENU" : "? HELP  ESC MENU";
+  text(GW - hint.length, GH - 1, hint, DIM);
+}
+function drawTitle(t){
+  // a lit chamber behind the title: the first level, shown by a flickering torch
+  if (!L){ rng = new RNG(4242); player = { x: 0, y: 0, eq: { light: { k: "torch", fuel: 4000 } }, lvl: 1 }; L = generateLevel(rng, 1); mons = []; floor = []; roomLight.fill(0);
+    const r = L.rooms.reduce((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) > (a.x1 - a.x0) * (a.y1 - a.y0) ? b : a); player.x = r.cx; player.y = r.cy; centerCamera(true);
+    for (let i = 0; i < MW * MH; i++) if (L.room[i] === r.id){ roomLight[3 * i] = ROOM_RGB[0] * 0.6; roomLight[3 * i + 1] = ROOM_RGB[1] * 0.6; roomLight[3 * i + 2] = ROOM_RGB[2] * 0.6; } }   // the biggest room, dimly lit
+  computeLight(lightNow, t);
+  for (let r = 0; r < VH; r++) for (let c = 0; c < GW; c++){
+    const x = cam.x + c, y = cam.y + r; if (x >= MW || y >= MH) continue;
+    const i = idx(x, y), j = 3 * i, v = lum(lightNow, j); if (v < 0.02) continue;
+    const [g, base] = TILE[L.tiles[i]];
+    put(c, VY + r, [base[0] * lightNow[j] * 1.7, base[1] * lightNow[j + 1] * 1.7, base[2] * lightNow[j + 2] * 1.7], 1, 1, g.charCodeAt(0));
+  }
+  const top = Math.max(1, (GH >> 1) - 9);
+  center(top, "T O R C H L I G H T", ACCENT); center(top + 1, "D U N G E O N S", ACCENT);
+  center(top + 3, "A dungeon crawl after Moria", DIM);
+  const blink = (performance.now() / 500 | 0) % 2;
+  center(top + 5, touchMode ? "PRESS A OR START TO BEGIN" : "PRESS SPACE TO BEGIN", blink ? WHITE : DIM);
+  center(top + 6, "Early version: one character type, no saves yet.", DIM);
+  if (scores.length){
+    center(top + 9, "HALL OF FAME", ACCENT);
+    scores.forEach((s, k) => center(top + 10 + k, `${String(s.score).padStart(6)}  Fighter LV ${String(s.lvl).padStart(2)}  ${String(s.depth).padStart(5)} ft  ${s.killer}`.slice(0, GW - 2), k ? DIM : WHITE));
+  }
+}
+function drawTomb(){
+  const T0 = tomb, lines = ["R.I.P.", "", "A Fighter of level " + T0.lvl, "killed by " + T0.killer, "at " + feet(depth) + " ft", "", "Score " + T0.score + (T0.best ? "  (best!)" : ""), "",
+    touchMode ? "Press A for the title" : "Press Space for the title"];
+  const w = 34, top = Math.max(2, (GH >> 1) - 7), x0 = (GW - w) >> 1;
+  for (let r = 0; r < lines.length + 4; r++) text(x0, top + r, r === 0 || r === lines.length + 3 ? "+" + "-".repeat(w - 2) + "+" : "|" + " ".repeat(w - 2) + "|", DIM);
+  lines.forEach((s, k) => text(x0 + ((w - s.length) >> 1), top + 2 + k, s, k === 0 ? ACCENT : WHITE));
+}
+function draw(t){
+  screen.clear();
+  if (state === "title") drawTitle(t);
+  else { drawMap(t); drawUI(); if (state === "dead" && stateT > 1) drawTomb(); }
+  const mt = (m, title, note) => { if (m.open) m.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: ACCENT, normal: WHITE, dim: DIM, title, note }); };
+  mt(list, listTitle, listNote); mt(menu, state === "title" ? "MENU" : "PAUSED", "THIS EARLY VERSION DOES NOT SAVE");
+  screen.render(ctx);
+}
+
+/* ---------- lists: commands, inventory, character sheet, help ---------- */
+let listRows = [], listTitle = "", listNote = "";
+const list = createMenu(() => listRows);
+function openList(title, rows, note = ""){ listTitle = title; listRows = rows; listNote = note; list.at = 0; if (!list.open) list.show(); }
+const info = s => ({ label: s, select: () => {} });
+const done = fn => () => { list.hide(); fn(); };
+function commandList(){
+  openList("COMMANDS", [
+    { label: "Inventory", select: () => inventoryList() },
+    { label: "Pick up", select: done(() => act(pickUp)) },
+    { label: "Take the stairs", select: done(() => { const t = L.tiles[idx(player.x, player.y)]; act(() => takeStairs(t !== T.UP)); }) },
+    { label: "Rest until healed", select: done(rest) },
+    { label: "Wait a turn", select: done(() => act(() => true)) },
+    { label: "Look around", select: done(look) },
+    { label: "Character", select: () => characterList() },
+    { label: "Messages", select: () => messageList() },
+    { label: "Help", select: () => helpList() }
+  ]);
+}
+function inventoryList(filter, verb){
+  const rows = [];
+  for (const slot of ["weapon", "body", "light"]){ const it = player.eq[slot]; if (it && !filter) rows.push(info(slot.padEnd(7) + itemName(it))); }
+  player.inv.forEach((it, k) => { if (!filter || filter(it)) rows.push({ label: String.fromCharCode(97 + k) + ") " + itemName(it), select: () => verb ? (list.hide(), act(() => useItem(it, verb))) : itemActions(it) }); });
+  if (!rows.length) rows.push(info(filter ? "Nothing suitable." : "You are carrying nothing."));
+  openList(filter ? verb.toUpperCase() + " WHICH?" : "INVENTORY  " + player.inv.length + "/22", rows);
+}
+function verbsFor(it){
+  const K = ITEM[it.k], v = [];
+  if (K.use === "eat") v.push(["eat", "Eat"]);
+  if (K.use === "quaff") v.push(["quaff", "Drink"]);
+  if (K.use === "fuel") v.push(["fuel", "Fill lantern"]);
+  if (K.slot) v.push(["wield", K.slot === "body" ? "Wear" : K.slot === "light" ? "Use as light" : "Wield"]);
+  v.push(["drop", "Drop"]);
+  return v;
+}
+function itemActions(it){
+  openList(itemName(it).toUpperCase().slice(0, 34), [...verbsFor(it).map(([how, label]) => ({ label, select: done(() => act(() => useItem(it, how))) })), { label: "Back", select: () => inventoryList() }]);
+}
+function characterList(){
+  const p = player;
+  openList("CHARACTER", [info("Human Fighter, level " + p.lvl), info("Experience " + Math.floor(p.exp) + " / " + expFor(p.lvl + 1)), info("Hit points " + p.hp + " / " + p.mhp),
+    info("Armour class " + armour()), info("Weapon " + weaponDice()), info("Gold " + p.gold), info("Deepest " + feet(p.maxDepth) + " ft"), info("Monsters slain " + p.kills), info("Turns " + p.turns)]);
+}
+function messageList(){ openList("MESSAGES", log.length ? log.slice(-60).reverse().flatMap(s => wrap(s, 34).map(info)) : [info("No messages yet.")], "NEWEST FIRST"); }
+function helpList(){
+  const ro = keySet === "roguelike";
+  openList("HELP", [
+    info(ro ? "hjklyubn  move (Shift runs)" : "Arrows/numpad  move"), info(ro ? "arrows also move" : "Shift + move  run"),
+    info("Walk into a monster to attack"), info("Walk into a door to open it"),
+    info("g or ,  pick up"), info("i  inventory    E  eat"), info("q  drink    w  wield/wear"), info("F  fill lantern  d  drop"),
+    info(">  <  take the stairs"), info("R  rest   " + (ro ? "." : ". or 5") + "  wait"), info((ro ? "x" : "l") + "  look   C  character"),
+    info("Ctrl+P  messages"), info("Esc  menu"),
+    info("Touch: D-pad moves (8 ways),"), info("A acts here, B commands")
+  ], "KEYS CAN BE CHANGED IN THE MENU");
+}
+const menu = createMenu(() => [
+  { label: "RESUME", select: () => menu.hide() },
+  { label: state === "play" ? "NEW CHARACTER" : "START", select: () => { menu.hide(); newGame(); } },
+  { label: "KEYS", value: () => keySet === "roguelike" ? "ROGUELIKE" : "ORIGINAL", change: () => { keySet = keySet === "roguelike" ? "original" : "roguelike"; store("keys", keySet); } },
+  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: "HELP", select: () => { menu.hide(); helpList(); } },
+  { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
+  { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
+]);
+
+/* ---------- input ---------- */
+const ORIGINAL = { ArrowUp: 8, ArrowDown: 2, ArrowLeft: 4, ArrowRight: 6, Home: 7, PageUp: 9, End: 1, PageDown: 3, 1: 1, 2: 2, 3: 3, 4: 4, 6: 6, 7: 7, 8: 8, 9: 9 };
+const ROGUE = { ArrowUp: 8, ArrowDown: 2, ArrowLeft: 4, ArrowRight: 6, h: 4, j: 2, k: 8, l: 6, y: 7, u: 9, b: 1, n: 3 };
+function dirFor(e){
+  const code = /^Numpad([1-9])$/.exec(e.code);
+  if (code && code[1] !== "5") return +code[1];
+  const map = keySet === "roguelike" ? ROGUE : ORIGINAL;
+  return map[e.key] || map[e.key.toLowerCase()] || 0;
+}
+function onKey(e){
+  if (list.open && list.key(e)){ e.preventDefault(); return; }
+  if (menu.key(e)){ e.preventDefault(); return; }
+  if (e.key === "Escape"){ e.preventDefault(); return menu.show(); }
+  if (state === "title"){ if (e.key === " " || e.key === "Enter"){ e.preventDefault(); newGame(); } return; }
+  if (state === "dead"){ if (stateT > 1 && (e.key === " " || e.key === "Enter")){ e.preventDefault(); toTitle(); } return; }
+  const ro = keySet === "roguelike", d = dirFor(e);
+  if (d){
+    e.preventDefault();
+    const [dx, dy] = DIRS[d];
+    if (e.shiftKey || (ro && /^[HJKLYUBN]$/.test(e.key))) return run(dx, dy);
+    return act(() => tryMove(dx, dy));
+  }
+  if (e.ctrlKey && (e.key === "p" || e.key === "P")){ e.preventDefault(); return messageList(); }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key;
+  if (k === "g" || k === ",") act(pickUp);
+  else if (k === ">") act(() => takeStairs(true));
+  else if (k === "<") act(() => takeStairs(false));
+  else if (k === "i") inventoryList();
+  else if (k === "E") inventoryList(it => ITEM[it.k].use === "eat", "eat");
+  else if (k === "q") inventoryList(it => ITEM[it.k].use === "quaff", "quaff");
+  else if (k === "w") inventoryList(it => !!ITEM[it.k].slot, "wield");
+  else if (k === "F") inventoryList(it => ITEM[it.k].use === "fuel", "fuel");
+  else if (k === "d") inventoryList(() => true, "drop");
+  else if (k === "R") rest();
+  else if (k === "." || (!ro && (k === "5" || e.code === "Numpad5"))) act(() => true);
+  else if (k === (ro ? "x" : "l")) look();
+  else if (k === "C") characterList();
+  else if (k === "?") helpList();
+  else return;
+  e.preventDefault();
+}
+addEventListener("keydown", onKey);
+function toTitle(){ state = "title"; L = null; world.bodies.length = 0; }
+addEventListener("beforeunload", e => { if (state === "play"){ e.preventDefault(); e.returnValue = ""; } });   // nothing is saved yet
+
+const CTRL_KEY = "controls";
+let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the menu's Controls row overrides it
+{ const c = load(CTRL_KEY, null); if (c) touchMode = c === "touch"; }
+function setControls(touch, save){
+  touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
+  if (save) store(CTRL_KEY, touch ? "touch" : "keyboard");
+}
+setControls(touchMode, false);
+const buzz = () => navigator.vibrate && navigator.vibrate(8);
+// The D-pad picks one of eight directions from the angle of the thumb; holding it keeps walking.
+const dpad = $("dpad");
+let holdDir = 0, holdT = 0;
+function dpadAt(e){
+  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  if (Math.hypot(dx, dy) < r.width * 0.1) return 0;
+  const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));   // 0 east, 2 south, -2 north, 4 / -4 west
+  return { 0: 6, 1: 3, 2: 2, 3: 1, 4: 4, [-4]: 4, [-3]: 7, [-2]: 8, [-1]: 9 }[a];
+}
+function dpadPress(d){
+  const was = holdDir; holdDir = d;
+  dpad.dataset.dir = !d ? "" : d === 8 ? "up" : d === 2 ? "down" : [1, 4, 7].includes(d) ? "left" : "right";
+  if (!d || d === was) return;
+  buzz();
+  if (list.open || menu.open){ const m = list.open ? list : menu; d === 8 ? m.move(-1) : d === 2 ? m.move(1) : d === 4 ? m.change(-1) : d === 6 ? m.change(1) : 0; holdDir = 0; return; }
+  if (state !== "play") return;
+  disturbed = false; holdT = 0.3;   // a short pause before walking on
+  act(() => tryMove(...DIRS[d]));
+}
+dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); dpadPress(dpadAt(e)); });
+dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadPress(dpadAt(e)); });
+for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { holdDir = 0; dpad.dataset.dir = ""; });
+document.querySelectorAll("[data-pad]").forEach(b => {
+  const id = b.dataset.pad;
+  b.addEventListener("pointerdown", e => {
+    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
+    if (list.open){ id === "a" ? list.choose() : list.hide(); return; }   // in a list: A chooses, any other button closes
+    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }
+    if (state === "title"){ if (id === "a" || id === "start") newGame(); else if (id === "select") menu.show(); return; }
+    if (state === "dead"){ if (stateT > 1 && (id === "a" || id === "start")) toTitle(); return; }
+    if (id === "start" || id === "select") return menu.show();
+    if (id === "a") contextAction(); else commandList();
+  });
+  const up = () => b.classList.remove("on");
+  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+});
+cv.addEventListener("pointerdown", e => {
+  const [gx, gy] = gridAt(e, cv, GW, GH);
+  if (list.open) return list.tap(gx, gy);
+  if (menu.open) return menu.tap(gx, gy);
+  if (state === "title") return newGame();
+  if (state === "dead"){ if (stateT > 1) toTitle(); return; }
+  if (!touchMode) commandList();   // a click opens the commands
+});
+
+/* ---------- layout and loop ---------- */
+function layout(){
+  const r = stage.getBoundingClientRect(); if (!r.width) return;
+  const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
+  // as large a font as fits at least 60 x 24 characters, up to 14px; the view grows with the space
+  const f = Math.max(6, Math.min(14, Math.floor(r.width / 60 / 0.6), Math.floor(r.height / 24 / 1.15)));
+  screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
+  GW = Math.min(screen.cols, 140); GH = Math.min(screen.rows, 50); VH = GH - VY - 2;
+  const W = GW * screen.cw, H = GH * screen.ch;
+  screen.fit(W, H, dpr);
+  cv.style.width = W + "px"; cv.style.height = H + "px"; cv.style.transform = "translate(-50%,-50%)";
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  world.w = W; world.h = H; world.unit = screen.cw; world.g = { x: 0, y: H * 1.2 };
+  if (old) world.bodies.length = 0;
+  if (player) centerCamera(true);
+  rebuildTerrain();
+}
+let last = performance.now(), nextFrame = 0;
+const FRAME_MS = 1000 / 60;
+function tick(t){
+  requestAnimationFrame(tick);
+  if (t < nextFrame - 1) return;   // run at most ~60 times a second, even on faster displays
+  nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
+  const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
+  if (!screen) return;
+  stateT += dt;
+  if (holdDir && state === "play" && !list.open && !menu.open && (holdT -= dt) <= 0){   // keep walking while the D-pad is held
+    holdT = 0.14;
+    if (disturbed || !act(() => tryMove(...DIRS[holdDir]))) holdDir = 0;
+  }
+  world.step(dt);
+  for (const b of world.bodies) b.life -= dt;
+  world.bodies = world.bodies.filter(b => b.life > 0);
+  draw(t);
+}
+layout();
+let fitted = stage.getBoundingClientRect();
+new ResizeObserver(() => {   // re-fit only for real size changes, not the mobile address bar sliding in and out
+  const r = stage.getBoundingClientRect();
+  if (Math.abs(r.width - fitted.width) < 1 && Math.abs(r.height - fitted.height) < fitted.height * 0.15) return;
+  fitted = r; layout();
+}).observe(stage);
+requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
+})();
+</script>
+</body></html>
