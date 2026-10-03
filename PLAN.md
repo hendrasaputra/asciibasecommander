@@ -89,7 +89,9 @@ debris.
 
 ## Skipped
 
-- Roguelikes, card, board, word and number games, Minesweeper, Sudoku: the physics and lighting add nothing.
+- Card, board, word and number games, Minesweeper, Sudoku: the physics and lighting add nothing.
+- Roguelikes, with one exception: Torchlight Dungeons, a full adaptation of Moria built around the engine's lighting.
+  Its phased plan is in [TORCHLIGHT_PLAN.md](TORCHLIGHT_PLAN.md).
 - Boulder Dash, Pac-Man, Snake, Tron light cycles, Frogger: grid rules decide everything.
 - Platform games (`0verkill`, `PAG`, `venzone`): need a character controller, which fights a physics engine.
 - Racing (`zracer`, `ztrack`) and skiing (`ski`, `gnuski`, `asciijump`): need tyre or snow friction that the
