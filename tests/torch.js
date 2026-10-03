@@ -1,8 +1,8 @@
 // Checks for Torchlight Dungeons' rules. Run: node tests/torch.js
 // Loads the game's logic files without a browser: random numbers, sight and light, turns, levels and data.
 const fs = require("fs"), vm = require("vm"), path = require("path");
-const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
-const G = vm.runInNewContext(files.join("\n") + "\n;({ RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS })", { Math, console });
+const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js", "chars.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
+const G = vm.runInNewContext(files.join("\n") + "\n;({ RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS, RACES, CLASSES, RACE, CLASS, STATS, SKILLS, rollStats, finalStats, skillOf, expNeeded, maxMana, firstHp, levelHp, titleOf, buySpent, BUY_POINTS, randomName, powerFor, POWERS })", { Math, console });
 
 let failed = 0;
 const check = (name, ok, detail) => { console.log((ok ? "ok    " : "FAIL  ") + name + (detail ? "  (" + detail + ")" : "")); if (!ok) failed++; };
@@ -66,6 +66,38 @@ const { MW, MH, T } = G;
 { // the same seed makes the same level
   const a = G.generateLevel(new G.RNG(7), 5), b = G.generateLevel(new G.RNG(7), 5);
   check("a seed always makes the same level", a.tiles.every((t, i) => t === b.tiles[i]));
+}
+
+{ // races and classes: every combination makes a sound character at level 1 and at level 40
+  const rng = new G.RNG(3), bad = [];
+  for (const R of G.RACES) for (const C of G.CLASSES){
+    for (const lvl of [1, 40]){
+      const p = { race: R.id, cls: C.id, lvl }; p.stats = G.finalStats(G.rollStats(rng), R, C);
+      const sk = G.SKILLS.map(k => G.skillOf(p, k));
+      if (sk.some(v => !Number.isFinite(v)) || G.firstHp(p) < 4 || (C.realm && G.maxMana(p) < 1) || (!C.realm && G.maxMana(p) !== 0) || !G.titleOf(p)) bad.push(R.id + "/" + C.id + "@" + lvl);
+      if (G.STATS.some(k => p.stats[k] < 3 || p.stats[k] > 25)) bad.push(R.id + "/" + C.id + " stats");
+    }
+  }
+  check("all 48 race and class pairs give valid skills, hit points, mana and titles", !bad.length, bad.slice(0, 5).join(", "));
+  const p = { race: "human", cls: "sellsword", lvl: 1, stats: G.finalStats({ str: 10, int: 10, wis: 10, dex: 10, con: 10, cha: 10 }, G.RACE.human, G.CLASS.sellsword) };
+  let rising = true; for (let l = 2; l <= 40; l++) if (G.expNeeded(p, l) <= G.expNeeded(p, l - 1)) rising = false;
+  check("experience needed rises with every level", rising);
+  const slow = { ...p, race: "cragborn", cls: "oathknight" };
+  check("a race and class penalty means more experience per level", G.expNeeded(slow, 10) > G.expNeeded(p, 10));
+  check("every class has 10 titles", G.CLASSES.every(C => C.titles.length === 10));
+  const sw = G.skillOf({ ...p, cls: "sellsword" }, "fight"), ar = G.skillOf({ ...p, cls: "arcanist", stats: p.stats }, "fight");
+  check("a Sellsword fights better than an Arcanist", sw > ar + 20, `${sw} vs ${ar}`);
+  check("casters have a power, the others do not", G.CLASSES.every(C => !!G.powerFor(C) === !!C.realm && (!C.realm || G.POWERS[G.powerFor(C)])));
+}
+
+{ // stat generation: rolls stay in range; the point budget is respected by the costs
+  const rng = new G.RNG(9); let ok = true;
+  for (let k = 0; k < 2000; k++){ const s = G.rollStats(rng); if (G.STATS.some(x => s[x] < 3 || s[x] > 18)) ok = false; }
+  check("rolled stats are 3 to 18", ok);
+  const all8 = Object.fromEntries(G.STATS.map(k => [k, 8])), max = Object.fromEntries(G.STATS.map(k => [k, 16]));
+  check("point buy: all 8s cost nothing, all 16s are over budget", G.buySpent(all8) === 0 && G.buySpent(max) > G.BUY_POINTS);
+  const names = new Set(); for (let k = 0; k < 50; k++) names.add(G.randomName(rng));
+  check("random names vary", names.size > 30, names.size + " of 50");
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");

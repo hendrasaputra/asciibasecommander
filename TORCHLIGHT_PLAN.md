@@ -18,7 +18,8 @@ step.
 |---|---|
 | 0 Groundwork | Done. Field of view, light, the scheduler and levels have node checks in `tests/torch.js`. Light lives in `fov.js` next to field of view, instead of its own `light.js`. Not yet: the "-more-" prompt (long turns show their newest lines, and the full log is under Messages). |
 | 1 First descent | Done. On the shelf as an early version: a human fighter, 15 monsters to 500 ft and a little beyond, 16 item kinds, food and light fuel, running and resting, high scores. A playing bot ran thousands of turns without errors. Not checked yet: a full game on a real phone. |
-| 2 to 9 | Not started |
+| 2 Races, classes and stats | Done. 8 original peoples and 6 callings, rolled or point-bought stats, 8 skills, infravision, class titles, hit dice and experience penalties; checks for all 48 pairs. Pulled forward so every class plays differently now: each caster's first power (Spark, Mend) with mana and failure chances, a Delver's ambush, a Lampwarden's brighter light, and throwing with direction or nearest-target aiming (from phases 3 and 5). A bot playing each class reached about 225 ft as an Arcanist and 370 ft as a Sellsword or Oathknight. |
+| 3 to 9 | Not started |
 
 ## Ground rules
 
