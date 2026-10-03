@@ -62,6 +62,18 @@ Id: `rooftop-rumble`
 > side, with blocks tumbling down. A large round moon with a surprised face watches from the top and lights the scene. A small arrow-like
 > streak shows the wind. Mood: comic duel, cheeky.
 
+## Crater Duel
+
+Id: `crater-duel`
+
+> Scene: a tank artillery duel at dusk over rolling hills of layered soil: a thin green topsoil edge, brown dirt and
+> grey rock below, all drawn as granular ASCII characters. A low, glowing orange sun sits near the horizon in the
+> upper right and lights everything from the side. On the left hill a small chunky tank in warm orange fires; its
+> shell arcs high across the sky in a dotted trail, splitting into five falling warheads. On the right hill a small
+> tank in cool cyan braces. Between them, a fresh crater has been blasted out of the hillside, with clods of dirt
+> tumbling down into it and a bright warm flash lighting the ground around the blast. Both tanks are original,
+> simple designs, not based on any existing game. Mood: tense standoff, explosive.
+
 ## Next cartridges
 
 When a game from [PLAN.md](PLAN.md) ships, write its scene from what was actually built.

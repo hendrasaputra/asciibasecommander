@@ -28,9 +28,10 @@ body{margin:0;min-height:100vh;background:var(--room);color:var(--ink);
 header{text-align:center;margin-bottom:clamp(24px,5vw,44px)}
 h1{margin:0;font:700 clamp(22px,5vw,34px)/1.1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.06em}
 header p{margin:8px 0 0;color:var(--muted)}
+header p a{color:var(--ink)}
 .shelf{width:min(100%,1060px);display:flex;flex-wrap:wrap;justify-content:center;gap:clamp(20px,4vw,40px);
   padding:0 clamp(8px,3vw,28px) 26px;border-bottom:14px solid var(--shelf);
-  box-shadow:0 10px 0 var(--shelf-edge)}
+  box-shadow:0 12px 0 -2px var(--shelf-edge)}   /* 2px narrower than the shelf, so its edges never show as side lines */
 /* A cartridge: grey shell with a clipped top-right corner, grip ridges, a recessed label and an arrow */
 .cart{position:relative;display:block;width:200px;text-decoration:none;color:inherit;
   background:linear-gradient(160deg,var(--shell-hi),var(--shell) 40%,var(--shell-lo));
@@ -59,7 +60,7 @@ footer a{color:inherit}
 <body>
 <header>
   <h1>SELECT A CARTRIDGE</h1>
-  <p>Games built on an ASCII physics engine. Each one opens on its own page.</p>
+  <p>Games built on an ASCII physics engine. Each one opens on its own page. <a href="settings.html">Display settings</a></p>
 </header>
 
 <main class="shelf" aria-label="Cartridges">
@@ -113,10 +114,28 @@ footer a{color:inherit}
     <span class="tag">Lob fruit across a night skyline</span>
   </a>
 
+  <a class="cart" href="crater-duel.html" data-id="crater-duel">
+    <div class="label">
+      <div class="art">
+        <pre aria-hidden="true"><span style="color:#FF9A4A">          ___ </span>
+<span style="color:#FF9A4A">         /###\</span>
+<span style="color:#E8E2C8">    .  *  .   </span>
+<span style="color:#F2B45A"> /#\  </span><span style="color:#E8E2C8">  ' </span><span style="color:#7FD0FF"> /#\ </span>
+<span style="color:#F2B45A">(ooo)</span><span style="color:#8A6A44">  _  </span><span style="color:#7FD0FF">(ooo)</span>
+<span style="color:#6E8C3A">=====</span><span style="color:#8A6A44">;%/ \%</span><span style="color:#6E8C3A">====</span>
+<span style="color:#8A6A44">:;%#:;%#:;%#:;</span></pre>
+        <img src="cartridges/crater-duel.jpg" alt="" onerror="this.remove()">
+      </div>
+      <span class="title">Crater Duel</span>
+    </div>
+    <span class="tag">Tank duel over hills that crumble</span>
+  </a>
+
   <div class="slot" role="note">NEXT CARTRIDGE<br>IN DEVELOPMENT</div>
 </main>
 
 <footer>
+  <a href="settings.html">Settings: ASCII or pixels, TV filter</a> &middot;
   <a href="ascii-engine-tutorial.html">Manual: how the engine works</a> &middot;
   <a href="https://github.com/hendrasaputra/asciibasecommander">Source on GitHub</a>
 </footer>

@@ -63,6 +63,7 @@ const FONT = {   // 7x7 block letters for the launch screen
 const TITLE = [["BASE", 5], ["COMMANDER", 15]];   // word, top row
 
 const D = defaultDisplay(); D.room = 0.3; D.glow = 0.2;
+applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
 const world = new World(), sun = { on: false };   // lamp off: spheres fall back to the engine's fixed directional light
 let screen = null, stars = [], diffKey = "normal", score = 0, lives = 3, level = 1, lv = null;
 let state = "title", titleT = 0, fwT = 0, landed = new Set(), paused = false, deadT = 0, msg = "", msgT = 0;
@@ -126,7 +127,6 @@ function toggleMute(){
   unlockAudio(); muted = !muted;
   if (master) master.gain.setTargetAtTime(muted ? 0 : 1, actx.currentTime, 0.02);
   try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e){ console.warn("Base Commander: could not save sound setting", e); }
-  $("bSound").textContent = "Sound: " + (muted ? "off" : "on");
 }
 
 /* ---------- saved scores ---------- */
@@ -365,7 +365,7 @@ function update(dt){
 
 /* ---------- drawing ---------- */
 function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
-function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, 3, s.charCodeAt(i)); }
+function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
 const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
 const SHOT_RGB = [0.5, 1.1, 1.6], LANCE_RGB = [1.6, 0.6, 1.4], WHITE = [1.6, 1.6, 1.6], DIM = [0.35, 0.4, 0.55], BORDER_RGB = [0.12, 0.16, 0.28];
 function bounce(p){   // ease-out bounce: a letter dropping onto the floor
@@ -401,7 +401,7 @@ function drawTitle(t){
   center(36, "HIGH SCORES", CANNON_RGB);
   if (!scores.length) center(38, "NO SCORES YET", DIM);
   scores.forEach((e, i) => center(38 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
-  center(52, touchMode ? "D-PAD MOVE  A/B FIRE  START PAUSE  SELECT SOUND" : "ARROWS/A D MOVE  SPACE FIRE  P PAUSE  R RESTART  M SOUND", DIM);
+  center(52, touchMode ? "D-PAD MOVE  A/B FIRE  SELECT MENU" : "ARROWS/A D MOVE  SPACE FIRE  ESC MENU  R RESTART  M SOUND", DIM);
   center(54, "CATCH AIRDROPS: [P] PARTS  [S] SHIELDS  [L] LIFE", DIM);
   center(56, "DIFFICULTY: " + diffKey.toUpperCase(), DIM);
 }
@@ -411,7 +411,7 @@ function draw(t){
   const bodies = world.bodies.filter(b => !b.hidden);
   for (const b of bodies) if (!b.crate) screen.sphere(b, sun, { stripe: false });
   if (state === "title") for (const b of bodies) if (b.life) screen.streak(b, world.unit);   // in play, streaks would look like enemy lasers
-  if (state === "title"){ drawTitle(t); drawBorder(); screen.render(ctx); return; }
+  if (state === "title"){ drawTitle(t); drawBorder(); drawMenu(); screen.render(ctx); return; }
   const pulse = 0.85 + 0.15 * frame;
   for (const a of aliens) if (a.alive){
     const k = a.flash > 0 ? 2 : pulse * (0.55 + 0.45 * a.hp / a.maxHp);   // damaged armour glows dimmer
@@ -436,9 +436,10 @@ function draw(t){
   text(2, GH - 1, " GUN " + GUNS[gun].name + "  PARTS " + (gun < GUNS.length - 1 ? parts + "/" + partsCost() : "MAX") + " ", CANNON_RGB);
   const left = " ENEMIES " + aliens.filter(a => a.alive).length + " ";
   text(GW - 2 - left.length, GH - 1, left, WHITE);
+  const hint = touchMode ? " SELECT MENU " : " ESC MENU ";
+  text(Math.floor((GW - hint.length) / 2), GH - 1, hint, DIM);
   const mid = GH >> 1;
-  if (paused) center(mid, "  [ PAUSED ]  ", WHITE);
-  else if (state === "over"){
+  if (state === "over"){
     center(mid, "  GAME OVER - press " + (touchMode ? "START" : "R") + "  ", WHITE);
     if (rank >= 0) center(mid + 2, "  NEW HIGH SCORE - RANK " + (rank + 1) + "  ", CANNON_RGB);
   } else if (state === "clear"){
@@ -447,7 +448,12 @@ function draw(t){
     center(mid + 2, "  NEXT: " + n.rows * n.cols + " ENEMIES" + (n.fresh !== undefined ? "  NEW: " + TYPES[n.fresh].name : "") + "  ", CANNON_RGB);
   }
   if (msgT > 0) center(4, " " + msg + " ", [1.6, 0.5, 0.35]);
+  drawMenu();
   screen.render(ctx);
+}
+function drawMenu(){
+  // the menu writes on its own layer, above the game's text, so nothing shows through its box
+  if (menu.open) menu.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: CANNON_RGB, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "DIFFICULTY APPLIES ON RESTART" });
 }
 
 function drawBorder(){
@@ -459,20 +465,30 @@ function drawBorder(){
 /* ---------- input ---------- */
 const keys = { left: false, right: false, fire: false };
 const KEYMAP = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right", " ": "fire" };
-function togglePause(){
-  if (state !== "play" && state !== "dead") return;
-  paused = !paused; $("bPause").textContent = paused ? "Resume" : "Pause";
-  if (actx) paused ? actx.suspend() : actx.resume();
-}
+// The pause menu (src/menu.js) holds what the old button row did. Open it with Esc or P, SELECT, or a mouse click.
+const menu = createMenu(() => [
+  { label: "RESUME", select: () => menu.hide() },
+  { label: state === "title" ? "START GAME" : state === "clear" ? "NEXT WAVE" : "RESTART", select: () => { menu.hide(); unlockAudio(); restart(); } },
+  { label: "DIFFICULTY", value: () => diffKey.toUpperCase(), change: d => { const ks = Object.keys(DIFF); diffKey = ks[(ks.indexOf(diffKey) + d + ks.length) % ks.length]; } },
+  { label: "SOUND", value: () => muted ? "OFF" : "ON", change: () => toggleMute() },
+  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
+  { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
+], {
+  onOpen: () => { paused = true; keys.left = keys.right = keys.fire = false; if (actx) actx.suspend(); },
+  onClose: () => { paused = false; if (actx) actx.resume(); },
+  onChange: () => { pausedDrawn = false; }   // the paused screen is only redrawn when something changes
+});
 // On the title, the first key or tap only turns the sound on (and starts the title music).
 function titlePress(){ if (!unlocked && !muted){ unlockAudio(); return; } unlockAudio(); restart(); }
 addEventListener("keydown", e => {
+  if (menu.key(e)){ e.preventDefault(); return; }
   const k = KEYMAP[e.key]; if (k){ e.preventDefault(); keys[k] = true; }
   if (e.repeat) return;
+  if (e.key === "Escape" || e.key === "p" || e.key === "P"){ unlockAudio(); return menu.show(); }
   if (e.key === "m" || e.key === "M"){ toggleMute(); return; }
   if (state === "title"){ if (!unlocked && !muted) unlockAudio(); else if (e.key === " " || e.key === "Enter") titlePress(); return; }
   unlockAudio();
-  if (e.key === "p" || e.key === "P") togglePause();
   if (e.key === "r" || e.key === "R" || (e.key === "Enter" && (state === "over" || state === "clear"))) restart();
 });
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; });
@@ -484,16 +500,19 @@ let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows th
 try { const c = localStorage.getItem(CTRL_KEY); if (c) touchMode = c === "touch"; } catch (e){}
 function setControls(touch, save){
   touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
-  $("bControls").textContent = "Controls: " + (touch ? "touch" : "keyboard");
   if (save) try { localStorage.setItem(CTRL_KEY, touch ? "touch" : "keyboard"); } catch (e){ console.warn("Base Commander: could not save controls setting", e); }
 }
 setControls(touchMode, false);
-$("bControls").addEventListener("click", () => setControls(!touchMode, true));
 const buzz = () => navigator.vibrate && navigator.vibrate(8);   // a tick of feedback on phones that support it
 // The D-pad is one surface: the thumb's position picks the direction, so sliding across switches like a real pad.
 const dpad = $("dpad");
 function dpadAt(e){
-  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2);
+  const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  if (menu.open){   // in the menu all four directions count: up/down move, left/right change a value
+    const d = Math.hypot(dx, dy) < r.width * 0.1 ? "" : Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+    if (d !== (dpad.dataset.dir || "")){ dpad.dataset.dir = d; if (d){ buzz(); d === "up" ? menu.move(-1) : d === "down" ? menu.move(1) : menu.change(d === "left" ? -1 : 1); } }
+    return;
+  }
   const dir = Math.abs(dx) < r.width * 0.1 ? "" : dx < 0 ? "left" : "right";
   if (dir !== (dpad.dataset.dir || "")){ dpad.dataset.dir = dir; if (dir) buzz(); }
   keys.left = dir === "left"; keys.right = dir === "right";
@@ -501,17 +520,18 @@ function dpadAt(e){
 dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); unlockAudio(); dpadAt(e); });
 dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) dpadAt(e); });
 for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dpad.dataset.dir = ""; keys.left = keys.right = false; });
-function padStart(){   // START: begin, continue after a wave or game over, otherwise pause
+function padStart(){   // START: begin, continue after a wave or game over, otherwise open the menu
   if (state === "title") titlePress();
   else if (state === "over" || state === "clear") restart();
-  else { unlockAudio(); togglePause(); }
+  else { unlockAudio(); menu.show(); }
 }
 const firing = new Set();   // A and B both fire; firing stops once neither is held
 document.querySelectorAll("[data-pad]").forEach(b => {
   const id = b.dataset.pad;
   b.addEventListener("pointerdown", e => {
     e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    if (id === "select") return toggleMute();
+    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }   // in the menu: A chooses, any other button closes
+    if (id === "select"){ unlockAudio(); return menu.show(); }
     if (id === "start") return padStart();
     if (state === "title") return titlePress();
     unlockAudio(); firing.add(id); keys.fire = true;
@@ -519,14 +539,10 @@ document.querySelectorAll("[data-pad]").forEach(b => {
   const up = () => { b.classList.remove("on"); if (firing.delete(id)) keys.fire = firing.size > 0; };
   b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
 });
-cv.addEventListener("pointerdown", () => { if (state === "title") titlePress(); else unlockAudio(); });
-$("bSound").addEventListener("click", toggleMute);
-$("bSound").textContent = "Sound: " + (muted ? "off" : "on");
-$("bPause").addEventListener("click", togglePause);
-$("bRestart").addEventListener("click", () => { $("bPause").textContent = "Pause"; restart(); });
-$("bDiff").addEventListener("click", e => {   // lives change on the next restart; level tuning on the next wave
-  const ks = Object.keys(DIFF); diffKey = ks[(ks.indexOf(diffKey) + 1) % ks.length];
-  e.target.textContent = "Difficulty: " + diffKey; if (state !== "title") flash("DIFFICULTY " + diffKey.toUpperCase() + " - APPLIES ON RESTART");
+cv.addEventListener("pointerdown", e => {
+  if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
+  if (state === "title") titlePress();
+  else { unlockAudio(); if (!touchMode && state !== "over" && state !== "clear") menu.show(); }   // a mouse click opens the menu
 });
 
 /* ---------- loop ---------- */

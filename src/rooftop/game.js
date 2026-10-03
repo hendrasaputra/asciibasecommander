@@ -27,11 +27,15 @@ const FONT = {   // 5x5 block letters for the title, drawn two cells wide per do
 };
 
 const D = defaultDisplay(); D.room = 0.25; D.glow = 0.25; D.lampRGB = [0.55, 0.65, 0.95];   // the moon is the lamp: cool light
+applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
 const world = new World(); world.openTop = true;   // high throws arc above the screen and come back down
 const moonLight = { x: 0, y: 0, z: 0, on: true };
 let screen = null, stars = [], mode = "cpu", state = "title", stateT = 0, t0 = 0;
 let city = null, apes = [], turn = 0, score = [0, 0], wind = 0, fruit = null, trail = [], lastTrail = [[], []];
 let blasts = [], moonShock = 0, roundStarter = 0, msg = "", msgT = 0, cpu = null, plan = null;
+// Power comes from holding the throw button: the meter runs 0 -> 100 -> 0 while held, and letting go throws.
+const CHARGE_SECS = 1.1;   // time for the meter to fill once
+let charge = null, lastPower = [null, null];   // charge: seconds held, or null when not charging
 const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const isCpu = i => mode === "cpu" && i === 1;
@@ -64,7 +68,6 @@ function toggleMute(){
   unlockAudio(); muted = !muted;
   if (sfxBus) sfxBus.gain.setTargetAtTime(muted ? 0 : 0.9, actx.currentTime, 0.02);
   try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (e){ console.warn("Rooftop Rumble: could not save sound setting", e); }
-  $("bSound").textContent = "Sound: " + (muted ? "off" : "on");
 }
 
 function layout(){
@@ -124,7 +127,7 @@ function newRound(){
   startTurn();
 }
 function startTurn(){
-  trail = []; stateT = 0;
+  trail = []; stateT = 0; charge = null;
   state = isCpu(turn) ? "cpu" : "aim";
   if (state === "cpu") plan = planShot(turn);
   say(name(turn) + "'S TURN", 1.2);
@@ -223,7 +226,7 @@ function update(dt){
   if (state === "aim"){
     const A = apes[turn];
     A.angle = clamp(A.angle + ((keys.up ? 1 : 0) - (keys.down ? 1 : 0)) * 40 * dt, 0, 90);
-    A.power = clamp(A.power + ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * 35 * dt, 1, 100);
+    if (charge !== null){ charge += dt; const c = (charge / CHARGE_SECS) % 2; A.power = clamp(Math.round((c < 1 ? c : 2 - c) * 100), 1, 100); }
   } else if (state === "cpu"){   // sweep the aim towards the plan, so the player sees it think
     const A = apes[turn], k = Math.min(1, dt * 3);
     A.angle += (plan.angle - A.angle) * k; A.power += (plan.power - A.power) * k;
@@ -244,7 +247,7 @@ function update(dt){
 
 /* ---------- drawing ---------- */
 function put(gx, gy, rgb, k, layer, code){ if (gx >= 0 && gy >= 0 && gx < GW && gy < GH) screen.put(gy * GW + gx, rgb[0] * k, rgb[1] * k, rgb[2] * k, layer, code); }
-function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, 3, s.charCodeAt(i)); }
+function text(gx, gy, s, rgb){ for (let i = 0; i < s.length; i++) put(gx + i, gy, rgb, 1, TEXT_LAYER, s.charCodeAt(i)); }   // stays letters in pixel mode
 const center = (gy, s, rgb) => text(Math.floor((GW - s.length) / 2), gy, s, rgb);
 function sprite(art, x, y, rgb, k, layer){ art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") put(x + dx, y + dy, rgb, k, layer, row.charCodeAt(dx)); }); }
 function blastLight(gx, gy){   // warm light from recent blasts, falling off with distance
@@ -282,10 +285,10 @@ function drawTitle(){
   const blink = (performance.now() / 500 | 0) % 2;
   if (touchMode){
     center(27, "A  ONE PLAYER (VS COMPUTER)     B  TWO PLAYERS", blink ? WHITE : DIM);
-    center(29, "D-PAD: UP/DOWN ANGLE, LEFT/RIGHT POWER.  A OR B THROWS.  SELECT SOUND", DIM);
+    center(29, "D-PAD UP/DOWN ANGLE.  HOLD A OR B FOR POWER, LET GO TO THROW", DIM);
   } else {
     center(27, "1  ONE PLAYER (VS COMPUTER)     2  TWO PLAYERS", blink ? WHITE : DIM);
-    center(29, "UP/DOWN ANGLE  LEFT/RIGHT POWER  SPACE THROWS  R NEW MATCH  M SOUND", DIM);
+    center(29, "UP/DOWN ANGLE   HOLD SPACE FOR POWER, LET GO TO THROW   ESC MENU", DIM);
   }
   center(31, "FIRST TO " + WIN_SCORE + " HITS WINS. MIND THE WIND.", DIM);
 }
@@ -295,7 +298,7 @@ function draw(t){
   sprite(moonShock > 0 ? MOON.shock : MOON.calm, MOON_X, MOON_Y, [1.5, 1.5, 1.2], 1, 2);
   if (city) drawCity(t);
   for (const b of world.bodies) if (!b.sensor) screen.sphere(b, moonLight, { stripe: false });
-  if (state === "title"){ drawTitle(); screen.render(ctx); return; }
+  if (state === "title"){ drawTitle(); drawMenu(); screen.render(ctx); return; }
   apes.forEach((A, i) => { if (!A.dead) sprite(APE[A.pose], A.x, A.y, PLAYER_RGB[i], i === turn && state !== "hit" ? 1.15 : 0.8, 3); });
   if (state === "aim" || state === "cpu"){
     const A = apes[turn], dir = turn === 0 ? 1 : -1, ang = A.angle * Math.PI / 180;
@@ -314,6 +317,17 @@ function draw(t){
     const A = apes[i], s = `${name(i)}  ${score[i]}   ANGLE ${String(Math.round(A.angle)).padStart(2)}  POWER ${String(Math.round(A.power)).padStart(3)}`;
     text(i === 0 ? 1 : GW - 1 - s.length, 0, s, i === turn ? PLAYER_RGB[i] : DIM);
   }
+  if (state === "aim" || state === "cpu"){   // power meter, with a | where your last throw was
+    const A = apes[turn], W = 30, fill = Math.round(A.power / 100 * W), lp = lastPower[turn];
+    const x0 = Math.floor((GW - W - 16) / 2);
+    text(x0, 2, "POWER ", PLAYER_RGB[turn]);
+    for (let k = 0; k < W; k++){
+      const mark = lp !== null && k === Math.min(W - 1, Math.round(lp / 100 * W));
+      put(x0 + 6 + k, 2, mark ? WHITE : PLAYER_RGB[turn], k < fill ? 1.2 : mark ? 0.9 : 0.25, 3, mark ? 124 : k < fill ? 35 : 46);
+    }
+    text(x0 + 7 + W, 2, String(Math.round(A.power)).padStart(3), PLAYER_RGB[turn]);
+    if (state === "aim" && charge === null && msgT <= 0) center(3, touchMode ? "HOLD A OR B FOR POWER, LET GO TO THROW" : "HOLD SPACE FOR POWER, LET GO TO THROW", DIM);
+  }
   const arrows = wind === 0 ? "CALM" : (wind < 0 ? "<".repeat(Math.min(5, Math.ceil(-wind / 2))) + " " + -wind : wind + " " + ">".repeat(Math.min(5, Math.ceil(wind / 2))));
   center(1, "WIND " + arrows, WHITE);
   if (state === "over"){
@@ -321,52 +335,75 @@ function draw(t){
     center(8, `  ${name(w)} WINS ${score[w]}-${score[1 - w]}  `, PLAYER_RGB[w]);
     center(10, touchMode ? "  PRESS START FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
   } else if (msgT > 0) center(8, "  " + msg + "  ", WHITE);
+  const hint = touchMode ? " SELECT MENU " : " ESC MENU ";
+  text(GW - 1 - hint.length, GH - 1, hint, DIM);
+  drawMenu();
   screen.render(ctx);
+}
+function drawMenu(){
+  // the menu writes on its own layer, above the game's text, so nothing shows through its box
+  if (menu.open) menu.draw({ text: (x, y, str, rgb) => { for (let i = 0; i < str.length; i++) put(x + i, y, rgb, 1, MENU_LAYER, str.charCodeAt(i)); }, GW, GH, accent: FRUIT_RGB, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "MODE APPLIES TO THE NEXT MATCH" });
 }
 
 /* ---------- input ---------- */
 const keys = { up: false, down: false, left: false, right: false };
-const KEYMAP = { ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down", ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right" };
-function start(m){ mode = m; $("bMode").textContent = "Mode: " + (m === "cpu" ? "vs computer" : "two players"); newMatch(); }
-function action(){   // Space, A, B: throw when it's your turn; start or continue otherwise
+const KEYMAP = { ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down" };
+let nextMode = mode;   // the menu's Mode choice; it takes over when a new match starts
+function start(m){ mode = nextMode = m; newMatch(); }
+function action(){   // start or continue from the title and win screens
   if (state === "title") start("cpu");
   else if (state === "over") state = "title";
-  else if (state === "aim") throwFruit(turn);
 }
+function press(){ if (state === "aim"){ if (charge === null){ charge = 0; apes[turn].power = 1; } } else action(); }   // Space, A, B down
+function release(){   // Space, A, B up: throw with the power on the meter
+  if (state !== "aim" || charge === null) return;
+  charge = null; lastPower[turn] = apes[turn].power; throwFruit(turn);
+}
+// The pause menu (src/menu.js) holds what the old button row did. Open it with Esc or P, SELECT, or a mouse click.
+const menu = createMenu(() => [
+  { label: "RESUME", select: () => menu.hide() },
+  { label: "NEW MATCH", select: () => { menu.hide(); unlockAudio(); start(nextMode); } },
+  { label: "MODE", value: () => nextMode === "cpu" ? "VS COMPUTER" : "TWO PLAYERS", change: () => { nextMode = nextMode === "cpu" ? "two" : "cpu"; } },
+  { label: "SOUND", value: () => muted ? "OFF" : "ON", change: () => toggleMute() },
+  { label: "CONTROLS", value: () => touchMode ? "TOUCH" : "KEYBOARD", change: () => setControls(!touchMode, true) },
+  { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
+  { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
+], {
+  onOpen: () => { charge = null; for (const k in keys) keys[k] = false; if (actx) actx.suspend(); },   // opening cancels a charge
+  onClose: () => { if (actx) actx.resume(); }
+});
 addEventListener("keydown", e => {
+  if (menu.key(e)){ e.preventDefault(); return; }
   const k = KEYMAP[e.key]; if (k){ e.preventDefault(); keys[k] = true; }
   if (e.key === " ") e.preventDefault();
   if (e.repeat) return;
+  if (e.key === "Escape" || e.key === "p" || e.key === "P"){ unlockAudio(); return menu.show(); }
   if (e.key === "m" || e.key === "M") return toggleMute();
   unlockAudio();
   if (state === "title" && (e.key === "1" || e.key === "2")) return start(e.key === "1" ? "cpu" : "two");
-  if (e.key === " " || e.key === "Enter") action();
-  if (e.key === "r" || e.key === "R") start(mode);
+  if (e.key === " " || e.key === "Enter") press();
+  if (e.key === "r" || e.key === "R") start(nextMode);
 });
-addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; });
-addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
+addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; if (e.key === " " || e.key === "Enter") release(); });
+addEventListener("blur", () => { for (const k in keys) keys[k] = false; charge = null; });   // leaving the window cancels a charge
 
 const CTRL_KEY = "rooftopRumble.v1.controls";
 let touchMode = matchMedia("(pointer: coarse)").matches;   // default follows the device; the Controls button overrides it
 try { const c = localStorage.getItem(CTRL_KEY); if (c) touchMode = c === "touch"; } catch (e){}
 function setControls(touch, save){
   touchMode = touch; document.body.classList.toggle("touch", touch); $("gamepad").hidden = !touch;
-  $("bControls").textContent = "Controls: " + (touch ? "touch" : "keyboard");
   if (save) try { localStorage.setItem(CTRL_KEY, touch ? "touch" : "keyboard"); } catch (e){ console.warn("Rooftop Rumble: could not save controls setting", e); }
 }
 setControls(touchMode, false);
-$("bControls").addEventListener("click", () => setControls(!touchMode, true));
-$("bNew").addEventListener("click", () => { unlockAudio(); start(mode); });
-$("bMode").addEventListener("click", () => { unlockAudio(); start(mode === "cpu" ? "two" : "cpu"); });
-$("bSound").addEventListener("click", toggleMute);
-$("bSound").textContent = "Sound: " + (muted ? "off" : "on");
 const buzz = () => navigator.vibrate && navigator.vibrate(8);
 // The D-pad is one surface; the thumb's offset from the centre picks the direction, so sliding switches it.
 const dpad = $("dpad");
 function dpadAt(e){
   const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
   const dir = Math.hypot(dx, dy) < r.width * 0.1 ? "" : Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-  if (dir !== (dpad.dataset.dir || "")){ dpad.dataset.dir = dir; if (dir) buzz(); }
+  const changed = dir !== (dpad.dataset.dir || "");
+  if (changed){ dpad.dataset.dir = dir; if (dir) buzz(); }
+  if (menu.open){ if (changed && dir) dir === "up" ? menu.move(-1) : dir === "down" ? menu.move(1) : menu.change(dir === "left" ? -1 : 1); return; }   // in the menu: one step per push
   for (const k in keys) keys[k] = k === dir;
 }
 dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); unlockAudio(); dpadAt(e); });
@@ -376,15 +413,22 @@ document.querySelectorAll("[data-pad]").forEach(b => {
   const id = b.dataset.pad;
   b.addEventListener("pointerdown", e => {
     e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz();
-    if (id === "select") return toggleMute();
     unlockAudio();
+    if (menu.open){ id === "a" ? menu.choose() : menu.hide(); return; }   // in the menu: A chooses, any other button closes
+    if (id === "select") return menu.show();
     if (state === "title" && (id === "a" || id === "b")) return start(id === "a" ? "cpu" : "two");
-    action();
+    if (id === "start") return state === "title" || state === "over" ? action() : menu.show();
+    press();
   });
-  const up = () => b.classList.remove("on");
+  const up = () => { b.classList.remove("on"); if (id === "a" || id === "b") release(); };
   b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
 });
-cv.addEventListener("pointerdown", () => { unlockAudio(); if (state === "title" || state === "over") action(); });
+cv.addEventListener("pointerdown", e => {
+  unlockAudio();
+  if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
+  if (state === "title" || state === "over") action();
+  else if (!touchMode) menu.show();   // a mouse click during play opens the menu
+});
 
 /* ---------- loop ---------- */
 world.onSub = checkFruit;
@@ -395,7 +439,7 @@ function tick(t){
   if (t < nextFrame - 1) return;   // run at most ~60 times a second, even on faster displays
   nextFrame = t - nextFrame > FRAME_MS ? t + FRAME_MS : nextFrame + FRAME_MS;
   const dt = Math.min((t - last) / 1000, 1 / 30); last = t;
-  if (screen){
+  if (screen && !menu.open){   // the open menu pauses everything
     if (state !== "title" && state !== "over") update(dt);
     for (const B of blasts) B.t -= dt;
     blasts = blasts.filter(B => B.t > 0);
@@ -404,8 +448,8 @@ function tick(t){
     world.step(dt);
     for (const b of world.bodies) if (b.life){ b.life -= dt; if (b.life < 1 && b.r0) b.r = b.r0 * Math.max(0.3, b.life); }
     world.bodies = world.bodies.filter(b => !(b.life <= 0));
-    draw(t);
   }
+  if (screen) draw(t);
 }
 layout();
 city = makeCity();   // a skyline behind the title screen

@@ -101,5 +101,8 @@ debris.
 
 - Base Commander (fixed shooter): generated levels, enemy types, gun upgrades, airdrops, audio, touch gamepad.
 - Rooftop Rumble, first playable version: skyline generation, aiming, wind, carving blasts with rubble, falling apes,
-  a computer opponent, first to 3. Not yet: sound, an aiming arc preview, difficulty levels.
+  a computer opponent, first to 3, sound. Not yet: an aiming arc preview, difficulty levels.
+- Crater Duel (after Scorched Earth), first playable version: rolling hills, dirt that falls after blasts, tanks that
+  fall and take damage, four weapons, health, wind, a computer opponent, synthesised sound. Not yet: more than two
+  tanks, a weapon shop between rounds, moving tanks.
 - Engine: box shapes, destructible terrain grid, sensors, open top; checks in `tests/physics.js`.

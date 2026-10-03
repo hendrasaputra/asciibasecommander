@@ -144,6 +144,41 @@ function defaultDisplay(){
   return { chars: RAMPS.classic, calibrate: true, dither: false, black: 0.15, exposure: 1.3, gamma: 2.2, split: 0.2, glow: 0.35, room: 0.18, lampHex: "#FFD9A0", lampRGB: hexToLinear("#FFD9A0") };
 }
 
+/* ---------- arcade display settings (settings.html), shared by the game pages ---------- */
+// One choice for every cartridge, saved in this browser: character set, ASCII or pixel drawing, tube TV filter.
+const ARCADE_KEY = "arcade.v1.display";
+const ARCADE_DEFAULTS = { ramp: "classic", custom: " .:oO0@", mode: "ascii", crt: false };
+function arcadeSettings(){
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(ARCADE_KEY) || "{}") || {}; }
+  catch (e){ console.warn("Arcade: saved display settings unreadable, using defaults", e); }
+  return { ...ARCADE_DEFAULTS, ...saved };
+}
+function saveArcadeSettings(s){
+  try { localStorage.setItem(ARCADE_KEY, JSON.stringify(s)); return true; }
+  catch (e){ console.warn("Arcade: could not save display settings", e); return false; }
+}
+function arcadeChars(s){ return s.ramp === "custom" ? (s.custom.length > 1 ? s.custom : " @") : RAMPS[s.ramp] || RAMPS.classic; }
+// The tube TV look is CSS laid over the game's #stage: scanlines, a phosphor grille, vignette, rounded glass, flicker.
+const CRT_CSS = `
+body.crt #stage{background:#050607}
+body.crt #cv{border-radius:14px;filter:saturate(1.15) contrast(1.06) brightness(1.1)}
+body.crt #stage::before,body.crt #stage::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:2}
+body.crt #stage::before{background:repeating-linear-gradient(to bottom,rgba(0,0,0,.24) 0 1px,transparent 1px 3px),
+  repeating-linear-gradient(to right,rgba(255,40,40,.06) 0 1px,rgba(40,255,40,.06) 1px 2px,rgba(60,60,255,.06) 2px 3px)}
+body.crt #stage::after{border-radius:inherit;background:radial-gradient(ellipse at center,transparent 58%,rgba(0,0,0,.55) 100%);
+  box-shadow:inset 0 0 50px rgba(0,0,0,.85),inset 0 0 6px rgba(160,200,255,.15);animation:crt-flicker 5s steps(40) infinite}
+@keyframes crt-flicker{0%,100%{opacity:1}47%{opacity:.93}50%{opacity:1}73%{opacity:.96}}
+@media (prefers-reduced-motion: reduce){body.crt #stage::after{animation:none}}`;
+// Call once at start-up with the game's display: applies the character set, pixel mode and the TV filter.
+function applyArcadeSettings(D){
+  const s = arcadeSettings();
+  D.chars = arcadeChars(s); D.pixels = s.mode === "pixels";
+  if (!document.getElementById("crt-css")){ const st = document.createElement("style"); st.id = "crt-css"; st.textContent = CRT_CSS; document.head.appendChild(st); }
+  document.body.classList.toggle("crt", !!s.crt);
+  return s;
+}
+
 /* ---------- physics (unchanged from v2) ---------- */
 function hit(b, dv){ if (dv > 220) b.flash = Math.max(b.flash, Math.min(1, (dv - 220) / 1000)); }
 class World {
@@ -467,9 +502,12 @@ function shadowAt(fx, fy, B, L){
 }
 
 /* ---------- 24-bit character screen ---------- */
-// Layers decide who wins a cell: 0 floor light, 1 trails and rings, 2 balls, 3 lamp bulb.
+// Layers decide who wins a cell: 0 floor light, 1 trails and rings, 2 balls, 3 lamp bulb, 4 text, 5 menus over text.
+// Text and menus (layer 4 and up) always stay characters, even when D.pixels draws everything else as solid pixels.
+const TEXT_LAYER = 4, MENU_LAYER = 5;
 class Screen {
   constructor(fontPx, D){ this.fontPx = fontPx; this.D = D || defaultDisplay();
+    this.pixC = document.createElement("canvas");
     this.colC = document.createElement("canvas"); this.glowC = document.createElement("canvas");
     this.glowS = document.createElement("canvas"); this.glyphC = document.createElement("canvas"); this.t = {}; }
   fit(W, H, dpr){
@@ -484,6 +522,7 @@ class Screen {
     this.glowS.width = Math.max(1, Math.ceil(this.cols / 4)); this.glowS.height = Math.max(1, Math.ceil(this.rows / 4));
     this.colX = this.colC.getContext("2d"); this.glowX = this.glowC.getContext("2d"); this.glowSX = this.glowS.getContext("2d");
     this.colImg = this.colX.createImageData(this.cols, this.rows); this.glowImg = this.glowX.createImageData(this.cols, this.rows);
+    this.pixC.width = this.cols; this.pixC.height = this.rows; this.pixX = this.pixC.getContext("2d"); this.pixImg = this.pixX.createImageData(this.cols, this.rows);
     this.glyphC.width = Math.max(1, Math.round(W * dpr)); this.glyphC.height = Math.max(1, Math.round(H * dpr));
     this.gx = this.glyphC.getContext("2d");
     this.setRamp();
@@ -614,9 +653,10 @@ class Screen {
   render(ctx, opt = {}){
     const { cols, rows, cw, ch, n, rad, lay, over, glyphs, D } = this;
     const ex = D.exposure, ig = 1 / D.gamma, split = D.split, black = D.black, lut = this.ink.lut, amp = 1 / Math.max(1, this.ink.count - 1);
-    const cd = this.colImg.data, gd = this.glowImg.data;
+    const cd = this.colImg.data, gd = this.glowImg.data, pix = !!D.pixels, pd = this.pixImg.data;
     for (let i = 0; i < n; i++){
       const p = i * 4;
+      if (pix) pd[p + 3] = 0;
       if (lay[i] < 0){ cd[p + 3] = 0; gd[p] = gd[p + 1] = gd[p + 2] = 0; gd[p + 3] = 255; glyphs[i] = 32; continue; }
       const k = 3 * i;
       // 1. tone map: squeeze unlimited light into 0..1, then gamma-encode for the screen
@@ -634,12 +674,18 @@ class Screen {
       }
       glyphs[i] = code;
       if (code === 32){ cd[p + 3] = 0; continue; }
+      if (pix && lay[i] < TEXT_LAYER){   // pixel mode: the cell becomes one solid pixel in its full colour
+        glyphs[i] = 32; cd[p + 3] = 0;
+        pd[p] = R * 255; pd[p + 1] = G * 255; pd[p + 2] = B * 255; pd[p + 3] = 255;
+        continue;
+      }
       // colour keeps the cell's hue; its brightness supplies whatever the character's ink does not
       const kc = Yc / gl / Y; let dr = R * kc, dg = G * kc, db = B * kc; const m = Math.max(dr, dg, db);
       if (m > 1){ dr /= m; dg /= m; db /= m; }
       cd[p] = dr * 255; cd[p + 1] = dg * 255; cd[p + 2] = db * 255; cd[p + 3] = 255;
     }
     this.colX.putImageData(this.colImg, 0, 0); this.glowX.putImageData(this.glowImg, 0, 0);
+    if (pix) this.pixX.putImageData(this.pixImg, 0, 0);
     // 3. draw every character in white on its own layer...
     const g = this.gx, dpr = this.dpr, yOff = (ch - this.fontPx) / 2;
     g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "source-over"; g.clearRect(0, 0, this.glyphC.width, this.glyphC.height);
@@ -667,6 +713,7 @@ class Screen {
       ctx.globalAlpha = D.glow * 0.8; ctx.drawImage(this.glowS, 0, 0, cols * cw, rows * ch);
       ctx.globalAlpha = 1;
     }
+    if (pix){ ctx.imageSmoothingEnabled = false; ctx.drawImage(this.pixC, 0, 0, cols * cw, rows * ch); }
     if (opt.grid){
       ctx.fillStyle = SCREEN.dot; ctx.font = this.fontPx + "px " + MONO; ctx.textBaseline = "top";
       for (let i = 0; i < n; i++) if (glyphs[i] === 32) ctx.fillText("\u00b7", (i % cols) * cw, ((i / cols) | 0) * ch + yOff);
