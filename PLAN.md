@@ -86,7 +86,7 @@ What each shipped game still lacks, and the tuning it needs. The "Done" list bel
 | Base Commander | None planned | None open |
 | Rooftop Rumble | Done: difficulty levels (Easy, Normal, Hard) and a predicted aiming arc (all of it on Easy, its start on Normal, none on Hard) | Done: the computer works out its throw from the same prediction each turn and misses by its level's error, which shrinks as it gets its eye in. Measured with the computer alone: about 7 throws a hit on Easy, 4 on Normal, 3 on Hard. |
 | Crater Duel | Done: two to four tanks (each a person or the computer), winnings and a shop between rounds (big shots, MIRVs, dirt bombs, fuel, a shield), and driving on fuel (Shift+arrows, or the D-pad's up and down) | Done: weapon damage trimmed (missile 40, big shot 60, MIRV 30 a warhead), first to 3 rounds, prices and winnings set so a round's earnings buy one or two items, with a flat 50 for everyone so a beaten tank can still buy something. The computer now aims with an exact prediction of the shot, like Rooftop Rumble's. Not yet: the computer does not drive or buy fuel. |
-| Stack Smash | T-spin and combo scoring; a two-player garbage mode; Columns and Puyo variants | None open |
+| Stack Smash | Done: T-spins (and minis), back-to-back and combo scoring; VERSUS, two wells where clears send garbage (cancelled by your own clears), against the computer (Easy, Normal, Hard) or a second player on the same keyboard; COLUMNS (lines of three jewels, any direction) and PUYO (groups of four round blobs), both with chains, each with its own high scores | The computer places pieces by a standard heuristic (height, holes, bumpiness, lines); Hard beat Normal in a test match. Not yet: perfect-clear bonuses, and Columns' magic jewel. |
 | Rover Patrol | Ground tanks; rolling boulders; alien fighters that dive; a choice of starting point | The jump now grows with how long you hold the button (done, see below). Slow jumps are still short: at the lowest speed a big rock has to be shot, not jumped. Check that the rock pairs from point G on can be jumped or shot in turn. |
 | Physics Sandbox | None planned | None open |
 
@@ -129,7 +129,7 @@ debris.
   between rounds, and driving on fuel.
 - Stack Smash (after Tetris), first playable version: 7-bag, SRS turning and wall kicks, hold, ghost, preview,
   lock delay, levels, high scores, touch gamepad, synthesised effects and music. Cleared lines and the topped-out
-  stack break into engine boxes. Not yet: T-spin and combo scoring, a two-player garbage mode, Columns and Puyo.
+  stack break into engine boxes. T-spin, back-to-back and combo scoring; VERSUS with garbage; COLUMNS and PUYO.
 - Rover Patrol (after Moon Patrol and Ascii Patrol), first playable version: speed control, jumping, twin
   forward/up cannon, craters, rocks, mines, UFO waves whose bombs dig new craters, checkpoints A to Z with time
   bonuses, high scores, synthesised sound and music. Not yet: ground tanks, rolling boulders, alien fighters that
