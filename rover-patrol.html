@@ -1023,13 +1023,16 @@ const JUMPV = 18, G = 44, BOMB_G = 30;             // rows per second, rows per 
 const JUMP_HOLD = 0.45, HOLD_G = 0.25, JUMP_BUFFER = 0.15;   // a press this long before landing still jumps
 const WHEELS = [1, 4, 7], RW = 9;                  // wheel columns in the rover sprite; sprite width
 const ROVER = ["  ._n_.  ", " [=###=]>"];
-const SAUCER = [" .-. ", "<=o=>"], BOMBER = ["\\_^_/", " (#) "];
+const SAUCER = [" .-. ", "<=o=>"], BOMBER = ["\\_^_/", " (#) "], FIGHTER = ["\\_/", " V "];
+const TANK = ["<=[#]", "(ooo)"], TW = 5;            // a ground tank, facing the rover
+// When the new hazards start: ground tanks from point E, rolling boulders from H, diving fighters from J.
+const TANKS_FROM = 4, BOULDERS_FROM = 7, FIGHTERS_FROM = 9, PAIR_GAP = 20;   // PAIR_GAP: columns between a rock pair, room to land and jump again
 const LIVES = 3;
 const WHITE = [1.6, 1.6, 1.6], DIM = [0.4, 0.45, 0.6], ACCENT = [1.6, 1.25, 0.45];
 const ROVER_RGB = [1.6, 1.3, 0.5], WHEEL_RGB = [1.1, 1.1, 1.2], SHOT_RGB = [2.2, 2.0, 1.2], BOMB_RGB = [2.6, 0.2, 0.1];
 // Everything that can wreck the rover (craters, rocks, mines, bombs) is drawn in warning red, so it never blends into the grey ground.
 const HAZARD_RGB = [2.4, 0.16, 0.08];
-const UFO_RGB = { saucer: [0.6, 1.6, 0.8], bomber: [1.6, 0.5, 1.4] }, FLASH = [1.8, 0.9, 0.4];
+const UFO_RGB = { saucer: [0.6, 1.6, 0.8], bomber: [1.6, 0.5, 1.4], fighter: [1.7, 1.0, 0.3] }, FLASH = [1.8, 0.9, 0.4];
 const GROUND_RGB = [0.75, 0.7, 0.6], HILL_RGB = [0.42, 0.42, 0.55], FAR_RGB = [0.28, 0.32, 0.55];
 const ROCK = { name: "rock", density: 1.4, e: 0.25, mu: 0.8, kd: 0.95, ks: 0.15, shine: 8 };
 const PART = { name: "part", density: 0.8, e: 0.45, mu: 0.6, kd: 0.9, ks: 0.6, shine: 24 };
@@ -1047,7 +1050,7 @@ const sun = { x: 0, y: 0, z: 0, on: true };
 let screen = null, state = "title", stateT = 0, stars = [];
 let scroll = 0, sc = 0, speed = CRUISE, features = [], genTo = 0, seed = 1, gr = new Int16Array(GW + 16);
 let grounded = true, by = 0, vy = 0, wy = [0, 0, 0], airT = 0;
-let ufos = [], bombs = [], fShots = [], uShots = [], flashes = [], waveT = 0, fireT = 0;
+let ufos = [], bombs = [], fShots = [], uShots = [], tShots = [], flashes = [], waveT = 0, fireT = 0;
 let score = 0, lives = LIVES, reached = 0, pointT = 0, msg = "", msgT = 0, best = false;
 const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
 const bxs = () => 16 + (speed - VMIN);   // the rover's screen column: it moves forward on screen as it speeds up
@@ -1057,6 +1060,8 @@ const postX = k => k * SEC + POST;
 
 /* ---------- saved settings, high scores and sound (src/arcade.js) ---------- */
 const store = prefs("roverPatrol.v1.", "Rover Patrol"), scores = scoreTable(store);
+// You can start at any checkpoint you have reached before (the menu's Start at).
+let furthest = Math.max(0, +store.get("furthest", 0) || 0), startAt = 0;
 function saveScore(){ best = score > 0 && scores.add({ score, point: letter(reached) + (reached >= 26 ? "+" : "") }).rank === 0; }
 // effects and an original music loop, made by audio/rover-sfx.py
 const audio = createAudio({ label: "Rover Patrol", store, sounds: ROVER_SFX, music: { music: ROVER_MUSIC }, volume: 1, musicGain: 0.27 });
@@ -1078,13 +1083,17 @@ function genSection(s){
   const rnd = rngFor(seed * 1000 + s), d = s;   // difficulty grows with every checkpoint
   let x = s * SEC + POST + 18;
   const end = (s + 1) * SEC + POST - 22;   // keep the ground around each post clear, for a safe restart
+  const kinds = [["crater", 0.38], ["rock", 0.22], ["big", d >= 2 ? 0.18 : 0], ["mine", d >= 4 ? 0.12 : 0], ["tank", d >= TANKS_FROM ? 0.08 : 0], ["boulder", d >= BOULDERS_FROM ? 0.08 : 0]];
+  const total = kinds.reduce((t, k) => t + k[1], 0);
   while (x < end){
-    const roll = rnd();
-    if (roll < 0.4){ const w = 3 + Math.floor(rnd() * Math.min(5, 1 + d / 2)); add({ type: "crater", x, w }); x += w; }
-    else if (roll < 0.62 || d < 2) { add({ type: "rock", x, w: 2, h: 1, hp: 1 }); x += 2; }
-    else if (roll < 0.8 || d < 4){ add({ type: "rock", x, w: 3, h: 2, hp: 2 }); x += 3; }
-    else { add({ type: "mine", x, w: 1 }); x += 1; }
-    if (d >= 6 && rnd() < 0.3){ x += 9; add({ type: "rock", x, w: 2, h: 1, hp: 1 }); x += 2; }   // a pair: land, then jump or shoot again
+    let roll = rnd() * total, kind = kinds[0][0]; for (const [k, w] of kinds){ if ((roll -= w) < 0){ kind = k; break; } }
+    if (kind === "crater"){ const w = 3 + Math.floor(rnd() * Math.min(5, 1 + d / 2)); add({ type: "crater", x, w }); x += w; }
+    else if (kind === "rock"){ add({ type: "rock", x, w: 2, h: 1, hp: 1 }); x += 2; }
+    else if (kind === "big"){ add({ type: "rock", x, w: 3, h: 2, hp: 2 }); x += 3; }
+    else if (kind === "mine"){ add({ type: "mine", x, w: 1 }); x += 1; }
+    else if (kind === "tank"){ add({ type: "tank", x, w: TW, h: 2, hp: 2, fireT: 1 + rnd() * 2 }); x += TW + 10; }   // it creeps toward you, so leave room
+    else { add({ type: "boulder", x: x + 12, w: 2, h: 2, hp: 2, a: 0 }); x += 2; }   // it rolls toward you from further on
+    if (d >= 6 && (kind === "rock" || kind === "big") && rnd() < 0.4){ x += PAIR_GAP; add({ type: "rock", x, w: 2, h: 1, hp: 1 }); x += 2; }   // a rock pair: land, then jump or shoot again
     x += Math.round(16 + Math.max(0, 16 - d) + rnd() * 14);
   }
 }
@@ -1110,14 +1119,14 @@ const groundAt = wc => gr[Math.max(0, Math.min(gr.length - 1, wc - sc))];
 /* ---------- game flow ---------- */
 function newGame(){
   seed = 1 + Math.floor(Math.random() * 1e6);
-  score = 0; lives = LIVES; reached = 0; best = false;
+  score = 0; lives = LIVES; reached = Math.min(startAt, furthest); best = false; features = [];
   state = "play"; stateT = 0; sfx("start"); playMusic(true);
   respawn();
 }
 function respawn(){
   world.bodies.length = 0; world.forces.length = 0;
   features = features.filter(f => f.x < reached * SEC); genTo = reached;
-  ufos = []; bombs = []; fShots = []; uShots = []; flashes = [];
+  ufos = []; bombs = []; fShots = []; uShots = []; tShots = []; flashes = [];
   speed = CRUISE; scroll = postX(reached) + 3 - (Math.floor(bxs()) + 4); sc = Math.floor(scroll);
   ensureCourse(); computeGround();
   grounded = true; vy = 0; for (let i = 0; i < 3; i++) wy[i] = groundAt(bx() + WHEELS[i]) - 1;
@@ -1193,9 +1202,9 @@ function update(dt){
   jumpQueued = Math.max(0, jumpQueued - dt);
   const bottom = Math.max(...wy);
   for (const f of features){
-    if (f.x > x + RW) break;
-    if (f.x + f.w <= x + 1){ if (!f.passed){ f.passed = true; if (f.type !== "crater" || f.w > 2) scoreAt(50); } continue; }
-    if (f.type === "rock" && f.x <= x + RW - 1 && f.x + f.w - 1 >= x + 1 && bottom >= groundAt(f.x) - f.h) return die();
+    if (f.x > x + RW) continue;
+    if (f.x + f.w <= x + 1){ if (!f.passed){ f.passed = true; if (f.type !== "crater" || f.w > 2) scoreAt(f.type === "tank" || f.type === "boulder" ? 100 : 50); } continue; }
+    if (SOLID[f.type] && f.x <= x + RW - 1 && f.x + f.w - 1 >= x + 1 && bottom >= groundAt(Math.floor(f.x)) - f.h) return die();
     if (f.type === "mine" && grounded && f.x >= x + 1 && f.x <= x + 7){ boom(cx(f.x - sc), cy(groundAt(f.x)), 1); return die(); }
   }
   // firing: one shot forward and one straight up, while the button is held
@@ -1209,7 +1218,8 @@ function update(dt){
     for (let k = 0, n = Math.ceil(70 * dt); k < n && !s.dead; k++){
       s.x += 70 * dt / n; s.d += 70 * dt / n;
       const wc = Math.floor(s.x);
-      for (const f of features) if (f.type === "rock" && wc >= f.x && wc < f.x + f.w && s.y >= groundAt(f.x) - f.h - 1){ hitRock(f); s.dead = true; break; }
+      for (const f of features) if (SOLID[f.type] && wc >= Math.floor(f.x) && wc < f.x + f.w && s.y >= groundAt(Math.floor(f.x)) - f.h - 1){ hitRock(f); s.dead = true; break; }
+      for (const t of tShots) if (!t.dead && Math.abs(t.x - s.x) < 1.5 && Math.abs(t.y - s.y) < 1.2){ t.dead = true; s.dead = true; boom(cx(t.x - sc), cy(t.y), 0.4); sfx("rock"); scoreAt(50); }
     }
     if (s.d > 42) s.dead = true;
   }
@@ -1222,6 +1232,7 @@ function update(dt){
   }
   uShots = uShots.filter(s => !s.dead);
   updateUfos(dt, x);
+  if (updateMovers(dt, x, bottom)) return;
   for (const b of bombs){
     b.vy += BOMB_G * dt; b.y += b.vy * dt;
     const wc = Math.floor(b.x), top = Math.min(...wy) - 2;
@@ -1235,6 +1246,7 @@ function update(dt){
   bombs = bombs.filter(b => !b.dead);
   if (mid >= postX(reached + 1)){
     reached++;
+    if (reached > furthest){ furthest = reached; store.set("furthest", furthest); }
     const bonus = 500 + Math.max(0, Math.round(60 - pointT)) * 10;
     score += bonus; pointT = 0; sfx("point");
     say((reached % 26 === 0 ? "COURSE COMPLETE! " : "POINT " + letter(reached) + "  ") + "BONUS " + bonus, 2);
@@ -1251,34 +1263,72 @@ function scrollBy(cols){
   }
   computeGround();
 }
+// Ground tanks creep toward the rover and fire low shells along the ground; boulders roll at it. Both only move
+// once they are on screen, and are hit like rocks (two hits each). Returns true if the rover was wrecked.
+const SOLID = { rock: 1, tank: 1, boulder: 1 };
+function updateMovers(dt, x, bottom){
+  for (const f of features){
+    if (f.type !== "tank" && f.type !== "boulder") continue;
+    const ahead = f.x - (x + RW);
+    if (f.x - sc > GW + 2 || ahead < -RW - 6) continue;
+    if (f.type === "boulder"){ f.x -= 7 * dt; f.a -= 7 * dt / 1.1; continue; }
+    if (ahead > 2) f.x -= 2 * dt;
+    if ((f.fireT -= dt) <= 0 && ahead > 16 && ahead < 60){   // it stops firing once you are close, so you can deal with it
+      f.fireT = 3 + Math.random() * 1.5 - Math.min(0.8, reached * 0.03);
+      tShots.push({ x: f.x - 1, y: groundAt(Math.floor(f.x)) - 2 }); sfx("fire");
+    }
+  }
+  for (const t of tShots){
+    t.x -= 16 * dt;
+    if (t.x >= x + 1 && t.x <= x + RW - 1 && bottom >= t.y - 0.5){ t.dead = true; boom(cx(t.x - sc), cy(t.y), 0.8); die(); return true; }   // jump over it, or shoot it
+    if (t.x < sc - 2) t.dead = true;
+  }
+  tShots = tShots.filter(t => !t.dead);
+  return false;
+}
 function hitRock(f){
   const px = cx(f.x - sc + f.w / 2), py = cy(groundAt(f.x) - f.h / 2);
   f.hp--; sfx("rock");
   boom(px, py, 0.5, [0.35, 0.32, 0.3], f.hp > 0 ? 4 : 8);
-  if (f.hp > 0){ f.w = 2; f.h = 1; scoreAt(50); }   // a big rock breaks down to a small one
-  else { features.splice(features.indexOf(f), 1); scoreAt(100); }
+  if (f.hp > 0){ if (f.type === "rock"){ f.w = 2; f.h = 1; } scoreAt(50); }   // a big rock breaks down to a small one; a tank or boulder just cracks
+  else { features.splice(features.indexOf(f), 1); scoreAt(f.type === "rock" ? 100 : 200); }
 }
 function kill(u){
   u.dead = true; sfx("explode");
   boom(cx(u.x + 2), cy(u.y + 1), 1, UFO_RGB[u.kind].map(v => v * 0.3), 8);
-  scoreAt(u.kind === "bomber" ? 200 : 100, u.kind === "bomber" ? "200" : "100");
+  const pts = u.kind === "bomber" ? 200 : u.kind === "fighter" ? 150 : 100; scoreAt(pts, String(pts));
+}
+// A fighter hovers like a saucer, then dives: it swoops down to the rover's body height where the rover is when the
+// dive starts, and climbs away behind it. It warns first (it flashes and cries out); change speed to move the rover
+// along the screen out of its path, or shoot it on the way down. Returns true while it is diving.
+function dive(u, dt){
+  if (!u.dv){ if ((u.diveIn -= dt) > 0 || u.t > u.life) return false; u.dv = { t: -0.6, x0: u.x, y0: u.y, tx: bxs() + 3 }; sfx("ufo"); }
+  const D = u.dv; D.t += dt;
+  if (D.t < 0) return true;   // the warning: it hangs still and flashes
+  const T = 1.8, k = Math.min(1, D.t / T), low = Math.min(...wy) - 2.5;
+  u.x = D.x0 + (D.tx - D.x0) * 2 * k; u.y = D.y0 + (low - D.y0) * Math.sin(Math.PI * k);
+  const rx = bxs(), top = Math.min(...wy) - 2;
+  if (u.x + 2 >= rx && u.x <= rx + RW - 1 && u.y + 1 >= top && u.y <= Math.max(...wy) && state === "play"){ u.dead = true; boom(cx(u.x + 1), cy(u.y), 1); die(); }
+  if (k >= 1){ u.dead = true; }   // gone, behind the rover
+  return true;
 }
 function updateUfos(dt, x){
   if (reached >= 1 && (waveT -= dt) <= 0){   // UFO waves from the second checkpoint on
     const d = reached, n = 2 + Math.min(3, Math.floor(d / 3));
     waveT = 14 - Math.min(8, d * 0.7) + Math.random() * 6; sfx("ufo");
-    for (let i = 0; i < n; i++) ufos.push({ kind: d >= 4 && i % 2 ? "bomber" : "saucer", x: GW + 4 + i * 8, y: 5, y0: 4 + Math.random() * 10,
-      home: 30 + Math.random() * 70, ph: Math.random() * 6.283, t: 0, life: 12 + Math.random() * 6, drop: 1.5 + Math.random() * 2 });
+    for (let i = 0; i < n; i++) ufos.push({ kind: d >= FIGHTERS_FROM && i % 3 === 2 ? "fighter" : d >= 4 && i % 2 ? "bomber" : "saucer", x: GW + 4 + i * 8, y: 5, y0: 4 + Math.random() * 10,
+      home: 30 + Math.random() * 70, ph: Math.random() * 6.283, t: 0, life: 12 + Math.random() * 6, drop: 1.5 + Math.random() * 2, diveIn: 3 + Math.random() * 4 });
   }
   const mid = x + 4;
   for (const u of ufos){
     u.t += dt;
+    if (u.kind === "fighter" && dive(u, dt)) continue;
     if (u.t < u.life){
       u.x += (u.home + 14 * Math.sin(u.t * 0.8 + u.ph) - u.x) * Math.min(1, dt * 1.2);
       u.y = u.y0 + 3 * Math.sin(u.t * 1.7 + u.ph);
       // drop a bomb where the rover will be when it lands, with some error so a steady speed isn't fatal
       const T = Math.sqrt(2 * Math.max(1, GBASE - u.y) / BOMB_G), aim = mid + speed * T + (u.err ??= (Math.random() - 0.5) * 6);
-      if ((u.drop -= dt) <= 0 && Math.abs(u.x + 2 + sc - aim) < 1.5){
+      if (u.kind !== "fighter" && (u.drop -= dt) <= 0 && Math.abs(u.x + 2 + sc - aim) < 1.5){   // fighters dive instead of bombing
         bombs.push({ x: u.x + 2 + sc, y: u.y + 2, vy: 0, big: u.kind === "bomber" }); sfx("bomb");
         u.drop = (u.kind === "bomber" ? 1.6 : 2.4) - Math.min(1, reached * 0.06) + Math.random(); u.err = undefined;
       }
@@ -1321,7 +1371,9 @@ function drawLand(t){
 }
 function drawCourse(t){
   for (const f of features){
-    const c = f.x - sc; if (c > GW + 2) break; if (c + f.w < -2) continue;
+    const c = f.x - sc; if (c > GW + 2 || c + f.w < -2) continue;
+    if (f.type === "tank"){ sprite(TANK, Math.round(c), groundAt(Math.floor(f.x)) - 2, HAZARD_RGB, f.hp > 1 ? 1 : 0.7, 3); continue; }
+    if (f.type === "boulder"){ const g = groundAt(Math.floor(f.x)); litBall(cx(c + 0.5), cy(g - 1) + screen.ch * 0.4, screen.ch * 0.95, HAZARD_RGB.map(v => v * 0.35)); continue; }   // red, so it reads as danger
     if (f.type === "rock"){   // solid red, lighter on top, so it reads as danger in every display mode
       const g = groundAt(f.x), art = f.h > 1 ? [" @ ", "@@@"] : ["@@"];
       art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") put(c + dx, g - art.length + dy, HAZARD_RGB, dy === 0 ? 1 : 0.75, 3, 64); });
@@ -1350,6 +1402,8 @@ function drawTitle(){
   center(21, pad.touch ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
   center(23, pad.touch ? "D-PAD LEFT/RIGHT SPEED   A OR UP JUMP (HOLD: FURTHER)   B FIRE   SELECT MENU" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP (HOLD: FURTHER)   X FIRE   ESC MENU", DIM);
   center(24, "JUMP CRATERS AND MINES. SHOOT ROCKS AHEAD AND UFOS ABOVE.", DIM);
+  center(25, "LATER: TANKS (JUMP THEIR SHELLS), ROLLING BOULDERS, AND FIGHTERS THAT DIVE (CHANGE SPEED TO DODGE).", DIM);
+  if (furthest) center(19, "START AT POINT " + letter(Math.min(startAt, furthest)) + "  (MENU: START AT, UP TO " + letter(furthest) + ")", DIM);
   if (scores.list.length){
     center(27, "HIGH SCORES", ACCENT);
     scores.list.forEach((s, i) => center(28 + i, `${i + 1}. ${String(s.score).padStart(7)}   POINT ${s.point.padEnd(2)}`, i ? DIM : WHITE));
@@ -1362,7 +1416,11 @@ function draw(t){
   if (state === "title"){ drawRover(t); drawTitle(); drawMenu(); screen.render(ctx); return; }
   drawCourse(t);
   if (state === "play") drawRover(t);
-  for (const u of ufos) sprite(u.kind === "bomber" ? BOMBER : SAUCER, Math.round(u.x), Math.round(u.y), UFO_RGB[u.kind], 1, 3);
+  for (const u of ufos){
+    const warn = u.dv && u.dv.t < 0, rgb = u.kind === "fighter" && (warn || u.dv) ? HAZARD_RGB : UFO_RGB[u.kind];   // a diving fighter turns warning red
+    if (!warn || (performance.now() / 90 | 0) % 2) sprite(u.kind === "bomber" ? BOMBER : u.kind === "fighter" ? FIGHTER : SAUCER, Math.round(u.x), Math.round(u.y), rgb, 1, 3);
+  }
+  for (const t of tShots) put(Math.floor(t.x) - sc, Math.round(t.y), HAZARD_RGB, 1.2, 3, 60);
   for (const b of bombs) put(Math.floor(b.x) - sc, Math.round(b.y), BOMB_RGB, 1, 3, b.big ? 64 : 111);
   for (const s of fShots) put(Math.floor(s.x) - sc, s.y, SHOT_RGB, 1, 3, 45);
   for (const s of uShots) put(s.x - sc, Math.round(s.y), SHOT_RGB, 1, 3, 124);
@@ -1398,10 +1456,11 @@ function action(){   // start from the title; back to the title from game over
   if (state === "title") newGame();
   else if (state === "over" && stateT > 1) toTitle();
 }
-function toTitle(){ state = "title"; features = []; world.bodies.length = 0; ufos = []; bombs = []; speed = CRUISE; }
+function toTitle(){ state = "title"; features = []; world.bodies.length = 0; ufos = []; bombs = []; tShots = []; speed = CRUISE; }
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
   { label: state === "title" ? "START GAME" : "RESTART", select: () => { menu.hide(); audio.unlock(); newGame(); } },
+  { label: "START AT", value: () => "POINT " + letter(Math.min(startAt, furthest)), change: d => { startAt = (Math.min(startAt, furthest) + (d || 1) + furthest + 1) % (furthest + 1); } },
   { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
   { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
