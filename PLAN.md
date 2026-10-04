@@ -90,8 +90,8 @@ debris.
 ## Skipped
 
 - Card, board, word and number games, Minesweeper, Sudoku: the physics and lighting add nothing.
-- Roguelikes, with one exception: Torchlight Dungeons, a full adaptation of Moria built around the engine's lighting.
-  Its phased plan is in [TORCHLIGHT_PLAN.md](TORCHLIGHT_PLAN.md).
+- Roguelikes. Torchlight Dungeons, a full adaptation of Moria, started here as a cartridge and moved to its own
+  project after its phase 7.
 - Boulder Dash, Pac-Man, Snake, Tron light cycles, Frogger: grid rules decide everything.
 - Platform games (`0verkill`, `PAG`, `venzone`): need a character controller, which fights a physics engine.
 - Racing (`zracer`, `ztrack`) and skiing (`ski`, `gnuski`, `asciijump`): need tyre or snow friction that the
@@ -115,6 +115,6 @@ debris.
   bonuses, high scores, synthesised sound and music. Not yet: ground tanks, rolling boulders, alien fighters that
   dive, a starting-point choice. The wheel suspension lives in the game, not as engine spring joints, and the
   scrolling camera shifts the rubble by whole columns as the ground scrolls.
-- Torchlight Dungeons, phases 0 and 1 of [TORCHLIGHT_PLAN.md](TORCHLIGHT_PLAN.md): a torch-lit dungeon crawl after
+- Torchlight Dungeons, phases 0 and 1 (since moved to its own project): a torch-lit dungeon crawl after
   Moria, with symmetric field of view, a light field with shadows, glowing monsters, lit rooms, and a speed scheduler.
 - Engine: box shapes, destructible terrain grid, sensors, open top; checks in `tests/physics.js`.

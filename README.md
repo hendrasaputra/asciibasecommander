@@ -20,12 +20,11 @@ ASCII label instead.
 | [Crater Duel](crater-duel.html) | Scorched Earth | Hills that collapse after each blast, falling tanks, four weapons |
 | [Stack Smash](stack-smash.html) | Tetris | Blocks as lit slabs; cleared lines burst into boxes that land on the stack |
 | [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble |
-| [Torchlight Dungeons](torchlight-dungeons.html) | Moria | The one cartridge drawn in code-made pixel art instead of characters: a torch that lights only what it reaches, a paper-doll hero who wears what you equip, a character panel, tooltips and a hotbar. Keyboard only: arrows move; A, S, D and W attack, cast, drink and grab. Early version: 8 peoples, 6 callings, first spells, about 200 kinds of item to identify, a town with six shops and day and night, 60 spells and prayers, and 267 kinds of monster with 25 uniques and a final boss (phases 0 to 7 of [TORCHLIGHT_PLAN.md](TORCHLIGHT_PLAN.md)) |
 | [Physics Sandbox](ascii-physics.html) | | The engine itself: throw balls and boxes under a lamp |
 
 All games are original code and art. Rover Patrol takes its idea from msokalski's
-[Ascii Patrol](https://github.com/msokalski/ascii-patrol), and Torchlight Dungeons from
-[Umoria](https://github.com/dungeons-of-moria/umoria). Both are GPL, so nothing is copied from either.
+[Ascii Patrol](https://github.com/msokalski/ascii-patrol), which is GPL, so nothing is copied from it.
+Torchlight Dungeons, a Moria adaptation, began here and has moved to its own project.
 
 ### Playing
 
@@ -38,7 +37,7 @@ All games are original code and art. Rover Patrol takes its idea from msokalski'
 - **Display settings** (`settings.html`, shared by every game): draw with ASCII characters or solid pixels (text
   stays readable either way), pick the character set, choose the detail, and turn on a tube TV filter. Detail (Fine
   2x, Finest 3x) draws the engine's lit balls, boxes, blocks, rubble and light with smaller characters or pixels, while
-  game text and sprites keep their size; Torchlight Dungeons draws smaller sprites and shows more map.
+  game text and sprites keep their size.
 
 ### Other pages
 
@@ -48,7 +47,7 @@ All games are original code and art. Rover Patrol takes its idea from msokalski'
 ## Editing
 
 Edit the files in `src/`, then run `./build.sh` to rebuild every page. Run `node tests/physics.js` to check the
-physics, `node tests/torch.js` for Torchlight Dungeons, and `node tests/balance.js` for its monster balance.
+physics.
 
 - `src/core.js`: shared by every page.
   - Physics (`World`): balls and boxes, a terrain grid, and sensors.
@@ -65,9 +64,6 @@ physics, `node tests/torch.js` for Torchlight Dungeons, and `node tests/balance.
   it into each page.
 - `src/game/`, `src/rooftop/`, `src/crater/`, `src/stack/`, `src/rover/`: each game's page markup (`head.html`) and rules
   (`game.js`).
-- `src/torch/`: Torchlight Dungeons, split by job: `rng.js` random numbers, `fov.js` sight and light, `turn.js` the
-  speed scheduler, `gen.js` levels, `data.js` townsfolk, `bestiary.js` the dungeon's monsters, `items.js` items, flavours and names, `shops.js` the town's shops and prices, `chars.js` races, classes, stats and skills, `spells.js` magic and prayers, `sprites.js` the tiles, figures and icons (all drawn by code), `game.js` the rules and keys, `render.js` the map, light and animation, `ui.js` the HTML panels, HUD and dialogs. Check its rules with
-  `node tests/torch.js`.
 - `src/engine/`, `src/tutorial/`, `src/settings/`: the sandbox, the tutorial and the settings page.
 - `favicon.svg`: the site icon, a cartridge with a lit ball on its label.
 - `PLAN.md`: which games come next, and the engine features they need.
@@ -101,10 +97,7 @@ Everything is saved in the browser's localStorage. Nothing is sent anywhere.
 |---|---|
 | `arcade.v1.display` | Display settings shared by the games |
 | `asciiPhysics.v3.display` | The sandbox's own display settings |
-| `<game>.v1.scores` | High scores (Base Commander, Stack Smash, Rover Patrol, Torchlight Dungeons) |
-| `torchlightDungeons.v1.keymap` | Modern, Classic (Moria letters) or roguelike keys |
-| `torchlightDungeons.v1.panel` | Torchlight's side panel shown or hidden |
-| `torchlightDungeons.v1.lore` | Torchlight's monster recall, kept across characters |
+| `<game>.v1.scores` | High scores (Base Commander, Stack Smash, Rover Patrol) |
 | `<game>.v1.muted`, `<game>.v1.controls` | Sound on or off, touch or keyboard, per game |
 
 ## Notes
