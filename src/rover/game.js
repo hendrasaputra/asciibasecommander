@@ -7,7 +7,10 @@ const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stag
 const GW = 120, GH = 44, GBASE = GH - 7;          // GBASE: ground row on flat ground
 const SEC = 160, POST = 40;                        // course columns per checkpoint; post position in a section
 const CRUISE = 14, VMIN = 8, VMAX = 24;            // speed in columns per second
-const JUMPV = 24, G = 55, BOMB_G = 30;             // rows per second, rows per second squared
+const JUMPV = 18, G = 44, BOMB_G = 30;             // rows per second, rows per second squared
+// Holding jump makes it longer: while rising with the button held (up to JUMP_HOLD seconds) gravity is only
+// HOLD_G of normal. A tap clears small rocks and craters; a full hold clears big rocks and wide craters.
+const JUMP_HOLD = 0.45, HOLD_G = 0.25, JUMP_BUFFER = 0.15;   // a press this long before landing still jumps
 const WHEELS = [1, 4, 7], RW = 9;                  // wheel columns in the rover sprite; sprite width
 const ROVER = ["  ._n_.  ", " [=###=]>"];
 const SAUCER = [" .-. ", "<=o=>"], BOMBER = ["\\_^_/", " (#) "];
@@ -33,7 +36,7 @@ const world = new World(); world.openTop = true;
 const sun = { x: 0, y: 0, z: 0, on: true };
 let screen = null, state = "title", stateT = 0, stars = [];
 let scroll = 0, sc = 0, speed = CRUISE, features = [], genTo = 0, seed = 1, gr = new Int16Array(GW + 16);
-let grounded = true, by = 0, vy = 0, wy = [0, 0, 0];
+let grounded = true, by = 0, vy = 0, wy = [0, 0, 0], airT = 0;
 let ufos = [], bombs = [], fShots = [], uShots = [], flashes = [], waveT = 0, fireT = 0;
 let score = 0, lives = LIVES, reached = 0, pointT = 0, msg = "", msgT = 0, best = false;
 const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
@@ -167,7 +170,8 @@ function update(dt){
     const pit = craterAt(mid);
     if (pit && inPit(pit, mid)) return die();
   } else {
-    vy += G * dt; by += vy * dt;
+    airT += dt;
+    vy += (jumpHeld && vy < 0 && airT < JUMP_HOLD ? G * HOLD_G : G) * dt; by += vy * dt;
     const land = Math.min(...WHEELS.map(w => groundAt(x + w) - 1));
     if (vy > 0 && by >= land){
       grounded = true; for (let i = 0; i < 3; i++) wy[i] = Math.max(by, groundAt(x + WHEELS[i]) - 1);
@@ -175,8 +179,8 @@ function update(dt){
       for (let k = 0; k < 3; k++){ const b = world.add(cx(bxs() + 1 + k * 3), cy(land), screen.ch * 0.2, "foam", [0.3, 0.28, 0.25]); b.vx = (Math.random() - 0.5) * 200; b.vy = -100 - Math.random() * 120; b.life = 0.6; }
     } else for (let i = 0; i < 3; i++) wy[i] = by;
   }
-  if (jumpQueued && grounded){ grounded = false; by = Math.min(...wy); vy = -JUMPV; sfx("jump"); }
-  jumpQueued = false;
+  if (jumpQueued > 0 && grounded){ grounded = false; by = Math.min(...wy); vy = -JUMPV; airT = 0; jumpQueued = 0; sfx("jump"); }
+  jumpQueued = Math.max(0, jumpQueued - dt);
   const bottom = Math.max(...wy);
   for (const f of features){
     if (f.x > x + RW) break;
@@ -334,7 +338,7 @@ function drawTitle(){
   });
   const blink = (performance.now() / 500 | 0) % 2;
   center(21, pad.touch ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
-  center(23, pad.touch ? "D-PAD LEFT/RIGHT SPEED   A OR UP JUMP   B FIRE   SELECT MENU" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP   X FIRE   ESC MENU", DIM);
+  center(23, pad.touch ? "D-PAD LEFT/RIGHT SPEED   A OR UP JUMP (HOLD: FURTHER)   B FIRE   SELECT MENU" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP (HOLD: FURTHER)   X FIRE   ESC MENU", DIM);
   center(24, "JUMP CRATERS AND MINES. SHOOT ROCKS AHEAD AND UFOS ABOVE.", DIM);
   if (scores.list.length){
     center(27, "HIGH SCORES", ACCENT);
@@ -379,7 +383,7 @@ function drawMenu(){
 const keys = { left: false, right: false };
 const KEYMAP = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right" };
 const JUMP_KEYS = new Set(["ArrowUp", "w", "W", " "]), FIRE_KEYS = new Set(["x", "X", "f", "F", "Control", "Enter"]);
-let jumpQueued = false, fireHeld = false;
+let jumpQueued = 0, jumpHeld = false, fireHeld = false;   // jumpQueued: seconds a press waits for the ground
 function action(){   // start from the title; back to the title from game over
   if (state === "title") newGame();
   else if (state === "over" && stateT > 1) toTitle();
@@ -393,7 +397,7 @@ const menu = createMenu(() => [
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
-  onOpen: () => { for (const k in keys) keys[k] = false; fireHeld = false; audio.pause(); },
+  onOpen: () => { for (const k in keys) keys[k] = false; fireHeld = jumpHeld = false; audio.pause(); },
   onClose: () => { audio.resume(); }
 });
 addEventListener("keydown", e => {
@@ -407,20 +411,20 @@ addEventListener("keydown", e => {
   if (e.key === "m" || e.key === "M") return audio.toggleMute();
   if (e.key === "r" || e.key === "R") return newGame();
   if (state !== "play"){ if (e.key === " " || e.key === "Enter") action(); return; }
-  if (JUMP_KEYS.has(e.key)) jumpQueued = true;
+  if (JUMP_KEYS.has(e.key)){ jumpQueued = JUMP_BUFFER; jumpHeld = true; }
 });
-addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; if (FIRE_KEYS.has(e.key)) fireHeld = false; });
-addEventListener("blur", () => { for (const k in keys) keys[k] = false; fireHeld = false; });
+addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; if (FIRE_KEYS.has(e.key)) fireHeld = false; if (JUMP_KEYS.has(e.key)) jumpHeld = false; });
+addEventListener("blur", () => { for (const k in keys) keys[k] = false; fireHeld = jumpHeld = false; });
 
 const pad = createPad({ store, menu: () => menu.open && menu, onAny: () => audio.unlock(),
-  onDir: d => { if (d === "up" && state === "play") jumpQueued = true; keys.left = d === "left"; keys.right = d === "right"; },
+  onDir: d => { if (d === "up" && state === "play" && !jumpHeld) jumpQueued = JUMP_BUFFER; jumpHeld = d === "up"; keys.left = d === "left"; keys.right = d === "right"; },
   onPress: id => {
     if (id === "select") return menu.show();
     if (state === "title" || state === "over"){ if (id === "a" || id === "start") action(); return; }
     if (id === "start") return menu.show();
-    if (id === "a") jumpQueued = true; else fireHeld = true;
+    if (id === "a"){ jumpQueued = JUMP_BUFFER; jumpHeld = true; } else fireHeld = true;
   },
-  onRelease: id => { if (id === "b") fireHeld = false; } });
+  onRelease: id => { if (id === "b") fireHeld = false; if (id === "a") jumpHeld = false; } });
 cv.addEventListener("pointerdown", e => {
   audio.unlock();
   if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }

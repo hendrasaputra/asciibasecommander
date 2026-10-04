@@ -77,6 +77,26 @@ Build each once, in `core.js`, so every page gets it.
 | Scrolling camera | Moon Patrol, longer Lunar Lander maps | Draw the world offset from the screen; physics unchanged. |
 | Compound bodies | Physics Tetris, Katamari (`katamascii`) | Several shapes rigidly joined into one body. Not planned yet. |
 
+## Each game: features and tuning still to do
+
+What each shipped game still lacks, and the tuning it needs. The "Done" list below says what each one has.
+
+| Game | Features to add | Tuning |
+|---|---|---|
+| Base Commander | None planned | None open |
+| Rooftop Rumble | An aiming arc preview; difficulty levels | The computer's aim, once difficulty levels exist |
+| Crater Duel | A weapon shop between rounds; tanks that drive; more than two tanks | Weapon prices and damage, once the shop exists |
+| Stack Smash | T-spin and combo scoring; a two-player garbage mode; Columns and Puyo variants | None open |
+| Rover Patrol | Ground tanks; rolling boulders; alien fighters that dive; a choice of starting point | The jump now grows with how long you hold the button (done, see below). Slow jumps are still short: at the lowest speed a big rock has to be shot, not jumped. Check that the rock pairs from point G on can be jumped or shot in turn. |
+| Physics Sandbox | None planned | None open |
+
+Rover Patrol's jump, fixed in October 2026: a jump was the same length however long the button was held, and at
+cruising speed it cleared a rock only if you jumped within two columns of touching it, so most jumps landed on the
+rock and a game rarely got past point A. Now holding the button lightens gravity while rising (for up to 0.45 s),
+and a press up to 0.15 s before landing still jumps. At cruising speed a full hold clears a small rock from
+anywhere in a 12-column window (it was 3), a big rock from 9, and a 7-wide crater from 12. A test autopilot that
+only jumps went from never passing point A in three minutes to reaching points G to I.
+
 ## Grid puzzle games: Tetris, Columns, Puyo, match-3
 
 Keep the normal grid rules. The engine draws the pieces as lit blocks and turns cleared lines into tumbling
