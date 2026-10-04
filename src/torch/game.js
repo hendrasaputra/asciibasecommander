@@ -1,33 +1,15 @@
-(() => {
-const $ = id => document.getElementById(id);
-const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
 // Torchlight Dungeons: a turn-based dungeon crawl after Moria. The rules run on the 198 x 66 map in gen.js; you
 // see what your light (or a lit room, a glowing monster, a flying spell) shows you, and warm bodies within your
-// infravision. Characters come from chars.js. The engine draws the light and throws a little physics debris.
-// See TORCHLIGHT_PLAN.md for the phases.
-const TORCH_RGB = [1.0, 0.62, 0.3], ROOM_RGB = [0.42, 0.42, 0.47], MEM_RGB = [0.07, 0.08, 0.12];
-const WHITE = [1.6, 1.6, 1.6], DIM = [0.45, 0.48, 0.6], ACCENT = [1.6, 1.15, 0.5], RED = [1.6, 0.4, 0.35], GREEN = [0.6, 1.4, 0.6], BLUE = [0.6, 0.85, 1.6];
-const TILE = {   // glyph and base colour per tile
-  [T.EDGE]: ["#", [0.5, 0.46, 0.42]], [T.WALL]: ["#", [0.55, 0.5, 0.45]], [T.FLOOR]: [".", [0.32, 0.32, 0.32]],
-  [T.DOOR]: ["+", [0.75, 0.48, 0.22]], [T.OPEN]: ["'", [0.75, 0.48, 0.22]], [T.DOWN]: [">", [1.2, 1.2, 1.2]], [T.UP]: ["<", [1.2, 1.2, 1.2]],
-  [T.SHOP]: ["1", [1.2, 1.1, 0.8]], [T.GROUND]: [".", [0.42, 0.4, 0.3]], [T.LAMP]: ["i", [1.1, 0.95, 0.6]]
-};
-const BITS = { name: "bits", density: 0.6, e: 0.45, mu: 0.5, kd: 0.9, ks: 0.5, shine: 20 };
+// infravision. Characters come from chars.js. render.js draws the map and ui.js the interface; this file only
+// keeps the rules and the keys. See TORCHLIGHT_PLAN.md for the phases.
+const TORCH_RGB = [1.0, 0.62, 0.3], ROOM_RGB = [0.42, 0.42, 0.47];
 const DIRS = { 1: [-1, 1], 2: [0, 1], 3: [1, 1], 4: [-1, 0], 6: [1, 0], 7: [-1, -1], 8: [0, -1], 9: [1, -1] };
-const VY = 2;   // map rows start under the two message rows; the status bar takes the last two rows
-
-const D = defaultDisplay(); D.room = 0.15; D.glow = 0.3; D.lampRGB = TORCH_RGB;
-applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
-// Detail: this page's grid already follows the screen, so higher detail means smaller characters and a bigger view.
-const DETAIL = D.detail; D.detail = 1;
-if (D.pixels){ TILE[T.FLOOR][1] = [0.09, 0.09, 0.1]; TILE[T.GROUND][1] = [0.12, 0.11, 0.08]; }   // as solid pixels, floor must be much darker than wall to read the map
-const world = new World(); world.openTop = true;
-const lamp = { x: 0, y: 0, z: 0, on: true };   // the player's torch, for lighting the debris
-let screen = null, GW = 80, GH = 30, VH = 26, state = "title", stateT = 0;
-let rng = new RNG(Date.now() & 0xffffffff), L = null, depth = 1, player = null, mons = [], floor = [], cam = { x: 0, y: 0 };
+const DETAIL = Math.max(1, Math.min(3, arcadeSettings().detail | 0 || 1));   // the shared Detail setting: smaller sprites, more map
+let state = "title", stateT = 0;
+let rng = new RNG(Date.now() & 0xffffffff), L = null, depth = 1, player = null, mons = [], floor = [];
 let roomLight = new Float32Array(3 * MW * MH), lightNow = new Float32Array(3 * MW * MH), lightTurn = new Float32Array(3 * MW * MH);
 let seenAt = new Uint32Array(MW * MH), inFov = new Uint32Array(MW * MH), mem = new Uint8Array(MW * MH), turnNo = 1;
-let msgs = [], oldMsgs = [], log = [], killer = "", tomb = null;
+let msgs = [], log = [], killer = "", tomb = null, target = null;
 let shots = [], flashes = [], later = [];   // visual only: flying bolts and darts, impact flashes, and effects that wait for them
 const idx = (x, y) => y * MW + x;
 const blocks = (x, y) => x < 0 || y < 0 || x >= MW || y >= MH || opaque(L.tiles[y * MW + x]);
@@ -36,7 +18,7 @@ const monAt = (x, y) => mons.find(m => m.x === x && m.y === y);
 const itemsAt = (x, y) => floor.filter(f => f.x === x && f.y === y);
 const dist = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 const race = () => RACE[player.race], cls = () => CLASS[player.cls];
-function say(s){ msgs.push(s); log.push(s); if (log.length > 200) log.shift(); }
+function say(s){ msgs.push(s); log.push(s); if (log.length > 200) log.shift(); refreshUI(); }
 // You see a monster if light shows it, or if it is warm-blooded, in your line of sight and within your infravision.
 const byHeat = m => !m.K.cold && infra() > 0 && inFov[idx(m.x, m.y)] === turnNo && dist(m.x, m.y, player.x, player.y) <= infra() && !visible(idx(m.x, m.y));
 const seesMon = m => visible(idx(m.x, m.y)) || byHeat(m);
@@ -45,7 +27,7 @@ const theName = m => seesMon(m) ? "the " + m.K.name : "it";
 
 /* ---------- saved preferences and high scores ---------- */
 const store = prefs("torchlightDungeons.v1.", "Torchlight Dungeons"), scores = scoreTable(store);   // src/arcade.js
-let keySet = store.getJSON("keys", "original");
+let keySet = store.get("keymap", "modern");   // modern (arrows + A S D W), original (Moria letters) or roguelike
 
 /* ---------- items: names, carrying, and what worn things add ---------- */
 const nameOf = (it, n) => itemName(it, player.know, n);
@@ -106,7 +88,7 @@ function newLevel(d){
   const from = depth;
   depth = d; player.maxDepth = Math.max(player.maxDepth, d);
   L = d === 0 ? generateTown(rng) : generateLevel(rng, d);
-  mem.fill(0); mons = [player]; floor = []; pendingLevel = null; world.bodies.length = 0; shots = []; flashes = []; later = [];
+  mem.fill(0); mons = [player]; floor = []; pendingLevel = null; parts = []; floats = []; shots = []; flashes = []; later = []; target = null;
   const at = L.spot(); player.x = at % MW; player.y = Math.floor(at / MW);
   if (d === 0){
     // back from the dungeon: the shops have sold some things and bought in others
@@ -114,7 +96,7 @@ function newLevel(d){
     lastTown = player.turns; wasDay = isDay(); lightTown();
     for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) mem[idx(x, y)] = 1;   // you know your own town
     for (let k = 0, n = 5 + rng.int(4) + (wasDay ? 0 : 3); k < n; k++) spawnMonster(false);
-    centerCamera(true); updateSight();
+    updateSight();
     say(from > 0 ? "You climb out into the town of Lanternhollow." : "You stand in Lanternhollow, a town above the dungeon. The shops are numbered 1 to 6.");
     say(wasDay ? "It is daytime." : "It is night; the lamps are lit.");
     return;
@@ -124,7 +106,7 @@ function newLevel(d){
   for (let i = 0; i < MW * MH; i++) if (L.lit[i]){ roomLight[3 * i] = ROOM_RGB[0]; roomLight[3 * i + 1] = ROOM_RGB[1]; roomLight[3 * i + 2] = ROOM_RGB[2]; }
   for (let k = 0, n = 14 + d + rng.int(8); k < n; k++) spawnMonster(false);
   for (let k = 0, n = 8 + rng.int(6); k < n; k++) dropAt(freeSpot(0), rng.chance(0.35) ? { k: "gold", n: rng.range(8, 25) * d } : loot(d));
-  centerCamera(true); updateSight();
+  updateSight();
   say(d === 1 && from === 0 ? "You enter the dungeon at 50 ft. Your torch hisses in the damp air." : "You are now at " + feet(d) + " ft.");
 }
 const depthName = d => d ? feet(d) + " ft" : "the town";
@@ -206,30 +188,12 @@ function updateSight(){
     if (!blind && lum(lightTurn, 3 * i) > 0.03){ seenAt[i] = turnNo; mem[i] = 1; }
   }, MW, MH);
   for (const f of floor) if (visible(idx(f.x, f.y))) f.seen = true;   // items you have seen stay on the map
-  rebuildTerrain();
 }
-function centerCamera(force){
-  const ox = cam.x, oy = cam.y, w = L ? L.w : MW, h = L ? L.h : MH, mx = Math.max(0, w - GW), my = Math.max(0, h - VH);
-  // the view moves in steps when you near its edge, like Moria's panels, rather than on every step
-  if (force || player.x - cam.x < GW * 0.2 || player.x - cam.x > GW * 0.8) cam.x = w < GW ? -((GW - w) >> 1) : Math.max(0, Math.min(mx, player.x - (GW >> 1)));
-  if (force || player.y - cam.y < VH * 0.2 || player.y - cam.y > VH * 0.8) cam.y = h < VH ? -((VH - h) >> 1) : Math.max(0, Math.min(my, player.y - (VH >> 1)));
-  if (screen && (ox !== cam.x || oy !== cam.y)) for (const b of world.bodies){ b.x += (ox - cam.x) * screen.cw; b.y += (oy - cam.y) * screen.ch; }
-}
-// The engine's terrain for the debris: the walls on screen, plus the message and status rows.
-function rebuildTerrain(){
-  if (!screen || !L) return;
-  const solid = new Uint8Array(GW * GH);
-  for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++){
-    const my = cam.y + r - VY, mx = cam.x + c;
-    solid[r * GW + c] = r < VY || r >= VY + VH || mx < 0 || my < 0 || mx >= MW || my >= MH || opaque(L.tiles[idx(mx, my)]) ? 1 : 0;
-  }
-  world.terrain = { cw: screen.cw, ch: screen.ch, cols: GW, rows: GH, solid, mat: BITS };
-}
-
 /* ---------- the player's actions: each returns true when it took a turn ---------- */
 function tryMove(dx, dy){
   if (player.t.confused && rng.chance(0.4)){ [dx, dy] = DIRS[rng.pick([1, 2, 3, 4, 6, 7, 8, 9])]; say("You are confused."); }
   const x = player.x + dx, y = player.y + dy, i = idx(x, y), t = L.tiles[i], m = monAt(x, y);
+  if (m === player) return false;   // no direction
   if (m) return attack(m);
   if (t === T.DOOR){ L.tiles[i] = T.OPEN; say("You open the door."); return true; }
   if (!passable(t)){ say(t <= T.WALL ? "There is a wall in the way." : "Something is in the way."); return false; }
@@ -251,6 +215,7 @@ function multiplier(P, K){
   return 1;
 }
 function attack(m){
+  target = m; fxLunge(player, m);
   const K = m.K, name = theName(m), weak = player.food < 1000 ? -10 : 0, w = weapon(), P = w ? itemPowers(w) : { hit: 0, dam: 0 };
   if (rng.int(100) < hitChance(skillOf(player, "fight") + 3 * (P.hit + player.bonus.hit), K.ac, weak)){
     const mult = w ? multiplier(P, K) : 1, ambush = cls().ambush && m.sleep > 0;
@@ -261,11 +226,13 @@ function attack(m){
     damage(m, dmg, verb + name + ".");
     return true;
   }
-  say("You miss " + name + ".");
+  say("You miss " + name + "."); fxFloat(m.x, m.y, "miss", [0.7, 0.7, 0.8]);
   return true;
 }
 function damage(m, dmg, msg, delay = 0){   // returns true if it died
   m.hp -= dmg; m.sleep = 0;
+  const { x, y } = m, show = () => { fxHit(m); fxFloat(x, y, String(dmg), [1, 0.85, 0.4]); };
+  if (delay) later.push({ t: delay, fn: show }); else show();
   if (m.hp <= 0){ kill(m, theName(m), delay); return true; }
   say(msg);
   if (m.K.flee && m.hp < m.mhp * 0.3) m.afraid = 10;
@@ -273,7 +240,8 @@ function damage(m, dmg, msg, delay = 0){   // returns true if it died
 }
 function kill(m, name, delay = 0){
   say("You have slain " + name + ".");
-  mons.splice(mons.indexOf(m), 1); player.kills++;
+  mons.splice(mons.indexOf(m), 1); player.kills++; player.slain[m.K.id] = (player.slain[m.K.id] || 0) + 1;
+  if (target === m) target = null;
   gainExp(m.K.exp * m.K.depth / player.lvl);
   if (m.K.drop && rng.chance(m.K.drop)) dropAt(idx(m.x, m.y), rng.chance(0.6) ? { k: "gold", n: rng.range(5, 20) * depth } : loot(depth));
   const { x, y } = m;
@@ -288,15 +256,6 @@ function gainExp(e){
     say("Welcome to level " + player.lvl + "." + (titleOf(player) !== before ? " You are now a " + titleOf(player) + "." : ""));
     const n = player.spells && learnable(player, books()).length;
     if (n) say("You can learn " + n + " new " + realmWord() + (n > 1 ? "s" : "") + ". Press S to study.");
-  }
-}
-// Bits that tumble from a kill (or sparks from a hit, or glass from a potion), lit by your torch.
-function burst(x, y, rgb, n){
-  if (!screen) return;
-  const px = (x - cam.x + 0.5) * screen.cw, py = (y - cam.y + VY + 0.5) * screen.ch;
-  for (let k = 0; k < n; k++){
-    const a = Math.random() * 6.283, sp = 80 + Math.random() * 220, b = world.add(px, py, screen.ch * (0.18 + Math.random() * 0.15), "bits", rgb.map(v => v * 0.45), BITS);
-    b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp - 120; b.w = (Math.random() - 0.5) * 20; b.flash = 0.6; b.life = 1.2 + Math.random() * 0.8;
   }
 }
 // A feeling about a weapon's or armour's quality, before it is identified.
@@ -338,7 +297,7 @@ function learn(it, noticed){
   say("You learn that it is " + nameOf({ k: it.k, n: 1 }) + ".");
   gainExp((K.depth + (player.lvl >> 1)) / player.lvl);
 }
-function useItem(it, how){
+function useItem(it, how, quick){
   const K = ITEM[it.k];
   if (how === "eat"){
     player.food = Math.min(15000, player.food + (K.food || 0)); takeOne(it);
@@ -357,7 +316,7 @@ function useItem(it, how){
     lt.fuel = Math.min(ITEM[lt.k].maxFuel, lt.fuel + K.fuel); say("You fill your lantern."); takeOne(it); return true;
   }
   if (how === "wield") return wear(it);
-  if (how === "use") return useDevice(it);
+  if (how === "use") return useDevice(it, quick);
   if (how === "drop"){
     floor.push({ x: player.x, y: player.y, it: { ...it }, seen: true }); player.inv.splice(player.inv.indexOf(it), 1);
     say("You drop " + nameOf(it) + "."); recalc(); return true;
@@ -388,7 +347,7 @@ function takeOff(slot){
   if (player.inv.length >= 22){ say("You have no room in your pack."); return false; }
   player.eq[slot] = null; carry(it); say("You take off " + nameOf(it) + "."); recalc(); return true;
 }
-function useDevice(it){
+function useDevice(it, quick){
   const K = ITEM[it.k], verb = { wand: "Aim", staff: "Use", rod: "Zap" }[K.cat];
   if (K.cat === "rod" && it.timeout > 0){ say("The rod is still charging."); return false; }
   if (K.cat !== "rod" && it.charges <= 0){ say("It has no charges left."); return true; }
@@ -399,7 +358,7 @@ function useDevice(it){
     learn(it, FX[K.effect]({ K, it, tx, ty }));
     return true;
   };
-  if (K.aim){ aim(verb + " " + nameOf({ ...it, n: 1 }) + ".", go); return false; }
+  if (K.aim){ aim(verb + " " + nameOf({ ...it, n: 1 }) + ".", go, quick); return false; }
   return go();
 }
 
@@ -439,7 +398,7 @@ function teleportPlayer(range){
   for (let tries = 0; tries < 800; tries++){
     const x = player.x + rng.range(-range, range), y = player.y + rng.range(-range, range);
     if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1 || !passable(L.tiles[idx(x, y)]) || monAt(x, y) || dist(x, y, player.x, player.y) < range / 3) continue;
-    player.x = x; player.y = y; centerCamera(true); return true;
+    player.x = x; player.y = y; return true;
   }
   return false;
 }
@@ -535,7 +494,7 @@ const FX = {
   ball: c => {
     const { path } = flight(c.tx, c.ty, 18), end = path.length ? path[path.length - 1] : [player.x, player.y], delay = missile(path, c.K.elem), rgb = ELEM_RGB[c.K.elem];
     later.push({ t: delay, fn: () => { flashes.push({ x: end[0], y: end[1], t: 0.6, t0: 0.6, rgb: rgb.map(v => v * 1.6) }); burst(end[0], end[1], rgb, 10);
-      if (screen) world.forces.push({ x: (end[0] - cam.x + 0.5) * screen.cw, y: (end[1] - cam.y + VY + 0.5) * screen.ch, radius: screen.ch * 6, strength: world.h * 12, t: 0.08 }); } });
+      shove(end[0], end[1], 6); } });
     for (const m of [...mons]) if (m.K && dist(m.x, m.y, end[0], end[1]) <= c.K.r) hurtMon(m, Math.floor((c.K.dmg + (c.power || 0)) / (1 + dist(m.x, m.y, end[0], end[1]))), c.K.elem, "The blast engulfs " + theName(m) + ".", delay);
     return true;
   },
@@ -548,7 +507,7 @@ const FX = {
     const i = idx(wall[0], wall[1]);
     if (L.tiles[i] !== T.WALL){ say("The wall resists."); return true; }
     L.tiles[i] = T.FLOOR; say("The wall turns into mud!");
-    later.push({ t: path.length / 60, fn: () => { burst(wall[0], wall[1], [0.55, 0.5, 0.45], 9); rebuildTerrain(); } });
+    later.push({ t: path.length / 60, fn: () => burst(wall[0], wall[1], [0.55, 0.5, 0.45], 9) });
     return true;
   }
 };
@@ -578,8 +537,7 @@ function shake(r, wipe){
     }
     if (inFov[i] === turnNo && fallen++ < 30) later.push({ t: rng.next() * 0.3, fn: () => burst(x, y, [0.55, 0.5, 0.45], 3) });
   }
-  if (screen) world.forces.push({ x: (player.x - cam.x + 0.5) * screen.cw, y: (player.y - cam.y + VY + 0.5) * screen.ch, radius: screen.ch * r * 2, strength: world.h * 6, t: 0.1 });
-  rebuildTerrain();
+  shove(player.x, player.y, r * 2);
 }
 Object.assign(FX, {
   recharge: () => {
@@ -644,20 +602,28 @@ function nearestTarget(){
   for (const m of mons) if (m.K && seesMon(m) && (!best || dist(m.x, m.y, player.x, player.y) < dist(best.x, best.y, player.x, player.y))) best = m;
   return best;
 }
-function aim(prompt, fn){ aiming = fn; oldMsgs = []; msgs = []; say(prompt + " Direction? (" + (pad.touch ? "D-pad, A nearest, B cancel" : "a direction key, ' or t for nearest, Esc") + ")"); }
-function aimAt(dx, dy){ const f = aiming; aiming = null; act(() => f(player.x + dx * 20, player.y + dy * 20)); }
-function aimNearest(){
-  if (!aiming) return;
-  const m = nearestTarget(); if (!m){ aiming = null; oldMsgs = []; msgs = []; say("There is nothing in sight to aim at."); return; }
-  const f = aiming; aiming = null; act(() => f(m.x, m.y));
+// Aiming: at the target when there is one and the command allows it (quick), otherwise the next direction, the
+// target (Enter) or another target (Tab).
+let aimText = "";
+const liveTarget = () => target && mons.includes(target) && seesMon(target) ? target : null;
+function aim(prompt, fn, quick){
+  const tg = liveTarget() || (quick ? nearestTarget() : null);
+  if (quick && tg){ target = tg; act(() => fn(tg.x, tg.y)); return; }
+  aiming = fn; aimText = prompt + " Arrows: a direction" + (liveTarget() || nearestTarget() ? " · Enter: the target · Tab: another" : "") + " · Esc: cancel"; refreshUI();
 }
-function throwItem(it){
+function aimAt(dx, dy){ const f = aiming; aiming = null; act(() => f(player.x + dx * 20, player.y + dy * 20)); }
+function aimTarget(){
+  if (!aiming) return;
+  const m = liveTarget() || nearestTarget(); if (!m){ aiming = null; msgs = []; say("There is nothing in sight to aim at."); return; }
+  target = m; const f = aiming; aiming = null; act(() => f(m.x, m.y));
+}
+function throwItem(it, quick){
   const K = ITEM[it.k];
   aim("Throw " + nameOf(it, 1) + ".", (tx, ty) => {
     const { path, m } = flight(tx, ty, 10), one = { ...it, n: 1 }, rgb = itemRgb(one, player.know);
     takeOne(it); recalc();
     if (!path.length){ dropAt(idx(player.x, player.y), one); say("It drops at your feet."); return true; }
-    shots.push({ path, t: 0, speed: 35, glyph: K.glyph, rgb });
+    shots.push({ path, t: 0, speed: 35, item: one });
     const delay = path.length / 35, end = path[path.length - 1];
     let lands = K.cat !== "potion";
     if (m){
@@ -670,15 +636,15 @@ function throwItem(it){
     if (K.cat === "potion"){ say("The potion shatters."); later.push({ t: delay, fn: () => burst(end[0], end[1], rgb, 8) }); }   // glass skitters across the floor
     if (lands) dropAt(idx(end[0], end[1]), one);
     return true;
-  });
+  }, quick);
 }
-function fireAmmo(it){
+function fireAmmo(it, quick){
   const bow = player.eq.bow, K = ITEM[it.k], B = ITEM[bow.k];
   aim("Fire " + nameOf(it, 1) + ".", (tx, ty) => {
     const { path, m } = flight(tx, ty, 10 + B.mult * 5), one = { ...it, n: 1 }, BP = itemPowers(bow);
     takeOne(it); recalc();
     if (!path.length){ dropAt(idx(player.x, player.y), one); return true; }
-    shots.push({ path, t: 0, speed: 55, glyph: K.glyph, rgb: K.rgb });
+    shots.push({ path, t: 0, speed: 55, item: one });
     const delay = path.length / 55, end = path[path.length - 1];
     let lands = true;
     if (m){
@@ -689,7 +655,7 @@ function fireAmmo(it){
     }
     if (lands) dropAt(idx(end[0], end[1]), one);
     return true;
-  });
+  }, quick);
 }
 function fire(){
   const bow = player.eq.bow;
@@ -699,17 +665,7 @@ function fire(){
 }
 const books = () => new Set(player.inv.filter(it => ITEM[it.k].cat === "book").map(it => it.k));
 const realmWord = () => cls().realm === "holy" ? "prayer" : "spell";
-function castMenu(){
-  const C = cls();
-  if (!C.realm){ say("You know no spells or prayers."); return; }
-  const known = SPELLS.filter(S => player.spells.includes(S.id));
-  if (!known.length){ oldMsgs = []; msgs = []; say("You have not learned any " + realmWord() + "s yet." + (learnable(player, books()).length ? " Press S to study." : "")); return; }
-  const have = books();
-  openList((C.realm === "holy" ? "PRAY" : "CAST") + "   MANA " + player.mana + "/" + player.mmana, known.map(S => ({
-    label: S.name.padEnd(20) + String(S.mana).padStart(3) + " MP" + String(spellFail(S, player)).padStart(4) + "% fail" + (have.has(bookOf(S)) ? "" : "  (no book)"),
-    select: done(() => castSpell(S)) })), "A SPELL NEEDS ITS BOOK IN YOUR PACK");
-}
-function castSpell(S){
+function castSpell(S, quick){
   const holy = S.realm === "holy";
   if (!books().has(bookOf(S))){ say("You need the " + ITEM[bookOf(S)].name + " to " + (holy ? "pray " : "cast ") + S.name + "."); return false; }
   if (player.mana < S.mana){ say("You do not have enough mana to " + (holy ? "pray " : "cast ") + S.name + "."); return false; }
@@ -723,26 +679,27 @@ function castSpell(S){
     if (!player.cast.includes(S.id)){ player.cast.push(S.id); gainExp(spellLevel(S, cls()) * 2); }   // the first casting teaches you something
     return true;
   };
-  if (S.aim) aim((holy ? "Pray " : "Cast ") + S.name + ".", go);
+  if (S.aim) aim((holy ? "Pray " : "Cast ") + S.name + ".", go, quick);
   else act(() => go());
   return false;
 }
-// Studying: an arcane caster chooses the spell; a holy one is granted a prayer, as in Moria.
-function study(){
+// Studying: an arcane caster chooses the spell (S, or from a list); a holy one is granted a prayer, as in Moria.
+function study(S){
   const C = cls();
-  oldMsgs = []; msgs = [];
+  msgs = [];
   if (!C.realm){ say("You cannot learn magic."); return; }
   const can = learnable(player, books());
   if (!can.length){ say("You have nothing new to " + (C.realm === "holy" ? "pray for" : "learn") + " right now."); return; }
-  const learn = S => { player.spells.push(S.id); say((C.realm === "holy" ? "You have been granted the prayer of " : "You have learned the spell of ") + S.name + ": " + S.desc + "."); };
+  const learn = S => { player.spells.push(S.id); if (!player.ready) player.ready = S.id; say((C.realm === "holy" ? "You have been granted the prayer of " : "You have learned the spell of ") + S.name + ": " + S.desc + "."); };
   if (C.realm === "holy") return learn(rng.pick(can));
-  openList("STUDY WHICH SPELL?", can.map(S => ({ label: S.name.padEnd(20) + " " + S.desc.slice(0, 30), select: done(() => learn(S)) })));
+  if (S && can.includes(S)) return learn(S);
+  studyDialog(can);
 }
 
 /* ---------- a turn: the player acts, then everyone faster or as fast acts until it is the player's turn again ---------- */
 function act(fn){
   if (state !== "play") return false;
-  oldMsgs = msgs.length ? msgs : oldMsgs; msgs = [];
+  msgs = []; refreshUI();
   const r = fn();
   if (!r) return false;
   if (r === "level") return true;
@@ -763,8 +720,8 @@ function endTurn(){
   }
   if (state !== "play") return;
   if (rng.int(300) === 0) spawnMonster(true);   // the dungeon is never quite empty
-  centerCamera(false); updateSight();
-  for (const m of mons) if (m.K){ const v = seesMon(m); if (v && !m.seen) disturbed = true; m.seen = v; }
+  updateSight();
+  for (const m of mons) if (m.K){ const v = seesMon(m); if (v && !m.seen) disturbed = true; if (v) player.met.add(m.K.id); m.seen = v; }
 }
 let disturbed = false, pendingLevel = null;
 function everyTurn(){
@@ -805,11 +762,11 @@ function everyTurn(){
   }
 }
 function hurt(n, by){
-  player.hp -= n; disturbed = true;
+  player.hp -= n; disturbed = true; fxHit(player); fxFloat(player.x, player.y, "-" + n, [1, 0.35, 0.3]);
   if (player.hp <= 0){ killer = by; die(); }
 }
 function die(){
-  state = "dead"; stateT = 0; aiming = null;
+  state = "dead"; stateT = 0; aiming = null; refreshUI();
   const p = player, entry = { score: Math.floor(p.exp) + 100 * p.maxDepth, name: p.name, race: race().name, cls: cls().name, lvl: p.lvl, depth: feet(p.maxDepth), killer };
   tomb = { ...entry, best: scores.add(entry).rank === 0, at: depthName(depth) };
   say("You die.");
@@ -852,6 +809,7 @@ function step(m, x, y){
 }
 function monsterAttack(m){
   const K = m.K, name = seesMon(m) ? "The " + K.name : "It";
+  fxLunge(m, player); if (!liveTarget() && seesMon(m)) target = m;
   for (const [dice, verb, effect] of K.blows){
     if (state !== "play") return;
     if (player.t.protEvil && K.evil && rng.int(100) < 50 + player.lvl - K.depth){ say(name + " is repelled."); continue; }
@@ -903,18 +861,84 @@ function rest(){
   }
   resting = false;
 }
-function contextAction(){   // the touch A button: whatever makes sense here
-  const t = L.tiles[idx(player.x, player.y)];
-  if (t === T.DOWN || t === T.UP) return act(() => takeStairs(t === T.DOWN));
-  if (t === T.SHOP) return openShop(L.shopAt[idx(player.x, player.y)]);
+/* ---------- the four smart keys (A S D W) and their helpers ---------- */
+function attackKey(){   // A: swing at the target if it is next to you; otherwise shoot or throw at it
+  let m = liveTarget(); if (!m) m = target = nearestTarget();
+  if (!m){ msgs = []; say("There is nothing in sight to attack."); return; }
+  if (dist(m.x, m.y, player.x, player.y) <= 1) return act(() => attack(m));
+  const bow = player.eq.bow, ammo = bow && player.inv.find(it => ITEM[it.k].cat === "ammo" && ITEM[it.k].ammo === ITEM[bow.k].ammo);
+  if (ammo) return fireAmmo(ammo, true);
+  const dart = player.inv.find(it => ITEM[it.k].cat === "dart");
+  if (dart) return throwItem(dart, true);
+  msgs = []; say(cap(theName(m)) + " is out of reach. Walk closer, or carry a launcher and ammunition, or darts.");
+}
+const knownSpells = () => SPELLS.filter(S => (player.spells || []).includes(S.id));
+function readySpell(){ const k = knownSpells(); if (!k.length) return null; if (!k.some(S => S.id === player.ready)) player.ready = k[0].id; return SPELL[player.ready]; }
+function spellKey(){   // S: cast the readied spell
+  const S = readySpell();
+  if (!S){ msgs = []; say(cls().realm ? "You have not learned any " + realmWord() + "s yet. Open the Book (B) to study." : "You know no spells or prayers."); return; }
+  castSpell(S, true);
+}
+function nextSpell(d){ const k = knownSpells(); if (!k.length) return spellKey(); const S = readySpell(), n = k[(k.indexOf(S) + d + k.length) % k.length]; player.ready = n.id; msgs = []; say("Ready: " + n.name + " (" + n.mana + " mana)."); }
+// D: the healing potion that best fits your wounds, so a scratch does not use up the strongest one
+function bestPotion(){
+  const miss = player.mhp - player.hp, list = player.inv.filter(it => { const K = ITEM[it.k]; return K.cat === "potion" && kindKnown(K, player.know) && (K.effect === "heal" || K.effect === "healFull"); })
+    .map(it => ({ it, v: ITEM[it.k].effect === "healFull" ? 1e4 : avgDice(ITEM[it.k].dice) })).sort((a, b) => a.v - b.v);
+  return list.length ? (list.find(o => o.v >= miss * 0.7) || list[list.length - 1]).it : null;
+}
+function drinkKey(){
+  msgs = [];
+  if (player.hp >= player.mhp){ say("You are not hurt."); return; }
+  const it = bestPotion(); if (it) return act(() => useItem(it, "quaff"));
+  const S = knownSpells().filter(S => S.fx === "heal" && player.mana >= S.mana).pop();
+  if (S) return castSpell(S, true);
+  say("You have no healing potions you know of.");
+}
+function grabKey(){   // W: whatever there is to do here; nothing to do takes no turn
+  const i = idx(player.x, player.y), t = L.tiles[i];
   if (itemsAt(player.x, player.y).length) return act(pickUp);
-  act(() => true);   // otherwise wait a turn
+  if (t === T.DOWN || t === T.UP) return act(() => takeStairs(t === T.DOWN));
+  if (t === T.SHOP) return openShop(L.shopAt[i]);
+  msgs = []; say("There is nothing here.");
+}
+function eatKey(){
+  const food = player.inv.filter(it => ITEM[it.k].cat === "food").sort((a, b) => ITEM[a.k].cost - ITEM[b.k].cost)[0];
+  if (!food){ msgs = []; say("You have nothing to eat."); return; }
+  act(() => useItem(food, "eat"));
+}
+function fuelKey(){   // F: oil for a lantern, or a fresh torch for a burnt-down one
+  const lt = player.eq.light; msgs = [];
+  if (!lt) { const t = player.inv.filter(it => ITEM[it.k].cat === "light").sort((a, b) => (b.fuel || 0) - (a.fuel || 0))[0]; if (t) return act(() => wear(t)); say("You have no light."); return; }
+  if (lt.fuel === undefined){ say("Your light needs no fuel."); return; }
+  if (ITEM[lt.k].maxFuel){ const oil = player.inv.find(it => ITEM[it.k].cat === "flask"); if (oil) return act(() => useItem(oil, "fuel")); say("You have no oil for your lantern."); return; }
+  const fresh = player.inv.filter(it => it.k === lt.k && it.fuel > lt.fuel).sort((a, b) => b.fuel - a.fuel)[0];
+  if (fresh) return act(() => wear(fresh));
+  say("You have no fresher " + ITEM[lt.k].name.toLowerCase() + ".");
+}
+function cycleTarget(d){
+  const list = mons.filter(m => m.K && seesMon(m)).sort((a, b) => dist(a.x, a.y, player.x, player.y) - dist(b.x, b.y, player.x, player.y));
+  msgs = [];
+  if (!list.length){ target = null; say("There are no monsters in sight."); return; }
+  const i = list.indexOf(liveTarget());
+  target = list[i < 0 ? (d > 0 ? 0 : list.length - 1) : (i + d + list.length) % list.length];
+  say("Target: " + target.K.name + (target.sleep > 0 ? " (asleep)" : "") + ".");
+}
+function useHot(k){   // 1 to 0: a hotbar slot holds a kind of item, or a spell
+  const e = player.hot[k]; msgs = [];
+  if (!e){ say("Hotbar slot " + ((k + 1) % 10) + " is empty: put things there from the Pack or Book tabs."); return; }
+  if (e.spell) return castSpell(SPELL[e.spell], true);
+  const it = player.inv.find(o => o.k === e.k);
+  if (!it){ say("You have no " + ITEM[e.k].name.toLowerCase() + " left."); return; }
+  const how = verbsFor(it)[0][0];
+  if (how === "throw") return throwItem(it, true);
+  if (how === "fire") return fireAmmo(it, true);
+  act(() => useItem(it, how, true));
 }
 function look(){
-  const seen = mons.filter(m => m.K && seesMon(m));
-  oldMsgs = []; msgs = [];
+  const seen = mons.filter(m => m.K && seesMon(m)), tg = liveTarget();
+  msgs = [];
   if (!seen.length) say("You see no monsters.");
-  for (const m of seen.slice(0, 4)) say("You see a " + m.K.name + (byHeat(m) ? " (by its body heat)" : "") + (m.sleep > 0 ? " (asleep)" : "") + ". " + m.K.desc);
+  for (const m of tg ? [tg] : seen.slice(0, 4)) say("You see a " + m.K.name + (byHeat(m) ? " (by its body heat)" : "") + (m.sleep > 0 ? " (asleep)" : "") + ", " + healthWord(m) + ". " + m.K.desc);
 }
 
 /* ---------- a new character: race, class, stats and name ---------- */
@@ -922,7 +946,7 @@ let cr = null;
 function startCreate(){
   rng = new RNG((Date.now() ^ (Math.random() * 1e9)) >>> 0);
   cr = { step: 0, at: 0, race: 0, cls: 0, mode: "roll", base: rollStats(rng), buy: Object.fromEntries(STATS.map(k => [k, 8])), name: randomName(rng) };
-  state = "create"; aiming = null;
+  state = "create"; aiming = null; refreshUI();
 }
 const crBase = () => cr.mode === "roll" ? cr.base : cr.buy;
 const crPreview = () => { const p = { race: RACES[cr.race].id, cls: CLASSES[cr.cls].id, lvl: 1 }; p.stats = finalStats(crBase(), RACE[p.race], CLASS[p.cls]); return p; };
@@ -955,226 +979,43 @@ function begin(){
   if (C.bow) player.eq.bow = plainItem(C.bow);
   recalc();
   player.mhp = player.hp = firstHp(player); player.mmana = player.mana = maxMana(player);
-  log = []; msgs = []; oldMsgs = []; killer = ""; tomb = null; cr = null;
+  player.hot = Array(10).fill(null); player.met = new Set(); player.slain = {}; player.ready = null;
+  log = []; msgs = []; killer = ""; tomb = null; cr = null;
   state = "play"; stateT = 0;
   shops = newShops(rng, player.know); lastTown = 0; depth = 0;
   newLevel(0);
 }
-function statLine(s, k){ const m = statMod(s[k]); return k.toUpperCase() + " " + String(s[k]).padStart(2) + " (" + (m >= 0 ? "+" : "") + m + ")"; }
-function drawCreate(){
-  const steps = ["Choose a people", "Choose a calling", "Your strengths", "Your name"], rows = crRows(), x0 = 2, x1 = 24, wR = GW - x1 - 1;
-  text(x0, 1, "NEW CHARACTER", ACCENT); text(x0 + 15, 1, "step " + (cr.step + 1) + " of 4: " + steps[cr.step], DIM);
-  rows.forEach((r, i) => {
-    const sel = i === cr.at, v = cr.step === 2 && cr.mode === "buy" && i < 6 ? " < " + cr.buy[STATS[i]] + " >" : "";
-    text(x0, 4 + i, (sel ? "> " : "  ") + r.label + v, sel ? ACCENT : WHITE);
-  });
-  let y = 4;
-  const para = (s, rgb = WHITE) => { for (const ln of wrap(s, wR)) text(x1, y++, ln, rgb); };
-  const p = crPreview(), R = RACE[p.race], C = CLASS[p.cls], mods = o => STATS.filter(k => o[k]).map(k => k.toUpperCase() + " " + (o[k] > 0 ? "+" : "") + o[k]).join("  ") || "no changes";
-  if (cr.step === 0){
-    const H = RACES[cr.at];
-    text(x1, y++, H.name, ACCENT); y++; para(H.desc); y++;
-    para("Stats: " + mods(H.stats), DIM); para("Infravision: " + (H.infra ? H.infra * 10 + " ft" : "none"), DIM);
-    para("Hit die " + H.hd + "   Experience +" + H.xp + "%", DIM);
-    const sk = Object.entries(H.skills).filter(([k]) => k !== "stealth").map(([k, v]) => SKILL_NAMES[k] + " " + (v > 0 ? "+" : "") + v);
-    if (H.skills.stealth) sk.push("Stealth " + (H.skills.stealth > 0 ? "+" : "") + H.skills.stealth);
-    if (sk.length) para("Skills: " + sk.join(", "), DIM);
-  } else if (cr.step === 1){
-    const K = CLASSES[cr.at];
-    text(x1, y++, K.name, ACCENT); y++; para(K.desc); y++;
-    para("Stats: " + mods(K.stats), DIM); para("Hit die " + K.hd + "   Experience +" + K.xp + "%", DIM);
-    const fs = firstSpell(K); para(fs ? (K.realm === "holy" ? "Holy prayers" : "Arcane spells") + (spellLevel(fs, K) > 1 ? " from level " + spellLevel(fs, K) : "") + ", starting with " + fs.name + ": " + fs.desc + "." : "No magic.", DIM);
-    para("Titles: " + K.titles.slice(0, 3).join(", ") + " ...", DIM);
-  } else {
-    text(x1, y++, cr.name + ", " + R.name + " " + C.name, ACCENT); y++;
-    for (let i = 0; i < 6; i += 2) text(x1, y++, statLine(p.stats, STATS[i]).padEnd(14) + statLine(p.stats, STATS[i + 1]), WHITE);
-    y++;
-    text(x1, y++, "Hit points " + firstHp(p) + (C.realm ? "   Mana " + maxMana(p) : ""), WHITE);
-    for (const k of SKILLS){ const v = skillOf(p, k); text(x1, y++, SKILL_NAMES[k].padEnd(15) + (k === "stealth" ? stealthWord(v) : skillWord(v)), DIM); }
-    if (cr.step === 2 && cr.mode === "buy") { y++; text(x1, y++, "Points left: " + (BUY_POINTS - buySpent(cr.buy)) + " of " + BUY_POINTS, ACCENT); }
-    if (cr.step === 3){ y++; para(pad.touch ? "A begins; B goes back." : "Type to change the name. Enter begins; Esc goes back.", DIM); }
-  }
-  const hint = pad.touch ? "D-PAD CHOOSE   A SELECT   B BACK" : "ARROWS CHOOSE   ENTER SELECT   ESC BACK";
-  text(x0, GH - 1, hint, DIM);
+/* ---------- the title scene: the first level's biggest room, dimly lit, behind the title ---------- */
+function titleScene(){
+  rng = new RNG(4242); player = { x: 0, y: 0, eq: { light: { k: "torch", fuel: 4000 } }, lvl: 1 }; depth = 1; L = generateLevel(rng, 1); mons = []; floor = []; roomLight.fill(0);
+  const r = L.rooms.reduce((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) > (a.x1 - a.x0) * (a.y1 - a.y0) ? b : a); player.x = r.cx; player.y = r.cy; snapView();
+  for (let i = 0; i < MW * MH; i++) if (L.room[i] === r.id){ roomLight[3 * i] = ROOM_RGB[0] * 0.6; roomLight[3 * i + 1] = ROOM_RGB[1] * 0.6; roomLight[3 * i + 2] = ROOM_RGB[2] * 0.6; }
 }
 
-/* ---------- drawing ---------- */
-const { put, text, center } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
-function drawMap(t){
-  computeLight(lightNow, t);
-  for (let r = 0; r < VH; r++) for (let c = 0; c < GW; c++){
-    const x = cam.x + c, y = cam.y + r; if (x < 0 || y < 0 || x >= MW || y >= MH) continue;
-    const i = idx(x, y), tile = L.tiles[i], j = 3 * i;
-    let [g, base] = TILE[tile];
-    if (tile === T.SHOP){ g = String(L.shopAt[i] + 1); base = SHOPS[L.shopAt[i]].rgb; }   // shop entrances show their number
-    else if (tile === T.GROUND && (x * 7 + y * 13) % 9 === 0) g = ",";                      // a little grass among the dirt
-    // drawn lit: what the turn saw, plus anything in sight that a flying spell or flash lights up right now
-    if (visible(i) || ((inFov[i] === turnNo || depth === 0) && lum(lightNow, j) > 0.03)){   // the town: every lit street and roof shows
-      const k = 1.7;
-      put(c, VY + r, [base[0] * lightNow[j] * k, base[1] * lightNow[j + 1] * k, base[2] * lightNow[j + 2] * k], 1, 1, g.charCodeAt(0));
-    } else if (mem[i]) put(c, VY + r, [base[0] * MEM_RGB[0] * 2, base[1] * MEM_RGB[1] * 2, base[2] * MEM_RGB[2] * 2], 1, 1, g.charCodeAt(0));   // remembered: dim and blue
-  }
-  const shade = i => Math.max(0.55, Math.min(1.3, 0.45 + lum(lightNow, 3 * i) * 1.2));
-  for (const f of floor){ const i = idx(f.x, f.y), v = visible(i); if (!v && !f.seen) continue;   // items seen before stay on the map, dim
-    const gold = f.it.k === "gold", g = gold ? "$" : ITEM[f.it.k].glyph, rgb = gold ? [1.4, 1.15, 0.3] : itemRgb(f.it, player.know);
-    put(f.x - cam.x, VY + f.y - cam.y, rgb, v ? shade(i) : 0.3, TEXT_LAYER, g.charCodeAt(0)); }
-  for (const m of mons){ if (!m.K || !sensed(m)) continue; const i = idx(m.x, m.y), heat = byHeat(m), seen = seesMon(m);
-    // seen only by infravision: a dull red shape; found only by detection: dim
-    put(m.x - cam.x, VY + m.y - cam.y, heat ? [1.2, 0.3, 0.25] : m.K.rgb, !seen ? 0.45 : heat ? 0.9 : m.K.glow ? 1.4 : shade(i) * 1.15, TEXT_LAYER, m.K.glyph.charCodeAt(0)); }
-  if (state === "play") put(player.x - cam.x, VY + player.y - cam.y, [1.7, 1.55, 1.2], 1, TEXT_LAYER, 64);
-  for (const s of shots){ const c = s.path[Math.min(s.path.length - 1, Math.floor(s.t * s.speed))]; put(c[0] - cam.x, VY + c[1] - cam.y, s.rgb, 1.2, TEXT_LAYER, s.glyph.charCodeAt(0)); }
-  lamp.x = (player.x - cam.x + 0.5) * screen.cw; lamp.y = (player.y - cam.y + VY + 0.5) * screen.ch; lamp.z = screen.ch * 3;
-  for (const b of world.bodies) screen.sphere(b, lamp, { stripe: false });
-}
-function wrap(s, w){ const out = []; let line = ""; for (const word of s.split(" ")){ if ((line + " " + word).trim().length > w){ out.push(line); line = word; } else line = (line + " " + word).trim(); } if (line) out.push(line); return out; }
-function drawUI(){
-  // messages: this turn's in white; if nothing happened, the last turn's in grey. Long turns keep the newest lines.
-  const fresh = msgs.length > 0, lines = wrap((fresh ? msgs : oldMsgs).join("  "), GW - 1);
-  lines.slice(-2).forEach((s, k) => text(0, k, s, fresh ? WHITE : DIM));
-  const p = player, low = p.hp < p.mhp * 0.3, lt = p.eq.light;
-  const food = p.food < 0 ? "Starving" : p.food < 1000 ? "Weak" : p.food < 2000 ? "Hungry" : "";
-  let x = 0;
-  const seg = (s, rgb) => { text(x, GH - 2, s, rgb); x += s.length + 2; };
-  if (GW >= 96) seg(p.name + " the " + titleOf(p), WHITE);
-  seg("LV " + p.lvl, WHITE); seg("EXP " + Math.floor(p.exp) + "/" + expNeeded(p, p.lvl + 1), WHITE);
-  seg("HP " + Math.max(0, p.hp) + "/" + p.mhp, low ? RED : GREEN);
-  if (p.mmana) seg("MP " + p.mana + "/" + p.mmana, BLUE);
-  seg("AC " + armour(), WHITE); seg(depth ? feet(depth) + " ft" : "Town, " + (isDay() ? "day" : "night"), WHITE);
-  x = 0;
-  const seg2 = (s, rgb) => { text(x, GH - 1, s, rgb); x += s.length + 2; };
-  seg2(lt ? ITEM[lt.k].name + " " + lt.fuel : "No light", lt && lt.fuel > 500 ? ACCENT : RED);
-  if (food) seg2(food, RED);
-  seg2("Gold " + p.gold, DIM);
-  const T0 = p.t, st = [[T0.fast, "Fast", GREEN], [T0.hero, "Hero", GREEN], [T0.berserk, "Berserk", GREEN], [T0.bless, "Blessed", GREEN],
-    [T0.poison, "Poisoned", RED], [T0.confused, "Confused", RED], [T0.blind, "Blind", RED], [T0.asleep, "Asleep", RED], [p.bonus.burden, "Burdened", RED]];
-  for (const [on, label, rgb] of st) if (on && x + label.length < GW - 24) seg2(label, rgb);
-  const hint = pad.touch ? "B COMMANDS  START MENU" : "? HELP  ESC MENU";
-  if (x + hint.length <= GW) text(GW - hint.length, GH - 1, hint, DIM);
-}
-function drawTitle(t){
-  // a lit chamber behind the title: the first level, shown by a flickering torch
-  if (!L){ rng = new RNG(4242); player = { x: 0, y: 0, eq: { light: { k: "torch", fuel: 4000 } }, lvl: 1 }; L = generateLevel(rng, 1); mons = []; floor = []; roomLight.fill(0);
-    const r = L.rooms.reduce((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) > (a.x1 - a.x0) * (a.y1 - a.y0) ? b : a); player.x = r.cx; player.y = r.cy; centerCamera(true);
-    for (let i = 0; i < MW * MH; i++) if (L.room[i] === r.id){ roomLight[3 * i] = ROOM_RGB[0] * 0.6; roomLight[3 * i + 1] = ROOM_RGB[1] * 0.6; roomLight[3 * i + 2] = ROOM_RGB[2] * 0.6; } }   // the biggest room, dimly lit
-  computeLight(lightNow, t);
-  for (let r = 0; r < VH; r++) for (let c = 0; c < GW; c++){
-    const x = cam.x + c, y = cam.y + r; if (x < 0 || y < 0 || x >= MW || y >= MH) continue;
-    const i = idx(x, y), j = 3 * i, v = lum(lightNow, j); if (v < 0.02) continue;
-    const [g, base] = TILE[L.tiles[i]];
-    put(c, VY + r, [base[0] * lightNow[j] * 1.7, base[1] * lightNow[j + 1] * 1.7, base[2] * lightNow[j + 2] * 1.7], 1, 1, g.charCodeAt(0));
-  }
-  const top = Math.max(1, (GH >> 1) - 9);
-  center(top, "T O R C H L I G H T", ACCENT); center(top + 1, "D U N G E O N S", ACCENT);
-  center(top + 3, "A dungeon crawl after Moria", DIM);
-  const blink = (performance.now() / 500 | 0) % 2;
-  center(top + 5, pad.touch ? "PRESS A OR START TO BEGIN" : "PRESS SPACE TO BEGIN", blink ? WHITE : DIM);
-  center(top + 6, "Early version: no saves yet.", DIM);
-  if (scores.list.length){
-    center(top + 9, "HALL OF FAME", ACCENT);
-    scores.list.forEach((s, k) => center(top + 10 + k, `${String(s.score).padStart(6)}  ${s.name || ""} ${s.race || ""} ${s.cls || "Fighter"}  LV ${s.lvl}  ${s.depth} ft  ${s.killer}`.replace(/  +/g, "  ").slice(0, GW - 2), k ? DIM : WHITE));
-  }
-}
-function drawTomb(){
-  const T0 = tomb, lines = ["R.I.P.", "", T0.name, "the " + T0.race + " " + T0.cls, "of level " + T0.lvl, "killed by " + T0.killer, (T0.at === "the town" ? "in the town" : "at " + T0.at), "", "Score " + T0.score + (T0.best ? "  (best!)" : ""), "",
-    pad.touch ? "Press A for the title" : "Press Space for the title"];
-  const w = 34, top = Math.max(2, (GH >> 1) - 8), x0 = (GW - w) >> 1;
-  for (let r = 0; r < lines.length + 4; r++) text(x0, top + r, r === 0 || r === lines.length + 3 ? "+" + "-".repeat(w - 2) + "+" : "|" + " ".repeat(w - 2) + "|", DIM);
-  lines.forEach((s, k) => text(x0 + ((w - s.length) >> 1), top + 2 + k, s, k === 0 ? ACCENT : WHITE));
-}
-function draw(t){
-  screen.clear();
-  if (state === "title") drawTitle(t);
-  else if (state === "create") drawCreate();
-  else { drawMap(t); drawUI(); if (state === "dead" && stateT > 1) drawTomb(); }
-  const mt = (m, title, note) => { if (m.open) m.draw(screen, { accent: ACCENT, normal: WHITE, dim: DIM, title, note }); };
-  mt(list, listTitle, listNote); mt(menu, state === "title" ? "MENU" : "PAUSED", "THIS EARLY VERSION DOES NOT SAVE");
-  screen.render(ctx);
-}
-
-/* ---------- lists: commands, inventory, character sheet, help ---------- */
-let listRows = [], listTitle = "", listNote = "";
-const list = createMenu(() => listRows);
-function openList(title, rows, note = ""){ listTitle = title; listRows = rows; listNote = note; list.at = 0; if (!list.open) list.show(); }
-const info = s => ({ label: s, select: () => {} });
-const done = fn => () => { list.hide(); fn(); };
-/* ---------- shops: buy, sell, and selling tells you what a thing was ---------- */
+/* ---------- shops: buying, and selling, which tells you what a thing was (the screens are in ui.js) ---------- */
 const shopName = it => itemName(it, { ...player.know, known: SHOP_KNOWS.known });
-const shopCol = () => Math.max(24, Math.min(40, GW - 26));   // the name column, narrower on a phone
-const shopTitle = i => SHOPS[i].name.toUpperCase() + "   GOLD " + player.gold;
-function openShop(i){
-  const S = SHOPS[i]; oldMsgs = []; msgs = [];
-  say("You enter the " + S.name + ". " + S.keeper + ": \"" + rng.pick(S.hello) + "\"");
-  shopMain(i);
-}
-function shopMain(i){
-  openList(shopTitle(i), [{ label: "Buy", select: () => shopBuy(i) }, { label: "Sell", select: () => shopSell(i) }, { label: "Leave", select: () => list.hide() }], SHOPS[i].keeper.toUpperCase());
-}
-function shopBuy(i, at = 0){
-  const S = SHOPS[i], stock = shops[i].stock;
-  const rows = stock.map(it => ({ label: cap(shopName(it)).padEnd(shopCol()) + String(buyPrice(it, S, player.stats.cha)).padStart(6) + " gold", select: () => buy(i, it) }));
-  rows.push({ label: "Back", select: () => shopMain(i) });
-  openList(shopTitle(i), rows, "PRICES ARE FOR ONE"); list.at = Math.min(at, rows.length - 1);
-}
 function buy(i, it){
-  const S = SHOPS[i], price = buyPrice(it, S, player.stats.cha), at = list.at;
-  oldMsgs = []; msgs = [];
-  if (player.gold < price) say(S.keeper + ": \"Come back when you can afford it.\"");
-  else {
-    const one = { ...it, n: 1 }, got = carry(one);
-    if (!got) say("You have no room in your pack.");
-    else {
-      player.gold -= price; player.know.known[it.k] = true;
-      if (--it.n <= 0) shops[i].stock.splice(shops[i].stock.indexOf(it), 1);
-      say("You buy " + nameOf(one) + " for " + price + " gold."); recalc();
-    }
-  }
-  shopBuy(i, at);
-}
-function shopSell(i, at = 0){
-  const S = SHOPS[i];
-  const rows = player.inv.map((it, k) => ({ label: (String.fromCharCode(97 + k) + ") " + nameOf(it)).padEnd(shopCol()) + (shopBuys(S, it) ? (it.id && kindKnown(ITEM[it.k], player.know) ? String(sellPrice(it, S, player.stats.cha)).padStart(6) + " gold" : "     ? gold") : "     -"), select: () => sell(i, it) }));
-  if (!rows.length) rows.push(info("You have nothing to sell."));
-  rows.push({ label: "Back", select: () => shopMain(i) });
-  openList(shopTitle(i), rows, "SELLING ONE ALSO TELLS YOU WHAT IT IS"); list.at = Math.min(at, rows.length - 1);
+  const S = SHOPS[i], price = buyPrice(it, S, player.stats.cha);
+  msgs = [];
+  if (player.gold < price) return say(S.keeper + ": \"Come back when you can afford it.\"");
+  const one = { ...it, n: 1 }, got = carry(one);
+  if (!got) return say("You have no room in your pack.");
+  player.gold -= price; player.know.known[it.k] = true;
+  if (--it.n <= 0) shops[i].stock.splice(shops[i].stock.indexOf(it), 1);
+  say("You buy " + nameOf(one) + " for " + price + " gold."); recalc();
 }
 function sell(i, it){
-  const S = SHOPS[i], at = list.at;
-  oldMsgs = []; msgs = [];
-  if (!shopBuys(S, it)){ say(S.keeper + ": \"I don't deal in those.\""); return shopSell(i, at); }
+  const S = SHOPS[i];
+  msgs = [];
+  if (!shopBuys(S, it)) return say(S.keeper + ": \"I don't deal in those.\"");
   const knew = it.id && kindKnown(ITEM[it.k], player.know);
   it.id = true; delete it.sense; player.know.known[it.k] = true;   // the keeper looks it over and tells you
   if (!knew) say("The keeper looks it over: it is " + nameOf(it, 1) + ".");
   const price = sellPrice(it, S, player.stats.cha);
-  if (price <= 0){ say(S.keeper + ": \"That's worth nothing to me.\""); return shopSell(i, at); }
+  if (price <= 0) return say(S.keeper + ": \"That's worth nothing to me.\"");
   const one = { ...it, n: 1 }; takeOne(it); player.gold += price;
   const same = shops[i].stock.find(o => sameItem(o, one)); if (same) same.n++; else shops[i].stock.push(one);
   say("You sell " + nameOf(one) + " for " + price + " gold."); recalc();
-  shopSell(i, at);
-}
-function commandList(){
-  openList("COMMANDS", [
-    { label: "Inventory", select: () => inventoryList() },
-    { label: "Pick up", select: done(() => act(pickUp)) },
-    { label: "Take the stairs", select: done(() => { const t = L.tiles[idx(player.x, player.y)]; act(() => takeStairs(t !== T.UP)); }) },
-    { label: "Equipment", select: () => equipmentList() },
-    ...(cls().realm ? [{ label: cls().realm === "holy" ? "Pray" : "Cast a spell", select: () => castMenu() }, { label: "Study", select: done(study) }] : []),
-    { label: "Drink a potion", select: () => useWhich("quaff") }, { label: "Read a scroll", select: () => useWhich("read") },
-    { label: "Use a wand, staff or rod", select: () => chooseItem("USE WHICH?", it => ["wand", "staff", "rod"].includes(ITEM[it.k].cat), it => act(() => useItem(it, "use")), "You have no magic devices.") },
-    ...(player.eq.bow ? [{ label: "Fire", select: () => fire() }] : []),
-    { label: "Throw", select: () => useWhich("throw") },
-    { label: "Rest until healed", select: done(rest) },
-    { label: "Wait a turn", select: done(() => act(() => true)) },
-    { label: "Look around", select: done(look) },
-    { label: "Character", select: () => characterList() },
-    { label: "Messages", select: () => messageList() },
-    { label: "Help", select: () => helpList() }
-  ]);
-}
-function chooseItem(title, filter, fn, none = "You have nothing suitable."){
-  const rows = player.inv.map((it, k) => [it, k]).filter(([it]) => filter(it)).map(([it, k]) => ({ label: String.fromCharCode(97 + k) + ") " + nameOf(it), select: () => { list.hide(); fn(it); } }));
-  for (const sl of SLOTS){ const it = player.eq[sl]; if (it && filter(it)) rows.push({ label: SLOT_NAMES[sl].slice(0, 6).padEnd(7) + nameOf(it), select: () => { list.hide(); fn(it); } }); }
-  if (!rows.length){ oldMsgs = []; msgs = []; say(none); return; }
-  openList(title, rows);
 }
 const VERB_FILTER = { eat: it => ITEM[it.k].cat === "food" || ITEM[it.k].cat === "mushroom", quaff: it => ITEM[it.k].cat === "potion", read: it => ITEM[it.k].cat === "scroll",
   fuel: it => ITEM[it.k].cat === "flask", wield: it => !!ITEM[it.k].slot && player.inv.includes(it), drop: it => player.inv.includes(it),
@@ -1182,18 +1023,8 @@ const VERB_FILTER = { eat: it => ITEM[it.k].cat === "food" || ITEM[it.k].cat ===
 function useWhich(verb){   // the item lists behind single keys: q drink, r read, a aim and so on
   const how = verb === "wand" || verb === "staff" || verb === "rod" ? "use" : verb;
   chooseItem({ eat: "EAT", quaff: "DRINK", read: "READ", fuel: "FILL LANTERN WITH", wield: "WEAR OR WIELD", drop: "DROP", wand: "AIM", staff: "USE", rod: "ZAP", throw: "THROW", inspect: "INSPECT" }[verb] + " WHICH?",
-    VERB_FILTER[verb], it => verb === "throw" ? throwItem(it) : verb === "inspect" ? inspect(it) : act(() => useItem(it, how)),
+    VERB_FILTER[verb], it => verb === "throw" ? throwItem(it) : verb === "inspect" ? itemDialog(it) : act(() => useItem(it, how)),
     { wand: "You have no wands.", staff: "You have no staffs.", rod: "You have no rods.", read: "You have no scrolls.", quaff: "You have no potions.", eat: "You have nothing to eat." }[verb]);
-}
-function inventoryList(){
-  const rows = player.inv.map((it, k) => ({ label: String.fromCharCode(97 + k) + ") " + nameOf(it), select: () => itemActions(it) }));
-  if (!rows.length) rows.push(info("You are carrying nothing."));
-  openList("PACK " + player.inv.length + "/22  " + Math.round(totalWeight()) + "/" + capacity() + " LB", rows);
-}
-function equipmentList(){
-  openList("EQUIPMENT", SLOTS.map(sl => { const it = player.eq[sl];
-    return { label: SLOT_NAMES[sl].slice(0, 6).padEnd(7) + (it ? nameOf(it) : "-"), select: () => it ? openList(nameOf(it).toUpperCase().slice(0, 34), [
-      { label: "Take off", select: done(() => act(() => takeOff(sl))) }, { label: "Inspect", select: () => inspect(it) }, { label: "Back", select: equipmentList }]) : null }; }));
 }
 function verbsFor(it){
   const K = ITEM[it.k], v = [];
@@ -1207,10 +1038,6 @@ function verbsFor(it){
   v.push(["throw", "Throw"], ["inspect", "Inspect"], ["drop", "Drop"]);
   return v;
 }
-function itemActions(it){
-  openList(nameOf(it).toUpperCase().slice(0, 34), [...verbsFor(it).map(([how, label]) => ({ label, select: how === "inspect" ? () => inspect(it) : done(() =>
-    how === "throw" ? throwItem(it) : how === "fire" ? fireAmmo(it) : act(() => useItem(it, how))) })), { label: "Back", select: () => inventoryList() }]);
-}
 const EFFECT_TEXT = { heal: "heals wounds", healFull: "heals you completely", mana: "restores mana", fast: "makes you faster for a while", hero: "makes you heroic",
   berserk: "puts you in a fighting rage", resFire: "protects you from heat", resCold: "protects you from cold", infra: "lets you see heat further",
   cure: "cures poison, confusion and blindness", curePoison: "cures poison", sleep: "puts you to sleep", poison: "poisons you", confuse: "confuses you", blind: "blinds you",
@@ -1223,115 +1050,84 @@ const EFFECT_TEXT = { heal: "heals wounds", healFull: "heals you completely", ma
   curseArmour: "curses your armour", summonUndead: "calls the undead", summon: "calls monsters", bolt: "fires a bolt", beam: "fires a beam that goes through monsters",
   ball: "fires an exploding ball", sleepMon: "puts a monster to sleep", slowMon: "slows a monster", confMon: "confuses a monster", scareMon: "frightens a monster",
   sleepAll: "puts the monsters you see to sleep", slowAll: "slows the monsters you see", beamLight: "lights a line through the dark", stoneMud: "turns a wall to mud" };
-function inspect(it){
-  const K = ITEM[it.k], known = kindKnown(K, player.know), lines = [], P = itemPowers(it), A = it.art ? ARTIFACT[it.art] : null;
-  lines.push(...wrap(cap(nameOf(it)), 34));
-  lines.push("Weighs " + (Math.round(itemWeight(it) * 10) / 10) + " lb.");
-  if (K.dice && K.cat !== "ammo") lines.push("Hits for " + K.dice + (K.cat === "dart" ? " when thrown." : "."));
-  if (K.mult) lines.push("Multiplies damage by " + K.mult + ".");
-  if (K.radius) lines.push("Lights a radius of " + ((A && A.radius) || K.radius) + ".");
-  if (K.effect) lines.push(...wrap(known ? "It " + EFFECT_TEXT[K.effect] + "." : "You do not know what it does.", 34));
-  if (K.cat === "rod" && known) lines.push("Recharges in " + K.recharge + " turns.");
-  if (it.id || A){
-    if (P.brand) lines.push("It " + { fire: "burns", cold: "freezes", elec: "shocks" }[P.brand] + " your foes.");
-    if (P.slay) lines.push("It is deadly against " + { animal: "animals", undead: "the undead", evil: "evil" }[P.slay] + ".");
-    if (P.res.length) lines.push(...wrap("It protects you from " + [...new Set(P.res)].join(", ") + ".", 34));
-    for (const [k, v] of Object.entries(P.stats)) lines.push((v > 0 ? "+" : "") + v + " " + STAT_NAMES[k] + ".");
-    if (P.speed) lines.push((P.speed > 0 ? "+" : "") + P.speed + " speed.");
-    if (P.stealth) lines.push("+" + P.stealth + " stealth.");
-    if (P.freeAct) lines.push("It keeps you from being put to sleep.");
-    if (P.regen) lines.push("It speeds your healing.");
-    if (P.slowDigest) lines.push("You need less food.");
-    if (it.cursed) lines.push("It is cursed.");
-  } else if (K.dice || K.ac !== undefined || K.mult) lines.push(it.sense ? "You feel it is " + it.sense + "." : "Its quality is unknown.");
-  if (A) lines.push(...wrap(A.desc, 34));
-  openList("INSPECT", lines.map(info));
-}
-function characterList(){
-  const p = player, R = race(), C = cls(), s = p.stats, b = p.bonus;
-  openList("CHARACTER", [
-    info(p.name + ", " + R.name + " " + C.name), info("Title: " + titleOf(p)),
-    info("Level " + p.lvl + "   Exp " + Math.floor(p.exp) + " / " + expNeeded(p, p.lvl + 1)),
-    info("HP " + p.hp + "/" + p.mhp + (p.mmana ? "  MP " + p.mana + "/" + p.mmana : "") + "  AC " + armour()),
-    info(statLine(s, "str").padEnd(15) + statLine(s, "int")), info(statLine(s, "wis").padEnd(15) + statLine(s, "dex")), info(statLine(s, "con").padEnd(15) + statLine(s, "cha")),
-    info("To-hit " + (b.hit >= 0 ? "+" : "") + b.hit + "  To-dam " + (b.dam >= 0 ? "+" : "") + b.dam + "  Speed " + (p.speed >= 0 ? "+" : "") + p.speed),
-    info("Carrying " + Math.round(totalWeight()) + " of " + capacity() + " lb"),
-    ...(b.res.size ? [info("Resists " + [...b.res].join(", "))] : []),
-    ...SKILLS.map(k => { const v = skillOf(p, k) + (k === "stealth" ? b.stealth : k === "search" ? b.search : 0); return info(SKILL_NAMES[k].padEnd(15) + (k === "stealth" ? stealthWord(v) : skillWord(v))); }),
-    info("Infravision".padEnd(15) + (infra() ? infra() * 10 + " ft" : "none")), info("Hit die".padEnd(15) + "d" + hitDie(p)),
-    info("Exp penalty".padEnd(15) + "+" + (R.xp + C.xp) + "%"),
-    ...(C.realm ? [info((C.realm === "holy" ? "Prayers" : "Spells").padEnd(15) + p.spells.length + " of " + SPELLS.filter(S => S.realm === C.realm && spellLevel(S, C) <= 40).length)] : []),
-    info("Weapon " + weaponDice() + "   Gold " + p.gold), info("Deepest " + feet(p.maxDepth) + " ft   Kills " + p.kills), info("Turns " + p.turns)
-  ]);
-}
-function messageList(){ openList("MESSAGES", log.length ? log.slice(-60).reverse().flatMap(s => wrap(s, 34).map(info)) : [info("No messages yet.")], "NEWEST FIRST"); }
-function helpList(){
-  const ro = keySet === "roguelike";
-  openList("HELP", [
-    info(ro ? "hjklyubn  move (Shift runs)" : "Arrows/numpad  move"), info(ro ? "arrows also move" : "Shift + move  run"),
-    info("Walk into a monster to attack"), info("Walk into a door to open it"), info("In town, walk onto a number to shop"),
-    info("g or ,  pick up"), info("i  pack   e  equipment"), info("w  wear   " + (ro ? "T" : "t") + "  take off   d  drop"),
-    info("E  eat   q  drink   r  read"), info("a  aim a wand   " + (ro ? "Z" : "u") + "  use a staff"), info("z  zap a rod   F  fill lantern"),
-    info("f  fire   v  throw   I  inspect"), info("m or p  cast or pray   S  study"), info("  then a direction, or ' / t"), info("  for the nearest monster"),
-    info(">  <  take the stairs"), info("R  rest   " + (ro ? "." : ". or 5") + "  wait"), info((ro ? "x" : "l") + "  look   C  character"),
-    info("Ctrl+P  messages"), info("Esc  menu"),
-    info("Touch: D-pad moves (8 ways),"), info("A acts here, B commands")
-  ], "KEYS CAN BE CHANGED IN THE MENU");
-}
-const menu = createMenu(() => [
-  { label: "RESUME", select: () => menu.hide() },
-  { label: state === "play" ? "NEW CHARACTER" : "START", select: () => { menu.hide(); startCreate(); } },
-  { label: "KEYS", value: () => keySet === "roguelike" ? "ROGUELIKE" : "ORIGINAL", change: () => { keySet = keySet === "roguelike" ? "original" : "roguelike"; store.setJSON("keys", keySet); } },
-  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
-  { label: "HELP", select: () => { menu.hide(); helpList(); } },
-  { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
-  { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
-]);
-
-/* ---------- input ---------- */
-const ORIGINAL = { ArrowUp: 8, ArrowDown: 2, ArrowLeft: 4, ArrowRight: 6, Home: 7, PageUp: 9, End: 1, PageDown: 3, 1: 1, 2: 2, 3: 3, 4: 4, 6: 6, 7: 7, 8: 8, 9: 9 };
-const ROGUE = { ArrowUp: 8, ArrowDown: 2, ArrowLeft: 4, ArrowRight: 6, h: 4, j: 2, k: 8, l: 6, y: 7, u: 9, b: 1, n: 3 };
-function dirFor(e){
+/* ---------- input: keyboard only ---------- */
+// Modern keys: the arrows move (two together go diagonally) and the left hand's A S D W do the common things.
+// Classic keys: Moria's letters, with the original or the roguelike movement keys.
+const ORIGINAL = { Home: 7, PageUp: 9, End: 1, PageDown: 3, 1: 1, 2: 2, 3: 3, 4: 4, 6: 6, 7: 7, 8: 8, 9: 9 };
+const ROGUE = { h: 4, j: 2, k: 8, l: 6, y: 7, u: 9, b: 1, n: 3 };
+const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+function dirFor(e){   // the keys that move at once: the numpad, Home/End/PgUp/PgDn, and the classic sets' letters
   const code = /^Numpad([1-9])$/.exec(e.code);
   if (code && code[1] !== "5") return +code[1];
-  const map = keySet === "roguelike" ? ROGUE : ORIGINAL;
-  return map[e.key] || map[e.key.toLowerCase()] || 0;
+  if (e.key in { Home: 1, PageUp: 1, End: 1, PageDown: 1 }) return ORIGINAL[e.key];
+  if (keySet === "roguelike") return ROGUE[e.key.toLowerCase()] || 0;
+  if (keySet === "original" && /^[1-9]$/.test(e.key) && e.key !== "5") return +e.key;
+  return 0;
 }
+// Arrows wait ~60 ms for a second arrow, so pressing two together moves diagonally; a held key repeats at once.
+const held = new Set(); let chord = null;
+addEventListener("keyup", e => held.delete(e.key));
+addEventListener("blur", () => held.clear());
+function arrow(e){
+  held.add(e.key);
+  if (e.repeat){ let dx = 0, dy = 0; for (const k of held) if (ARROWS[k]){ dx += ARROWS[k][0]; dy += ARROWS[k][1]; } return goDir(Math.sign(dx), Math.sign(dy), e.shiftKey); }
+  if (chord){ chord.keys.add(e.key); return; }
+  chord = { keys: new Set([e.key]), shift: e.shiftKey };
+  setTimeout(() => { const c = chord; chord = null; let dx = 0, dy = 0; for (const k of c.keys){ dx += ARROWS[k][0]; dy += ARROWS[k][1]; } goDir(Math.sign(dx), Math.sign(dy), c.shift); }, 60);
+}
+function goDir(dx, dy, shift){
+  if ((!dx && !dy) || state !== "play" || dlg) return;
+  if (aiming) return aimAt(dx, dy);
+  if (shift) return run(dx, dy);
+  act(() => tryMove(dx, dy));
+}
+const cancelAim = () => { aiming = null; msgs = []; say("Never mind."); };
 function onKey(e){
-  if (list.open && list.key(e)){ e.preventDefault(); return; }
-  if (menu.key(e)){ e.preventDefault(); return; }
+  if (e.metaKey || (e.ctrlKey && e.key !== "p") || e.altKey) return;
+  const k = e.key;
+  if (dlg){ e.preventDefault(); return dialogKey(e); }
   if (state === "create") return createKey(e);
-  if (aiming){   // waiting for a direction
-    e.preventDefault();
-    const d = dirFor(e);
-    if (d) return aimAt(...DIRS[d]);
-    if (e.key === "'" || e.key === "t" || e.key === "Enter" || e.key === "*") return aimNearest();
-    if (e.key === "Escape"){ aiming = null; oldMsgs = []; msgs = []; say("Never mind."); }
+  if (state === "title" || state === "dead"){
+    if (k === "Escape"){ e.preventDefault(); return menuDialog(); }
+    if (k === "Enter" || k === " "){ e.preventDefault(); if (state === "title") startCreate(); else if (stateT > 1) toTitle(); }
     return;
   }
-  if (e.key === "Escape"){ e.preventDefault(); return menu.show(); }
-  if (state === "title"){ if (e.key === " " || e.key === "Enter"){ e.preventDefault(); startCreate(); } return; }
-  if (state === "dead"){ if (stateT > 1 && (e.key === " " || e.key === "Enter")){ e.preventDefault(); toTitle(); } return; }
-  const ro = keySet === "roguelike", d = dirFor(e);
-  if (d){
+  if (panelFocus && panelKey(e)){ e.preventDefault(); return; }
+  if (ARROWS[k]){ e.preventDefault(); return arrow(e); }
+  const d = dirFor(e);
+  if (d){ e.preventDefault(); return goDir(...DIRS[d], e.shiftKey || (keySet === "roguelike" && /^[HJKLYUBN]$/.test(k))); }
+  if (aiming){
     e.preventDefault();
-    const [dx, dy] = DIRS[d];
-    if (e.shiftKey || (ro && /^[HJKLYUBN]$/.test(e.key))) return run(dx, dy);
-    return act(() => tryMove(dx, dy));
+    if (k === "Enter" || k === " " || k === "'" || k === "t" || k === "*" || (keySet === "modern" && (k === "a" || k === "s"))) return aimTarget();
+    if (k === "Tab"){ cycleTarget(e.shiftKey ? -1 : 1); return aim(aimText.split(" Arrows")[0], aiming); }
+    if (k === "Escape") return cancelAim();
+    return;
   }
-  if (e.ctrlKey && (e.key === "p" || e.key === "P")){ e.preventDefault(); return messageList(); }
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const k = e.key;
+  if (k === "Escape"){ e.preventDefault(); return panelFocus ? (panelFocus = false, refreshUI()) : menuDialog(); }
+  if (k === "Tab"){ e.preventDefault(); return cycleTarget(e.shiftKey ? -1 : 1); }
+  if (e.ctrlKey){ e.preventDefault(); return openTab("journal"); }   // Ctrl+P: the messages
+  const done = () => e.preventDefault();
+  if (keySet === "modern"){
+    const lk = k.toLowerCase(), digit = /^Digit([0-9])$/.exec(e.code);
+    if (digit){ done(); return useHot((+digit[1] + 9) % 10); }
+    const keys = { a: attackKey, s: spellKey, d: drinkKey, w: grabKey, e: eatKey, r: rest, f: fuelKey, l: look, p: togglePanel,
+      i: () => openTab("pack"), c: () => openTab("char"), b: () => openTab("book"), j: () => openTab("journal"), m: () => openTab("map"), "?": helpDialog };
+    if (lk === "q"){ done(); return nextSpell(e.shiftKey ? -1 : 1); }
+    if (k === " "){ done(); return act(() => true); }
+    if (keys[lk]){ done(); return keys[lk](); }
+    if (k === ">" || k === "<"){ done(); return act(() => takeStairs(k === ">")); }
+    return;
+  }
+  const ro = keySet === "roguelike";
   if (k === "g" || k === ",") act(pickUp);
   else if (k === ">") act(() => takeStairs(true));
   else if (k === "<") act(() => takeStairs(false));
-  else if (k === "i") inventoryList();
-  else if (k === "e") equipmentList();
+  else if (k === "i") openTab("pack");
+  else if (k === "e" || k === (ro ? "T" : "t")) openTab("char");
   else if (k === "E") useWhich("eat");
   else if (k === "q") useWhich("quaff");
   else if (k === "r") useWhich("read");
   else if (k === "w") useWhich("wield");
-  else if (k === (ro ? "T" : "t")) equipmentList();
   else if (k === "F") useWhich("fuel");
   else if (k === "d") useWhich("drop");
   else if (k === "v") useWhich("throw");
@@ -1340,97 +1136,41 @@ function onKey(e){
   else if (k === "z") useWhich("rod");
   else if (k === "f") fire();
   else if (k === "I") useWhich("inspect");
-  else if (k === "m" || k === "p") castMenu();
+  else if (k === "m" || k === "p") castDialog();
   else if (k === "S") study();
   else if (k === "R") rest();
   else if (k === "." || (!ro && (k === "5" || e.code === "Numpad5"))) act(() => true);
   else if (k === (ro ? "x" : "l")) look();
-  else if (k === "C") characterList();
-  else if (k === "?") helpList();
+  else if (k === "C") openTab("char");
+  else if (k === "?") helpDialog();
   else return;
   e.preventDefault();
 }
 function createKey(e){
   const k = e.key;
-  if (k === "Escape"){ e.preventDefault(); return crBack(); }
-  if (k === "Enter" || k === " "){ e.preventDefault(); return crChoose(); }
-  if (cr.step === 3){   // typing the name; letters type, even the roguelike movement keys
-    if (k === "Backspace"){ e.preventDefault(); cr.name = cr.name.slice(0, -1); return; }
-    if (/^[A-Za-z'-]$/.test(k)){ e.preventDefault(); if (cr.name.length < 14) cr.name = cr.name ? cr.name + k : k.toUpperCase(); return; }
+  if (k === "Escape"){ e.preventDefault(); crBack(); return refreshUI(); }
+  if (k === "Enter" || (k === " " && cr.step !== 3)){ e.preventDefault(); crChoose(); return refreshUI(); }
+  if (cr.step === 3){   // typing the name
+    if (k === "Backspace"){ e.preventDefault(); cr.name = cr.name.slice(0, -1); return refreshUI(); }
+    if (/^[A-Za-z'-]$/.test(k)){ e.preventDefault(); if (cr.name.length < 14) cr.name = cr.name ? cr.name + k : k.toUpperCase(); return refreshUI(); }
   }
-  const d = dirFor(e);
-  if (d === 8 || d === 2 || d === 4 || d === 6){ e.preventDefault(); crKey({ 8: "up", 2: "down", 4: "left", 6: "right" }[d]); }
+  const d = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" }[k];
+  if (d){ e.preventDefault(); crKey(d); refreshUI(); }
 }
 addEventListener("keydown", onKey);
-function toTitle(){ state = "title"; L = null; cr = null; aiming = null; world.bodies.length = 0; }
+function toTitle(){ state = "title"; cr = null; aiming = null; target = null; parts = []; titleScene(); refreshUI(); }
 addEventListener("beforeunload", e => { if (state === "play"){ e.preventDefault(); e.returnValue = ""; } });   // nothing is saved yet
 
-// The shared gamepad (src/arcade.js), with eight directions; holding the D-pad keeps walking.
-const DIR8 = { up: 8, down: 2, left: 4, right: 6, upleft: 7, upright: 9, downleft: 1, downright: 3 };
-let holdDir = 0, holdT = 0;
-const pad = createPad({ store, axis: 8, menu: () => (list.open && list) || (menu.open && menu),
-  onDir: d => {
-    const n = DIR8[d] || 0, was = holdDir; holdDir = n;
-    if (!n || n === was) return;
-    if (state === "create"){ holdDir = 0; if ([8, 2, 4, 6].includes(n)) crKey({ 8: "up", 2: "down", 4: "left", 6: "right" }[n]); return; }
-    if (state !== "play") return;
-    if (aiming){ holdDir = 0; return aimAt(...DIRS[n]); }
-    disturbed = false; holdT = 0.3;   // a short pause before walking on
-    act(() => tryMove(...DIRS[n]));
-  },
-  onPress: id => {
-    if (state === "title"){ if (id === "a" || id === "start") startCreate(); else if (id === "select") menu.show(); return; }
-    if (state === "create"){ if (id === "a" || id === "start") crChoose(); else if (id === "b") crBack(); else menu.show(); return; }
-    if (state === "dead"){ if (stateT > 1 && (id === "a" || id === "start")) toTitle(); return; }
-    if (aiming){ if (id === "a") aimNearest(); else { aiming = null; oldMsgs = []; msgs = []; say("Never mind."); } return; }
-    if (id === "start" || id === "select") return menu.show();
-    if (id === "a") contextAction(); else commandList();
-  } });
-cv.addEventListener("pointerdown", e => {
-  const [gx, gy] = gridAt(e, cv, GW, GH);
-  if (list.open) return list.tap(gx, gy);
-  if (menu.open) return menu.tap(gx, gy);
-  if (state === "title") return startCreate();
-  if (state === "create"){ const i = gy - 4; if (i >= 0 && i < crRows().length){ cr.at = i; crChoose(); } return; }
-  if (state === "dead"){ if (stateT > 1) toTitle(); return; }
-  if (aiming) return aimNearest();
-  if (!pad.touch) commandList();   // a click opens the commands
-});
-
-/* ---------- layout and loop ---------- */
-function layout(){
-  const r = stage.getBoundingClientRect(); if (!r.width) return;
-  const old = screen, dpr = Math.min(window.devicePixelRatio || 1, 3);
-  // as large a font as fits at least 60 x 24 characters, up to 14px (smaller with higher detail); the view grows with the space
-  const f = Math.max(4, Math.min(Math.round(14 / DETAIL), Math.floor(r.width / 60 / 0.6), Math.floor(r.height / 24 / 1.15)));
-  screen = new Screen(f, D); screen.fit(r.width, r.height, dpr);
-  GW = Math.min(screen.cols, MW); GH = Math.min(screen.rows, MH + VY + 2); VH = GH - VY - 2;
-  const W = GW * screen.cw, H = GH * screen.ch;
-  screen.fit(W, H, dpr); sizeCanvas(cv, ctx, W, H, dpr);
-  world.w = W; world.h = H; world.unit = screen.cw; world.g = { x: 0, y: H * 1.2 };
-  if (old) world.bodies.length = 0;
-  if (player) centerCamera(true);
-  rebuildTerrain();
-}
+/* ---------- the loop ---------- */
 function tick(dt, t){
-  if (!screen) return;
-  stateT += dt;
-  if (holdDir && state === "play" && !aiming && !list.open && !menu.open && (holdT -= dt) <= 0){   // keep walking while the D-pad is held
-    holdT = 0.14;
-    if (disturbed || !act(() => tryMove(...DIRS[holdDir]))) holdDir = 0;
-  }
+  const wasT = stateT; stateT += dt;
+  if (state === "dead" && wasT < 1 && stateT >= 1) refreshUI();
   for (const s of shots) s.t += dt;
   shots = shots.filter(s => s.t * s.speed < s.path.length + 1);
   for (const f of flashes) f.t -= dt;
   flashes = flashes.filter(f => f.t > 0);
   for (const l of later) if ((l.t -= dt) <= 0) l.fn();
   later = later.filter(l => l.t > 0);
-  world.step(dt);
-  for (const b of world.bodies) b.life -= dt;
-  world.bodies = world.bodies.filter(b => b.life > 0);
-  draw(t);
+  drawWorld(t, dt);
+  drawUI(dt);
 }
-layout();
-onResize(stage, layout);
-startLoop(tick);
-})();

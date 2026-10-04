@@ -2,23 +2,116 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Torchlight Dungeons</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <!-- src/arcade/pad.css goes here (build.sh) -->
+<style>
+/* Torchlight's own look: a dark panel and HUD over the code-drawn map (phase 6). Keyboard only. */
+:root { --tbg: #0d0c12; --panel: #1b1824; --edge: #3a3350; --slot: #13111a; --text: #e8e2d4; --dim: #8d86a0; --gold: #e8b830; --hpc: #c8423a; --mpc: #4a7ad8; --xpc: #c89a3a;
+  --q-cursed: #d84a3a; --q-magic: #5a9cff; --q-ego: #b46cf0; --q-art: #f0a830; --q-unknown: #77708a; }
+body { background: var(--tbg); color: var(--text); }
+header { color: var(--text); } h1 a { color: var(--text); } #hud { color: var(--dim); }
+#main { flex: 1; display: flex; gap: 8px; margin: 0 8px 8px; min-height: 0; }
+#stage { margin: 0; flex: 1; border-color: var(--edge); background: #000; font: 13px/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+#cv { left: 0; top: 0; transform: none; }
+img.px { image-rendering: pixelated; width: 32px; height: 32px; display: block; }
+img.px.big { width: 48px; height: 48px; } img.px.face { width: 40px; height: 40px; } img.px.hero { width: 160px; height: 160px; filter: drop-shadow(0 6px 0 #0007); }
+#ov > * { position: absolute; }
+#status { left: 10px; top: 10px; width: 250px; background: #0c0b12d8; border: 2px solid var(--edge); border-radius: 6px; padding: 8px 10px; }
+.who { display: flex; gap: 10px; align-items: center; } .who b { display: block; font-size: 14px; } .who small { color: var(--dim); }
+.meter { margin: 5px 0; } .meter span { display: flex; justify-content: space-between; font-size: 12px; } .meter i { display: block; height: 7px; background: #2a2636; border-radius: 3px; overflow: hidden; }
+.meter i s { display: block; height: 100%; text-decoration: none; transition: width .2s; }
+.hp s { background: var(--hpc); } .hp.low s { background: #ff5a3a; animation: blink .8s infinite; } .mp s { background: var(--mpc); } .xp s { background: var(--xpc); } .wt s { background: #7a8a5a; }
+.meter.xp i { height: 4px; }
+.facts { display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px; } .gold { color: var(--gold); } .bad { color: #ff7a5a; }
+.chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; } .chips em { font-style: normal; font-size: 11px; padding: 1px 5px; border-radius: 3px; }
+.chips .good { background: #234a2c; color: #b8f0b0; } .chips .bad { background: #5a2420; color: #ffc0b0; }
+#minibox { right: 10px; top: 10px; width: 240px; }
+#mini { width: 240px; height: 132px; image-rendering: pixelated; border: 2px solid var(--edge); border-radius: 6px; display: block; background: #07060b; }
+#target { margin-top: 6px; background: #0c0b12d8; border: 2px solid var(--gold); border-radius: 6px; padding: 8px; }
+.ct { display: flex; gap: 10px; align-items: center; } .ct b { display: block; } .ct small { color: var(--dim); display: block; }
+.ln { font-size: 12px; margin: 4px 0; color: #cfc8b8; } .dim { color: var(--dim); }
+#log { left: 10px; bottom: 82px; width: 46%; text-shadow: 0 1px 0 #000, 0 0 4px #000; pointer-events: none; }
+#log .new { color: #fff3c8; }
+#bar { left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; gap: 10px; padding: 5px; background: #000b; border: 2px solid var(--edge); border-radius: 6px; }
+#bar .acts, #bar .hot { display: flex; gap: 4px; } #bar .acts .slot { border-color: #5a4f78; }
+.slot { width: 52px; height: 52px; background: var(--slot); border: 2px solid var(--edge); border-radius: 4px; position: relative; display: grid; place-items: center; flex: none; }
+.slot .k { position: absolute; left: 3px; top: 0; font-size: 11px; color: var(--gold); font-weight: bold; }
+.slot .n { position: absolute; right: 3px; bottom: 0; font-size: 10px; color: var(--text); text-shadow: 0 1px 0 #000; }
+.slot.off img, .slot.off .glyph { opacity: .35; } .slot .glyph { font-size: 22px; color: var(--text); } .glyph.dim { color: #5a5468; }
+.slot .lab { color: #4a4460; font-size: 9px; text-transform: uppercase; text-align: center; line-height: 1.1; }
+.q-cursed { border-color: var(--q-cursed) !important; } .q-magic { border-color: var(--q-magic) !important; } .q-ego { border-color: var(--q-ego) !important; }
+.q-art { border-color: var(--q-art) !important; box-shadow: 0 0 6px #f0a83088; } .q-unknown { border-color: var(--q-unknown) !important; }
+.card.q-cursed b { color: var(--q-cursed); } .card.q-magic b { color: var(--q-magic); } .card.q-ego b { color: var(--q-ego); } .card.q-art b { color: var(--q-art); }
+#prompt { left: 50%; top: 12px; transform: translateX(-50%); background: #2a2010ee; border: 2px solid var(--gold); color: #ffe9b0; padding: 6px 14px; border-radius: 6px; white-space: nowrap; }
+#panel { width: 372px; flex: none; background: var(--panel); border: 2px solid var(--edge); border-radius: 6px; display: flex; flex-direction: column; min-height: 0; font: 13px/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+#panel[hidden] { display: none; } #panel.focus { border-color: var(--gold); }
+#tabs { display: flex; } #tabs b { flex: 1; text-align: center; padding: 7px 0 5px; background: #14121c; color: var(--dim); font-weight: normal; border-bottom: 2px solid var(--edge); cursor: pointer; }
+#tabs b small { display: block; font-size: 10px; color: #5a5468; } #tabs b.on { background: var(--panel); color: var(--text); border-bottom-color: transparent; } #tabs b.on small { color: var(--gold); }
+#tab { padding: 10px 12px; overflow: auto; flex: 1; }
+#tab .lv { border: 2px solid var(--edge); padding: 2px 8px; text-align: center; } #tab .lv b { font-size: 20px; display: block; }
+#tab .name { font-size: 16px; } .sub { color: var(--dim); }
+.doll { display: grid; grid-template-columns: 52px 1fr 52px; gap: 6px; margin: 10px 0 6px; align-items: center; } .doll .col { display: grid; gap: 6px; } .doll .dmid { display: grid; place-items: center; }
+.row4 { display: flex; gap: 6px; justify-content: center; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; border: 2px solid var(--edge); padding: 6px 10px; } .stats span { display: flex; justify-content: space-between; } .stats b { color: var(--gold); font-weight: normal; }
+i.up { color: #7adc6a; font-style: normal; margin-left: 4px; } i.down { color: #ff6a5a; font-style: normal; margin-left: 4px; }
+h3 { margin: 12px 0 6px; font-size: 11px; color: var(--dim); letter-spacing: .12em; text-transform: uppercase; font-weight: normal; }
+.grid { display: grid; grid-template-columns: repeat(6, 52px); gap: 4px; justify-content: center; margin: 8px 0; }
+.sel { outline: 2px solid var(--gold); outline-offset: 1px; }
+.spell { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 8px; padding: 3px 6px; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+.spell.off { opacity: .5; } .spell.ready { border-color: var(--gold); background: #2a2010; } .spell small { color: var(--dim); } .spell em { color: var(--gold); font-style: normal; font-size: 11px; }
+.msgs div { font-size: 12px; padding: 2px 0; border-bottom: 1px solid #2a2636; }
+.beast { display: flex; gap: 8px; margin: 6px 0; } .beast small { color: var(--dim); display: block; }
+#bigmap { image-rendering: pixelated; width: 100%; border: 2px solid var(--edge); }
+#tip { position: fixed; z-index: 30; width: 280px; pointer-events: none; }
+.card { background: #0c0b11f4; border: 2px solid var(--gold); padding: 10px; border-radius: 4px; font: 13px/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--text); }
+.card p { display: flex; justify-content: space-between; margin: 3px 0; } .card hr { border: 0; border-top: 1px solid var(--edge); margin: 6px 0; }
+.card p span:last-child { color: var(--gold); }
+#dlg, #screen { position: absolute; inset: 0; display: grid; place-items: center; z-index: 10; }
+#dlg { background: #0008; } #dlg[hidden], #screen[hidden], #target[hidden], #prompt[hidden], #ov[hidden] { display: none; }
+#dlg .box { background: var(--panel); border: 2px solid var(--gold); border-radius: 8px; padding: 14px 16px; min-width: 520px; max-width: 92%; max-height: 92%; display: flex; flex-direction: column; }
+#dlg .box.wide { min-width: 860px; } #dlg h2 { margin: 0 0 8px; font-size: 16px; color: var(--gold); font-weight: normal; }
+#dlg .cols { display: flex; gap: 12px; min-height: 0; flex: 1; } #dlg .list { flex: 1; overflow: auto; min-width: 240px; max-height: 60vh; }
+#dlg .side { width: 290px; flex: none; } #dlg .side .card { border-color: var(--edge); }
+.row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 2px solid transparent; border-radius: 4px; cursor: pointer; }
+.row span { flex: 1; } .row small { color: var(--gold); } .row.sel { border-color: var(--gold); background: #2a2010; outline: none; } .row.off { opacity: .45; }
+.row[class*="q-"] { border-left-width: 4px; }
+.note { color: var(--dim); font-size: 11px; margin-top: 8px; } kbd { display: inline-block; min-width: 140px; color: var(--gold); font: inherit; }
+.shopline { display: flex; gap: 16px; margin-bottom: 8px; color: #cfc8b8; }
+#screen { background: radial-gradient(ellipse at center, #0000 0, #000a 70%); }
+.titlecard { text-align: center; background: #0c0b12cc; border: 2px solid var(--edge); border-radius: 10px; padding: 26px 40px; max-width: 640px; }
+.titlecard h1 { font: 700 44px/1 Georgia, "Times New Roman", serif; letter-spacing: .14em; color: #ffcf70; text-shadow: 0 0 18px #ff8a2088, 0 3px 0 #5a2a00; text-transform: uppercase; margin: 0 0 6px; }
+.titlecard h1 span { display: block; font-size: 26px; letter-spacing: .4em; color: #f0e2c0; margin-top: 8px; }
+.blink { animation: blink 1.2s steps(2) infinite; color: #fff; } @keyframes blink { 50% { opacity: .35; } }
+.fame { font-size: 12px; color: var(--dim); } .fame.best { color: var(--text); } .fame b { color: var(--gold); display: inline-block; min-width: 52px; text-align: right; margin-right: 6px; }
+.tomb .rip { font-size: 40px; color: #d8d0c0; text-shadow: none; }
+.create { background: #0c0b12ee; border: 2px solid var(--edge); border-radius: 10px; padding: 16px 20px; width: min(980px, 94%); }
+.steps { display: flex; gap: 18px; margin-bottom: 12px; } .steps b { color: #5a5468; font-weight: normal; } .steps b.on { color: var(--gold); } .steps b.done { color: var(--dim); }
+.cbody { display: grid; grid-template-columns: 220px 180px 1fr; gap: 16px; align-items: start; }
+.cinfo h2 { margin: 0 0 6px; color: var(--gold); font-weight: normal; } .cinfo .stats { margin: 8px 0; }
+.preview { display: grid; place-items: center; background: #13111a; border: 2px solid var(--edge); border-radius: 8px; padding: 10px; }
+.namebox { margin-top: 8px; padding: 6px 10px; border: 2px solid var(--gold); border-radius: 4px; font-size: 16px; } .caret { animation: blink 1s steps(2) infinite; }
+</style>
 </head>
 <body>
 <header>
   <h1><a href="./" title="Back to the cartridge shelf">&#8249; Torchlight Dungeons</a></h1>
-  <div id="hud">arrows / numpad move &middot; Shift runs &middot; g pick up &middot; i items &middot; &gt; stairs &middot; R rest &middot; ? help &middot; Esc menu</div>
+  <div id="hud">arrows move &middot; A attack &middot; S spell &middot; D drink &middot; W grab &middot; Tab target &middot; I C B J M panel &middot; ? keys &middot; Esc menu</div>
 </header>
-<div id="stage">
-  <canvas id="cv" aria-label="Game screen: the dungeon around you, with messages at the top and your status at the bottom. Press question mark for the list of commands."></canvas>
-</div>
-<nav>
-  <div id="gamepad" hidden>
-    <div id="dpad" role="group" aria-label="Direction pad. Eight directions: press between two arrows to move diagonally. Hold to keep walking."><span class="l">&#9664;</span><span class="r">&#9654;</span><span class="u">&#9650;</span><span class="d">&#9660;</span></div>
-    <div class="mid"><button data-pad="select" data-label="SELECT" aria-label="Select: open the menu"></button><button data-pad="start" data-label="START" aria-label="Start: start the game, or open the menu"></button></div>
-    <div class="ab"><button data-pad="b" aria-label="B: commands">B</button><button data-pad="a" aria-label="A: act here: pick up, take the stairs, or wait a turn">A</button></div>
+<div id="main">
+  <div id="stage">
+    <canvas id="cv" aria-label="The dungeon map around you."></canvas>
+    <div id="ov" hidden>
+      <div id="status"></div>
+      <div id="minibox"><canvas id="mini" width="240" height="132"></canvas><div id="target" hidden></div></div>
+      <div id="log" aria-live="polite"></div>
+      <div id="bar"></div>
+      <div id="prompt" hidden></div>
+    </div>
+    <div id="screen" hidden></div>
+    <div id="dlg" hidden></div>
   </div>
-</nav>
+  <aside id="panel" hidden><div id="tabs"></div><div id="tab"></div></aside>
+</div>
+<div id="tip" hidden></div>

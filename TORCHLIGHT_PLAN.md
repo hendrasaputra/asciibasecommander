@@ -19,10 +19,11 @@ step.
 | 0 Groundwork | Done. Field of view, light, the scheduler and levels have node checks in `tests/torch.js`. Light lives in `fov.js` next to field of view, instead of its own `light.js`. Not yet: the "-more-" prompt (long turns show their newest lines, and the full log is under Messages). |
 | 1 First descent | Done. On the shelf as an early version: a human fighter, 15 monsters to 500 ft and a little beyond, 16 item kinds, food and light fuel, running and resting, high scores. A playing bot ran thousands of turns without errors. Not checked yet: a full game on a real phone. |
 | 2 Races, classes and stats | Done. 8 original peoples and 6 callings, rolled or point-bought stats, 8 skills, infravision, class titles, hit dice and experience penalties; checks for all 48 pairs. Pulled forward so every class plays differently now: each caster's first power (Spark, Mend) with mana and failure chances, a Delver's ambush, a Lampwarden's brighter light, and throwing with direction or nearest-target aiming (from phases 3 and 5). A bot playing each class reached about 225 ft as an Arcanist and 370 ft as a Sellsword or Oathknight. |
-| 3 Items and identification | Done. 196 original item kinds (not yet the 300 planned: spell books and digging tools arrive with phases 5 and 7), 23 special kinds and 6 artifacts, 12 equipment slots, weight and burden, bows and ammo, wands, staffs and rods, sticky curses, per-character flavours, learning by use, Identify, and sensing {magical} / {cursed} on pickup and over time. Items you have seen stay on the map. Pulled forward: one set of effect handlers for every item (the base for phase 5's spells), and the first timed effects (speed, heroism, blessing, resistances, poison, confusion, blindness, sleep) from phase 7. Checks: 60,000 items over six depths, flavours, names before and after identifying, and knowledge surviving a JSON round trip. Every kind was used, worn and inspected in the browser without errors. |
+| 3 Items and identification | Done. 196 original item kinds (not yet the 300 planned: spell books and digging tools arrive with phases 5 and 8), 23 special kinds and 6 artifacts, 12 equipment slots, weight and burden, bows and ammo, wands, staffs and rods, sticky curses, per-character flavours, learning by use, Identify, and sensing {magical} / {cursed} on pickup and over time. Items you have seen stay on the map. Pulled forward: one set of effect handlers for every item (the base for phase 5's spells), and the first timed effects (speed, heroism, blessing, resistances, poison, confusion, blindness, sleep) from phase 8. Checks: 60,000 items over six depths, flavours, names before and after identifying, and knowledge surviving a JSON round trip. Every kind was used, worn and inspected in the browser without errors. |
 | 4 The town | Done. Lanternhollow, a walled town with six shops (General Store, Armoury, Weaponsmith, Temple, Alchemist, Magic Shop), each with a keeper, a markup and staples that never run out; stock changes between visits; buying teaches you an item's kind, and selling makes the keeper tell you what it is. Day and night: by day the sun crosses the sky and buildings cast shadows that move; at night there is faint moonlight and the lamp posts and shop doorways glow. Townspeople, including a cutpurse who steals gold and runs. Word of Recall between the town and your deepest level; level 1 has stairs up; a new character starts in town with gold to spend. Prices are fixed: haggling (open question 1) is left out for now, and there is no home to store things in yet. Checks: 100 towns all reachable, shop goods never cursed or worthless, prices and Charisma, restocking. |
-| 5 Magic and prayers | Done. Two realms of 30 original spells in four books each (spells.js); the Arcanist and Lampwarden learn their whole realm by level 40, while the Delver, Wayfinder and Oathknight are part-time casters who start later and learn part of it. Study (S) when you have the book and the level: arcane casters choose, holy casters are granted a prayer at random. Casting needs the book in your pack, costs mana, and can fail by level and stat; spells grow with your level, and the first casting of each gives experience. New effects: recharging, Send Away, Ward of Elements, Sense Evil, Tend the Flame, Turn the Dead and Dispel Evil, Shield from Evil, Banish Evil, Unbroken Flame, earthquakes that break walls into physics rubble, and Unravel; holy light burns the undead. Books 1 and 2 are sold in town. Checks: realm sizes, books, levels, failure, studying, and that every spell's effect exists; all 60 were cast in the browser without errors. Not met: the "reach 1,000 ft" playtest. The test bots, which do not flee or shop, die around 200 to 450 ft, so that needs a person to play it. Not done: cone-shaped spells and making doors (monster breath comes with phase 6). |
-| 6 to 9 | Not started |
+| 5 Magic and prayers | Done. Two realms of 30 original spells in four books each (spells.js); the Arcanist and Lampwarden learn their whole realm by level 40, while the Delver, Wayfinder and Oathknight are part-time casters who start later and learn part of it. Study (S) when you have the book and the level: arcane casters choose, holy casters are granted a prayer at random. Casting needs the book in your pack, costs mana, and can fail by level and stat; spells grow with your level, and the first casting of each gives experience. New effects: recharging, Send Away, Ward of Elements, Sense Evil, Tend the Flame, Turn the Dead and Dispel Evil, Shield from Evil, Banish Evil, Unbroken Flame, earthquakes that break walls into physics rubble, and Unravel; holy light burns the undead. Books 1 and 2 are sold in town. Checks: realm sizes, books, levels, failure, studying, and that every spell's effect exists; all 60 were cast in the browser without errors. Not met: the "reach 1,000 ft" playtest. The test bots, which do not flee or shop, die around 200 to 450 ft, so that needs a person to play it. Not done: cone-shaped spells and making doors (monster breath comes with phase 7). |
+| 6 The new look | Done. The character view is gone: every tile, figure and icon is drawn by code into small pixel canvases (`sprites.js`), with five depth themes and a timber-and-roof town; the light field is laid over them softly (`render.js`); the hero is a paper doll of what you wear; monsters have body plans, with a seeded shape for any kind without one. Moves slide, attacks lunge, hits flash, damage numbers float, and debris bounces off the walls (own particles instead of the engine's world). The interface is HTML (`ui.js`): HUD with status, minimap, target and messages; the A, S, D, W action bar and hotbar; the Character, Pack, Book, Journal and Map tabs (P hides the panel); item cards with comparisons and quality colours; dialogs for items, spells, shops, the menu and help; title, creation and tombstone screens. Keyboard only, with the modern keys by default and the Classic and roguelike sets in the menu. Checks: a bot ran 6,000 mixed actions (moving, every smart key, hotbar, tabs, dialogs, shops, 24 level changes) with no errors, and every monster, item, spell, doll and depth theme was drawn. Not checked yet: a long game played by a person. |
+| 7 to 10 | Not started |
 
 ## Ground rules
 
@@ -88,7 +89,7 @@ All the code goes under `src/torch/`. `build.sh` joins it into `torchlight-dunge
 
 | File | Contents |
 |---|---|
-| `head.html` | Page markup and the touch gamepad |
+| `head.html` | Page markup: the map canvas, the HUD, the side panel and dialogs (phase 6: keyboard only, no gamepad) |
 | `data/*.js` | The tables of races, classes, monsters, items, specials, spells, traps, shops and flavours. Plain data; each file checks itself |
 | `rng.js` | Seeded random numbers, so a game can be replayed and tested |
 | `gen.js` | Dungeon and town generation |
@@ -107,6 +108,144 @@ All the code goes under `src/torch/`. `build.sh` joins it into `torchlight-dunge
 The map is 198 × 66 cells, like Moria. The screen shows a part of it that scrolls with the player: about 100 × 36
 cells on a desktop, and fewer on a phone. The rest of the screen holds the status bar and the message log. All UI
 text is drawn on `TEXT_LAYER`, so it stays readable in pixel mode.
+
+## Re-analysis: the new look (October 2026)
+
+The rules are in good shape after phase 5, but the game still looks like a 1983 terminal: one character per cell,
+letters for monsters, and every screen is a text list. The new goal is a web RPG that people want to play. It
+keeps the top-down grid, the turn-based exploration and all of Moria's depth, and it looks and handles like a modern
+RPG: you see your character and the gear they wear, the items are pictures, and there are panels, tooltips and a
+hotbar. This changes how the game is drawn and controlled, not its rules.
+
+### What stays, and what is replaced
+
+| Part | Lines today | What happens |
+|---|---|---|
+| Rules: `rng`, `fov`, `turn`, `gen`, `data`, `items`, `shops`, `chars`, `spells` | about 830 | Unchanged. Every node check still applies. |
+| `game.js`: actions, effects, monsters, the turn loop | about 900 | Kept. It stops calling `say` and the list screens directly and raises events (`hit`, `moved`, `died`, `opened`), so the new view can animate them. |
+| `game.js`: drawing (map, status bar, title, creation, tombstone) | about 200 | Replaced by `render.js` |
+| `game.js`: list screens (commands, inventory, equipment, inspect, character, shop, spells, help) and input | about 350 | Replaced by `ui.js` (HTML panels) and a new input layer |
+
+Torchlight stops drawing with the ASCII `Screen` and `menu.js`. It keeps `core.js` for the physics debris (kills,
+rubble and glass, now drawn as pixels) and `arcade.js` for preferences, scores, the pad and the loop. It would be
+the first cartridge that is not drawn in characters, which suits it: the others are arcade games, and this one is
+an RPG.
+
+### How it looks
+
+Everything is drawn by code when the page loads, into small offscreen canvases. There are no sprite sheets and no
+image files, so the page stays one self-contained file. The prototype (`_proto/proto.html`) shows all of it working
+on a real generated level.
+
+- **Tiles:**
+  - 16 × 16 logical pixels, drawn at a whole-number zoom (2×, 3× or 4×), with smoothing off so the edges stay crisp.
+    The Detail setting picks the zoom.
+  - A three-quarter top-down view, as in the tileset references. A wall above a floor shows its brick face with a
+    lighter cap; other walls show their dark tops. Choosing the tile from its neighbours (autotiling) gives proper
+    corners.
+  - Each cell has a fixed seed, so floors vary (flagstones, cracks, grit) but don't change from frame to frame.
+  - Doors, open doors and stairs each have their own tile.
+- **Depth themes:** a palette and floor pattern for each band of about ten levels: worked stone, mossy caves, crypts,
+  magma, and crystal. The town has cobbles, grass, timber houses with roofs, lamp posts and shop signs.
+- **Light:** the existing light field is drawn over the tiles, one pixel per cell, smoothly enlarged and multiplied
+  in, with a little warm bloom on top.
+  - What you see now is lit by the real torch and room colours.
+  - Places you remember are cold, dim blue.
+  - Places you have never seen are black.
+  - Bolts and flashes light up the walls as they pass. This is the engine's light, but much softer and nicer than
+    lighting each character.
+- **The player is a paper doll** drawn from what they wear: the body shape by people (short Burrowfolk, huge
+  Cragborn), then hair or helm, armour by material (cloth, leather, mail with a dither, shining plate), cloak,
+  gloves, boots, the weapon by type (blade length, axe, mace, polearm) and the shield by size. Each piece of gear
+  you change shows on the map and on the character sheet.
+- **Monsters:**
+  - One generator per body plan: rodent, canine, worm, winged insect, spider, beetle, bear, mould, wisp, plus the
+    paper doll for humanoids (goblins with tusks, skeletons, trolls).
+  - Size, colour and features come from the monster's own data.
+  - Any kind without a plan gets a mirrored shape seeded by its id, so every one of the roughly 280 kinds in phase 7
+    looks like itself, with no art to draw.
+- **Item icons:** one drawing per category, coloured by material or flavour. An unknown potion is just "a Violet
+  potion" until you learn what it is, so identification still works with pictures.
+- **Rarity:** a coloured frame and name, using the qualities the game already rolls:
+  - cursed is red, plain is white, good is blue, special kinds are purple, and artifacts are gold;
+  - grey until sensed or identified.
+- **Animation is visual only and never changes the rules:**
+  - moves slide over about 90 ms, attacks lunge, and whatever is hit flashes;
+  - damage numbers float up, and health bars show over hurt monsters;
+  - idle figures bob slightly, the torch flickers, and kills burst into physics debris;
+  - any key skips it.
+
+### How it plays
+
+The interface is HTML on top of the canvas: crisp text at any size, scrolling, hover tooltips, screen readers, and
+much less code than drawing panels by hand.
+
+- **Layout:** the map on the left and a tabbed side panel on the right, as in the character-sheet references.
+  - **Character:** level, name, people, calling and title; experience, health and mana bars; the paper doll with its
+    12 equipment slots around it; stats, skills, resistances and speed.
+  - **Pack:** a grid of icons, a weight bar, and sorting.
+  - **Spells:** the pages of your books: each spell's icon, level, mana, failure chance and effect, studying, and
+    dragging a spell onto the hotbar.
+  - **Journal:** the message log, what you know about each monster, and the item kinds you have identified.
+  - **Map:** the whole level as you remember it.
+- **HUD on the map:**
+  - a small always-on minimap, because the view drops from about 100 × 36 cells to about 30 × 18 at 3×;
+  - the depth, the light's fuel, hunger, and status icons with turns left;
+  - a target frame with the monster's health and a one-line description;
+  - a fading message log;
+  - a hotbar for potions, scrolls, wands and spells (keys 1 to 0).
+- **Tooltips** show an item card: its icon, name, damage or armour, bonuses, weight and description. They also
+  compare it with what you wear now, in green or red, as in the tooltip reference.
+- **Shops:** the shop's stock and your pack side by side. Click or drag to buy and sell, and the price is in the
+  tooltip.
+- **Character creation:** the people and calling are pickers with the paper doll changing as you choose.
+
+**Controls: keyboard only.** There is no touch gamepad and no phone layout for this game, and the mouse only
+points at things: hovering shows tooltips, and clicking works in the panels and dialogs. The right hand moves and
+the left hand does the four most common things, and each of those keys decides for itself so that a fight rarely
+needs a menu.
+
+| Key | Does |
+|---|---|
+| Arrow keys | Move one step. Moving into a monster attacks it, and moving into a door opens it. |
+| Two arrows together | Move diagonally. The game waits about 60 ms for a second arrow. Home, End, PgUp, PgDn and the numpad also move diagonally. |
+| Shift + arrow | Run until something interesting happens |
+| **A** Attack | Attack the target: swing if it's next to you; otherwise fire your launcher if you have ammo, or throw darts. With no target, attack the nearest monster in sight. |
+| **S** Spell | Cast the readied spell, at the target if the spell needs aiming |
+| **D** Drink | Drink the healing potion that best fits your wounds. With none, a holy caster prays a healing prayer. At full health it does nothing and says "You are not hurt". |
+| **W** Grab | Pick up what's here, take the stairs, or enter a shop. If there's nothing to do, it says so and takes no turn. |
+| Q | Ready the next spell. Shift+Q readies the one before. |
+| E | Eat the plainest food |
+| R | Rest until healed, or until something disturbs you |
+| F | Refill your lantern, or swap in a fresh torch |
+| Tab | Target the next visible monster. Shift+Tab goes back. |
+| Space | Wait one turn |
+| 1 to 0 | Use the hotbar slot (a potion, scroll, wand or spell) |
+| I, C, B, J, M | Pack, Character, spell Book, Journal and Map tabs. Pressing a tab key again leaves the panel. |
+| P | Show or hide the side panel |
+| L | Look at the target, or at everything in sight |
+| Esc | Close the dialog, or open the menu |
+
+Inside a dialog or a panel tab, the arrow keys move the selection, Enter chooses, and Esc goes back. Moria's own
+letter keys stay available as the "Classic keys" option, together with the roguelike set, and that option turns
+the scheme above off.
+
+**Decisions:**
+- the character (ASCII) view is dropped entirely;
+- on a wide screen the side panel is always open, as in the references, and P hides it;
+- the game is keyboard only.
+
+### Why do this before the bestiary
+
+Phase 7 adds about 270 monsters. With this look, each monster needs a body plan and colours, which is one field in
+its data. Doing the look first means every monster is written once, for the final view. Doing it after would mean
+going back over all 280.
+
+### Cost
+
+About L: roughly 2,000 to 2,500 new lines (`render.js`, `sprites.js`, `ui.js`, a new `head.html`), and about 550
+lines leave `game.js`. The page grows by under 100 KB. Speed: tiles are drawn once each and copied, and the light
+overlay is one small image per frame, which the prototype draws easily at 60 frames a second.
 
 ## Phases
 
@@ -214,7 +353,35 @@ Haggling (Moria has it) is an option and off by default. See the open questions.
 
 **Done when:** every spell has a node test of its effect, and a playtest of each realm reaches 1,000 ft.
 
-### Phase 6: the full bestiary (L)
+### Phase 6: the new look (L)
+
+The re-analysis above, built in this order so the game stays playable at every step:
+
+1. **`render.js` and `sprites.js`:**
+   - the tiles, the depth themes and the town;
+   - the light overlay;
+   - the paper doll, the monster body plans and the item icons;
+   - the move, attack and hit animations, and debris as pixels.
+
+   This replaces `drawMap`, and the old text screens still work on top.
+2. **The input layer:**
+   - arrows and diagonals, the A, S, D and W actions, and Tab targeting;
+   - hotbar keys;
+   - the Classic and roguelike key sets.
+3. **`ui.js` panels:**
+   - the HUD, the minimap, the message log and the hotbar;
+   - the Character and Pack tabs with tooltips and comparisons, then Spells, Journal and Map;
+   - shops, character creation, the title screen and the tombstone.
+
+   The old list screens are deleted as each panel replaces them.
+
+**Done when:**
+- every command in phase 5 can be reached from the keyboard;
+- no text list screens are left;
+- every item, monster and gear combination draws without errors (a bot run over all kinds);
+- it runs at 60 frames a second on a mid-range laptop.
+
+### Phase 7: the full bestiary (L)
 
 - A monster data format:
   - character and colour, depth, rarity, speed, and hit dice;
@@ -240,7 +407,7 @@ Haggling (Moria has it) is an option and off by default. See the open questions.
 **Done when:** the data validator passes, monster recall works, and no depth band has a monster the
 simulation rates as unwinnable at the expected character level.
 
-### Phase 7: survival and dungeon detail (M)
+### Phase 8: survival and dungeon detail (M)
 
 - **Hunger:** full, hungry, weak, fainting, starving. Food kinds differ in how much they feed you.
 - **Light:** torches and oil burn down; lanterns are refilled with oil flasks.
@@ -256,7 +423,7 @@ simulation rates as unwinnable at the expected character level.
 **Done when:** a long playtest has no soft-locks, meaning no state where the player cannot act, and none where a
 level has no way out.
 
-### Phase 8: save games (M)
+### Phase 9: save games (M)
 
 - **When it saves:** on every level change, every few hundred turns, when you leave the page or switch tabs, and on
   quit.
@@ -271,7 +438,7 @@ level has no way out.
 - Node tests: save, load, save again gives the same file; old-version saves still load; a damaged save is refused
   with a message instead of crashing.
 
-### Phase 9: presentation and polish (M)
+### Phase 10: presentation and polish (M)
 
 - **Sound:** `audio/torch-sfx.py`, in the style of the other games:
   - footsteps, hits and misses;
@@ -282,7 +449,6 @@ level has no way out.
   - an original music loop for the town, and one for the depths.
 - **Help:** an in-game command reference and help screen.
 - **Options:** key sets, auto-pickup, "-more-" prompts, haggling, colour-blind-safe status colours, and larger text.
-- **Phones:** tuning on a real phone, including the command menu and a quick bar for spells and items.
 - **Balance:** a full pass from the town to the final boss.
 - **The shelf:** cartridge art from `CARTRIDGE_PROMPT.md`, and README and PLAN.md entries.
 
@@ -307,7 +473,7 @@ Browser tests use the same temporary test-page method as the other games.
 |---|---|
 | Writing 280 monsters and 300 items is a lot of content | Family templates with tiers, a validator, and a balance simulation. Drafts are generated in bulk and then edited by hand. |
 | Copying Moria by accident | Content is written from scratch, never from Umoria's tables. A review step checks names and descriptions against the Tolkien and Moria lists before each release. |
-| Too many commands for touch | The command menu, a quick bar, and context actions: tapping an item on the floor picks it up, and moving into a door opens it. |
+| Too many commands | The four smart action keys (A, S, D, W), a hotbar, and context actions: moving into a door opens it. |
 | Corrupted or lost saves | Versioned saves, migrations, export to a file, and refusing bad data with a message |
 | Page size and speed on phones | Data stays as compact tables; light is only recomputed when something changes; physics only runs between turns. |
 | Long project | Every phase ships something playable, so stopping after any phase still leaves a good game. |
