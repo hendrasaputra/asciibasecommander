@@ -1,8 +1,8 @@
 // Checks for Torchlight Dungeons' rules. Run: node tests/torch.js
 // Loads the game's logic files without a browser: random numbers, sight and light, turns, levels and data.
 const fs = require("fs"), vm = require("vm"), path = require("path");
-const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js", "items.js", "chars.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
-const G = vm.runInNewContext(files.join("\n") + "\n;({ RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS, ITEM, EGOS, ARTIFACTS, CAT, SLOTS, newKnowledge, makeItem, rollItem, itemName, itemPowers, kindKnown, RACES, CLASSES, RACE, CLASS, STATS, SKILLS, rollStats, finalStats, skillOf, expNeeded, maxMana, firstHp, levelHp, titleOf, buySpent, BUY_POINTS, randomName, powerFor, POWERS })", { Math, console });
+const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js", "items.js", "shops.js", "chars.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
+const G = vm.runInNewContext(files.join("\n") + "\n;({ RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS, ITEM, EGOS, ARTIFACTS, CAT, SLOTS, newKnowledge, makeItem, rollItem, itemName, itemPowers, kindKnown, SHOPS, newShops, restock, itemValue, buyPrice, sellPrice, shopBuys, generateTown, TW, TH, RACES, CLASSES, RACE, CLASS, STATS, SKILLS, rollStats, finalStats, skillOf, expNeeded, maxMana, firstHp, levelHp, titleOf, buySpent, BUY_POINTS, randomName, powerFor, POWERS })", { Math, console });
 
 let failed = 0;
 const check = (name, ok, detail) => { console.log((ok ? "ok    " : "FAIL  ") + name + (detail ? "  (" + detail + ")" : "")); if (!ok) failed++; };
@@ -56,7 +56,7 @@ const { MW, MH, T } = G;
 
 { // the data tables are complete
   const dice = s => /^\d+d\d+$/.test(s);
-  const badM = G.MONSTERS.filter(m => !m.id || !m.name || m.glyph.length !== 1 || !(m.depth >= 1) || !dice(m.hp) || !m.blows.length || !m.blows.every(b => dice(b[0])) || !m.desc);
+  const badM = G.MONSTERS.filter(m => !m.id || !m.name || m.glyph.length !== 1 || !(m.depth >= (m.town ? 0 : 1)) || !dice(m.hp) || !m.blows.length || !m.blows.every(b => dice(b[0])) || !m.desc);
   const badI = G.ITEMS.filter(k => !k.id || !k.name || !G.CAT[k.cat] || k.glyph.length !== 1 || !(k.depth >= 1) || !(k.wt > 0) || !(k.cost >= 0)
     || (k.cat === "weapon" && !dice(k.dice)) || ((k.cat === "wand" || k.cat === "staff") && !dice(k.charges)) || (k.dice && !dice(k.dice)));
   check("every monster and item is complete", !badM.length && !badI.length, [...badM, ...badI].map(x => x.id).join(", "));
@@ -129,6 +129,33 @@ const { MW, MH, T } = G;
   check("an unknown potion shows its colour, a known one its name", !/Speed/.test(G.itemName({ k: "pfire", n: 1 }, know)) && /Speed/.test(G.itemName({ k: "pspeed", n: 1 }, know)));
   const sword = { k: "longsword", n: 1, tohit: 3, todam: 4, ego: "burning" };
   check("weapon numbers and specials show only once identified", !/\+3|Burning/.test(G.itemName(sword, know)) && /\(\+3,\+4\)/.test(G.itemName({ ...sword, id: true }, know)) && /Burning/.test(G.itemName({ ...sword, id: true }, know)));
+}
+
+{ // the town: shops, stairs and every bit of open ground can be reached
+  let bad = "";
+  for (let k = 0; k < 100; k++){
+    const L = G.generateTown(new G.RNG(300 + k)), seen = new Uint8Array(L.tiles.length), start = L.spot(), stack = [start]; seen[start] = 1;
+    while (stack.length){ const i = stack.pop(); for (const d of [1, -1, G.MW, -G.MW, G.MW + 1, G.MW - 1, -G.MW + 1, -G.MW - 1]){ const j = i + d; if (!seen[j] && G.passable(L.tiles[j])){ seen[j] = 1; stack.push(j); } } }
+    const doors = L.shops.map(s => s.door), ground = L.rooms[0].cells;
+    if (L.shops.length !== 6 || new Set(L.shops.map((s, i) => L.shopAt[s.door])).size !== 6) bad = "seed " + (300 + k) + ": shops";
+    else if (!doors.every(d => seen[d])) bad = "seed " + (300 + k) + ": a shop cannot be reached";
+    else if (!ground.every(i => seen[i])) bad = "seed " + (300 + k) + ": ground cut off";
+  }
+  check("100 towns: six shops, all reachable from the stairs, no ground cut off", !bad, bad);
+}
+
+{ // shops: goods are never cursed or worthless, keepers sell dear and buy cheap, Charisma helps
+  const rng = new G.RNG(21), know = G.newKnowledge(rng), shops = G.newShops(rng, know);
+  const bad = shops.flatMap((sh, i) => sh.stock.filter(it => it.cursed || G.itemValue(it) <= 0 || !it.id || !G.shopBuys(G.SHOPS[i], it) && G.SHOPS[i].buys.length && false));
+  check("every shop opens with goods, none cursed or worthless", shops.every((sh, i) => sh.stock.length >= G.SHOPS[i].size[0]) && !bad.length, shops.map(s => s.stock.length).join(" "));
+  const it = { k: "longsword", n: 1, tohit: 2, todam: 3, id: true }, S = G.SHOPS[2];
+  check("a keeper sells for more than they pay", G.buyPrice(it, S, 10) > G.sellPrice(it, S, 10) * 2, G.buyPrice(it, S, 10) + " / " + G.sellPrice(it, S, 10));
+  check("high Charisma gets better prices both ways", G.buyPrice(it, S, 20) < G.buyPrice(it, S, 6) && G.sellPrice(it, S, 20) > G.sellPrice(it, S, 6));
+  check("cursed and empty things are worth nothing", G.itemValue({ k: "longsword", n: 1, cursed: true }) === 0 && G.itemValue({ k: "wfire", n: 1, charges: 0 }) === 0);
+  check("a shop's staples are always in stock, and plain goods share one stack", G.SHOPS.every((S, i) => (S.always || []).every(k => shops[i].stock.some(o => o.k === k)))
+    && shops.every(sh => { const plain = sh.stock.filter(o => !o.tohit && !o.todam && !o.toac && !o.ego && o.charges === undefined && !o.pval).map(o => o.k + "/" + o.fuel); return new Set(plain).size === plain.length; }));
+  const later = G.restock(shops[0].stock.slice(), G.SHOPS[0], rng, know, 0.5);
+  check("restocking keeps a shop full and changes some goods", later.length >= G.SHOPS[0].size[0] && later.some(x => !shops[0].stock.includes(x)));
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");

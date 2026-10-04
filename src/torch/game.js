@@ -9,7 +9,8 @@ const TORCH_RGB = [1.0, 0.62, 0.3], ROOM_RGB = [0.42, 0.42, 0.47], MEM_RGB = [0.
 const WHITE = [1.6, 1.6, 1.6], DIM = [0.45, 0.48, 0.6], ACCENT = [1.6, 1.15, 0.5], RED = [1.6, 0.4, 0.35], GREEN = [0.6, 1.4, 0.6], BLUE = [0.6, 0.85, 1.6];
 const TILE = {   // glyph and base colour per tile
   [T.EDGE]: ["#", [0.5, 0.46, 0.42]], [T.WALL]: ["#", [0.55, 0.5, 0.45]], [T.FLOOR]: [".", [0.32, 0.32, 0.32]],
-  [T.DOOR]: ["+", [0.75, 0.48, 0.22]], [T.OPEN]: ["'", [0.75, 0.48, 0.22]], [T.DOWN]: [">", [1.2, 1.2, 1.2]], [T.UP]: ["<", [1.2, 1.2, 1.2]]
+  [T.DOOR]: ["+", [0.75, 0.48, 0.22]], [T.OPEN]: ["'", [0.75, 0.48, 0.22]], [T.DOWN]: [">", [1.2, 1.2, 1.2]], [T.UP]: ["<", [1.2, 1.2, 1.2]],
+  [T.SHOP]: ["1", [1.2, 1.1, 0.8]], [T.GROUND]: [".", [0.42, 0.4, 0.3]], [T.LAMP]: ["i", [1.1, 0.95, 0.6]]
 };
 const BITS = { name: "bits", density: 0.6, e: 0.45, mu: 0.5, kd: 0.9, ks: 0.5, shine: 20 };
 const DIRS = { 1: [-1, 1], 2: [0, 1], 3: [1, 1], 4: [-1, 0], 6: [1, 0], 7: [-1, -1], 8: [0, -1], 9: [1, -1] };
@@ -19,7 +20,7 @@ const D = defaultDisplay(); D.room = 0.15; D.glow = 0.3; D.lampRGB = TORCH_RGB;
 applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
 // Detail: this page's grid already follows the screen, so higher detail means smaller characters and a bigger view.
 const DETAIL = D.detail; D.detail = 1;
-if (D.pixels) TILE[T.FLOOR][1] = [0.09, 0.09, 0.1];   // as solid pixels, floor must be much darker than wall to read the map
+if (D.pixels){ TILE[T.FLOOR][1] = [0.09, 0.09, 0.1]; TILE[T.GROUND][1] = [0.12, 0.11, 0.08]; }   // as solid pixels, floor must be much darker than wall to read the map
 const world = new World(); world.openTop = true;
 const lamp = { x: 0, y: 0, z: 0, on: true };   // the player's torch, for lighting the debris
 let screen = null, GW = 80, GH = 30, VH = 26, state = "title", stateT = 0;
@@ -49,9 +50,9 @@ let keySet = store.getJSON("keys", "original");
 /* ---------- items: names, carrying, and what worn things add ---------- */
 const nameOf = (it, n) => itemName(it, player.know, n);
 const cap = s => s[0].toUpperCase() + s.slice(1);
-const sameItem = (a, b) => a.k === b.k && a.fuel === b.fuel && a.charges === undefined && b.charges === undefined && a.timeout === undefined && b.timeout === undefined
+const sameItem = (a, b) => a.k === b.k && (["potion", "scroll", "food", "mushroom", "flask"].includes(ITEM[a.k].cat) || a.fuel === b.fuel && a.charges === undefined && b.charges === undefined && a.timeout === undefined && b.timeout === undefined
   && !!a.id === !!b.id && a.sense === b.sense && (a.tohit || 0) === (b.tohit || 0) && (a.todam || 0) === (b.todam || 0) && (a.toac || 0) === (b.toac || 0)
-  && a.ego === b.ego && !a.art && !b.art && a.pval === b.pval && !!a.cursed === !!b.cursed;
+  && a.ego === b.ego && !a.art && !b.art && a.pval === b.pval && !!a.cursed === !!b.cursed);
 function carry(it){
   const same = player.inv.find(o => sameItem(o, it));
   if (same){ same.n += it.n; return same; }
@@ -102,29 +103,70 @@ const infra = () => player.t.blind ? 0 : race().infra + player.bonus.infra;
 
 /* ---------- levels ---------- */
 function newLevel(d){
+  const from = depth;
   depth = d; player.maxDepth = Math.max(player.maxDepth, d);
-  L = generateLevel(rng, d);
-  mem.fill(0); mons = [player]; floor = []; pendingLevel = 0; world.bodies.length = 0; shots = []; flashes = []; later = [];
+  L = d === 0 ? generateTown(rng) : generateLevel(rng, d);
+  mem.fill(0); mons = [player]; floor = []; pendingLevel = null; world.bodies.length = 0; shots = []; flashes = []; later = [];
+  const at = L.spot(); player.x = at % MW; player.y = Math.floor(at / MW);
+  if (d === 0){
+    // back from the dungeon: the shops have sold some things and bought in others
+    if (from > 0 && player.turns - lastTown > 500) shops.forEach((sh, i) => { sh.stock = restock(sh.stock, SHOPS[i], rng, player.know, 0.5); });
+    lastTown = player.turns; wasDay = isDay(); lightTown();
+    for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) mem[idx(x, y)] = 1;   // you know your own town
+    for (let k = 0, n = 5 + rng.int(4) + (wasDay ? 0 : 3); k < n; k++) spawnMonster(false);
+    centerCamera(true); updateSight();
+    say(from > 0 ? "You climb out into the town of Lanternhollow." : "You stand in Lanternhollow, a town above the dungeon. The shops are numbered 1 to 6.");
+    say(wasDay ? "It is daytime." : "It is night; the lamps are lit.");
+    return;
+  }
   // light from lit rooms is fixed for the whole level
   roomLight.fill(0);
   for (let i = 0; i < MW * MH; i++) if (L.lit[i]){ roomLight[3 * i] = ROOM_RGB[0]; roomLight[3 * i + 1] = ROOM_RGB[1]; roomLight[3 * i + 2] = ROOM_RGB[2]; }
-  const at = L.spot(); player.x = at % MW; player.y = Math.floor(at / MW);
   for (let k = 0, n = 14 + d + rng.int(8); k < n; k++) spawnMonster(false);
   for (let k = 0, n = 8 + rng.int(6); k < n; k++) dropAt(freeSpot(0), rng.chance(0.35) ? { k: "gold", n: rng.range(8, 25) * d } : loot(d));
   centerCamera(true); updateSight();
-  say(d === 1 ? "You enter the dungeon at 50 ft. Your torch hisses in the damp air." : "You are now at " + feet(d) + " ft.");
+  say(d === 1 && from === 0 ? "You enter the dungeon at 50 ft. Your torch hisses in the damp air." : "You are now at " + feet(d) + " ft.");
+}
+const depthName = d => d ? feet(d) + " ft" : "the town";
+
+/* ---------- the town: day and night ---------- */
+// A day lasts DAY turns: daylight for the first half. By day the sun crosses from east to west and the buildings
+// cast shadows away from it; at night there is faint moonlight, and the lamp posts and shop doorways glow.
+const DAY = 10000, MOON_RGB = [0.035, 0.045, 0.08], LAMP_RGB = [1.0, 0.7, 0.35];
+let shops = null, lastTown = 0, wasDay = true;
+const dayPhase = () => (player.turns % DAY) / DAY, isDay = () => dayPhase() < 0.5;
+function lightTown(){
+  roomLight.fill(0);
+  const ph = dayPhase();
+  if (ph < 0.5){
+    const a = ph / 0.5 * Math.PI, high = Math.sin(a), k = 0.3 + 0.7 * high;   // brightest at noon, warmer at dawn and dusk
+    const rgb = [0.95 * k, (0.7 + 0.22 * high) * k, (0.5 + 0.35 * high) * k], sx = Math.cos(a) * 2, sy = 0.6;   // towards the sun (to the south)
+    for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++){
+      const i = idx(x, y);
+      let f = 1;
+      if (!opaque(L.tiles[i])) for (let s = 1; s <= 4; s++){   // in a building's shadow?
+        const tx = Math.round(x + sx * s), ty = Math.round(y + sy * s);
+        if (tx >= 0 && ty >= 0 && tx < L.w && ty < L.h && L.tiles[idx(tx, ty)] === T.WALL){ f = 0.45; break; }
+      }
+      roomLight[3 * i] = rgb[0] * f; roomLight[3 * i + 1] = rgb[1] * f; roomLight[3 * i + 2] = rgb[2] * f;
+    }
+    return;
+  }
+  for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++){ const i = idx(x, y); roomLight[3 * i] = MOON_RGB[0]; roomLight[3 * i + 1] = MOON_RGB[1]; roomLight[3 * i + 2] = MOON_RGB[2]; }
+  for (const i of L.lamps) addLight(roomLight, MW, MH, blocks, { x: i % MW, y: Math.floor(i / MW), r: 6, i: 0.9, rgb: LAMP_RGB });
+  L.shops.forEach((sh, k) => addLight(roomLight, MW, MH, blocks, { x: sh.door % MW, y: Math.floor(sh.door / MW), r: 4, i: 0.8, rgb: SHOPS[k].rgb.map(v => v * 0.7) }));
 }
 function freeSpot(minDist){
   for (let tries = 0; tries < 400; tries++){
     const r = rng.pick(L.rooms), i = rng.pick(r.cells), x = i % MW, y = Math.floor(i / MW);
-    if (L.tiles[i] === T.FLOOR && !monAt(x, y) && dist(x, y, player.x, player.y) >= minDist && !(minDist && visible(i))) return i;
+    if ((L.tiles[i] === T.FLOOR || L.tiles[i] === T.GROUND) && !monAt(x, y) && dist(x, y, player.x, player.y) >= minDist && !(minDist && visible(i))) return i;
   }
   return -1;
 }
 function dropAt(i, it){ if (i >= 0) floor.push({ x: i % MW, y: Math.floor(i / MW), it }); }
 function pickMonster(d){
   const deep = rng.chance(0.1) ? 3 : 0;   // now and then, something from deeper down
-  const pool = MONSTERS.filter(m => m.depth <= d + deep);
+  const pool = d === 0 ? MONSTERS.filter(m => m.town) : MONSTERS.filter(m => !m.town && m.depth <= d + deep);
   return rng.weighted(pool, m => 1 / m.rarity * (m.depth >= d - 4 ? 1.5 : 0.6));
 }
 function spawnMonster(awake){
@@ -167,10 +209,10 @@ function updateSight(){
   rebuildTerrain();
 }
 function centerCamera(force){
-  const ox = cam.x, oy = cam.y, mx = Math.max(0, MW - GW), my = Math.max(0, MH - VH);
+  const ox = cam.x, oy = cam.y, w = L ? L.w : MW, h = L ? L.h : MH, mx = Math.max(0, w - GW), my = Math.max(0, h - VH);
   // the view moves in steps when you near its edge, like Moria's panels, rather than on every step
-  if (force || player.x - cam.x < GW * 0.2 || player.x - cam.x > GW * 0.8) cam.x = Math.max(0, Math.min(mx, player.x - (GW >> 1)));
-  if (force || player.y - cam.y < VH * 0.2 || player.y - cam.y > VH * 0.8) cam.y = Math.max(0, Math.min(my, player.y - (VH >> 1)));
+  if (force || player.x - cam.x < GW * 0.2 || player.x - cam.x > GW * 0.8) cam.x = w < GW ? -((GW - w) >> 1) : Math.max(0, Math.min(mx, player.x - (GW >> 1)));
+  if (force || player.y - cam.y < VH * 0.2 || player.y - cam.y > VH * 0.8) cam.y = h < VH ? -((VH - h) >> 1) : Math.max(0, Math.min(my, player.y - (VH >> 1)));
   if (screen && (ox !== cam.x || oy !== cam.y)) for (const b of world.bodies){ b.x += (ox - cam.x) * screen.cw; b.y += (oy - cam.y) * screen.ch; }
 }
 // The engine's terrain for the debris: the walls on screen, plus the message and status rows.
@@ -179,7 +221,7 @@ function rebuildTerrain(){
   const solid = new Uint8Array(GW * GH);
   for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++){
     const my = cam.y + r - VY, mx = cam.x + c;
-    solid[r * GW + c] = r < VY || r >= VY + VH || mx >= MW || my >= MH || opaque(L.tiles[idx(mx, my)]) ? 1 : 0;
+    solid[r * GW + c] = r < VY || r >= VY + VH || mx < 0 || my < 0 || mx >= MW || my >= MH || opaque(L.tiles[idx(mx, my)]) ? 1 : 0;
   }
   world.terrain = { cw: screen.cw, ch: screen.ch, cols: GW, rows: GH, solid, mat: BITS };
 }
@@ -196,6 +238,7 @@ function tryMove(dx, dy){
   const here = itemsAt(x, y);
   if (here.length === 1) say("You see " + nameOf(here[0].it) + ".");
   else if (here.length > 1) say("You see several items here.");
+  if (t === T.SHOP) openShop(L.shopAt[i]);
   if (t === T.DOWN) say("There is a staircase down here.");
   if (t === T.UP) say("There is a staircase up here.");
   return true;
@@ -465,8 +508,13 @@ const FX = {
   detectMon: () => { let n = 0; for (const m of mons) if (m.K && dist(m.x, m.y, player.x, player.y) <= 30){ m.det = turnNo + 1; n++; } say(n ? "You sense the presence of monsters!" : "You sense no monsters."); return n > 0; },
   detection: () => { FX.detectMon(); FX.detectObj(); return true; },
   phase: () => teleportPlayer(10), teleport: () => teleportPlayer(60),
-  teleLevel: () => { const up = depth > 1 && rng.chance(0.5); say(up ? "You rise up through the ceiling." : "You sink through the floor."); pendingLevel = depth + (up ? -1 : 1); return true; },
+  teleLevel: () => { const up = depth >= 1 && rng.chance(0.5); say(up ? "You rise up through the ceiling." : "You sink through the floor."); pendingLevel = depth + (up ? -1 : 1); return true; },
   deepDescent: () => { say("The floor opens beneath you!"); pendingLevel = depth + 2; return true; },
+  recall: () => {
+    if (player.recall > 0){ player.recall = 0; say("A tension leaves the air around you."); return true; }
+    if (depth === 0 && player.maxDepth < 1){ say("The air stirs, but there is nowhere for it to take you yet."); return true; }
+    player.recall = 15 + rng.int(20); say("The air about you becomes charged..."); return true;
+  },
   enchHit: () => enchant(weapon(), "tohit"), enchDam: () => enchant(weapon(), "todam"),
   enchAc: () => { const worn = ["body", "shield", "cloak", "head", "hands", "feet"].map(s => player.eq[s]).filter(Boolean); return enchant(worn.length ? rng.pick(worn) : null, "toac"); },
   bless: () => setTimer("bless", 12 + rng.int(12)), chant: () => setTimer("bless", 24 + rng.int(24)),
@@ -620,9 +668,11 @@ function act(fn){
   const r = fn();
   if (!r) return false;
   if (r === "level") return true;
-  if (pendingLevel){ const d = Math.max(1, pendingLevel); pendingLevel = 0; newLevel(d); return true; }
+  const go = () => { if (pendingLevel === null || state !== "play") return false; const d = Math.max(0, pendingLevel); pendingLevel = null; newLevel(d); return true; };
+  if (go()) return true;
   endTurn();
   while (player.t.asleep > 0 && state === "play") endTurn();   // asleep: the monsters keep moving
+  go();   // Word of Recall takes effect at the end of a turn
   return true;
 }
 function endTurn(){
@@ -638,7 +688,7 @@ function endTurn(){
   centerCamera(false); updateSight();
   for (const m of mons) if (m.K){ const v = seesMon(m); if (v && !m.seen) disturbed = true; m.seen = v; }
 }
-let disturbed = false, pendingLevel = 0;
+let disturbed = false, pendingLevel = null;
 function everyTurn(){
   // food and light burn away, and wounds and mana slowly come back
   if (!player.bonus.slowDigest || player.turns % 2) player.food--;
@@ -647,6 +697,14 @@ function everyTurn(){
   if (player.food === 0) say("You are starving!");
   if (player.food < 0 && player.food % 10 === 0) hurt(1, "starvation");
   if (player.t.poison > 0) hurt(1, "poison");
+  if (player.recall > 0 && --player.recall === 0){
+    pendingLevel = depth > 0 ? 0 : Math.max(1, player.maxDepth);
+    say(depth > 0 ? "You feel yourself yanked upwards!" : "You feel yourself yanked downwards!");
+  }
+  if (depth === 0 && player.turns % 25 === 0){   // the sun moves; night falls; morning comes
+    lightTown();
+    if (isDay() !== wasDay){ wasDay = isDay(); say(wasDay ? "The sun rises over Lanternhollow." : "Night falls, and the lamps are lit."); }
+  }
   for (const k of Object.keys(TIMERS)) if (player.t[k] > 0 && --player.t[k] === 0){ say(TIMERS[k][1]); recalc(); }
   for (const it of player.inv) if (it.timeout > 0) it.timeout--;   // rods recharge
   if (player.bonus.teleportCurse && rng.int(80) === 0 && teleportPlayer(40)){ say("You feel yourself yanked sideways!");
@@ -675,7 +733,7 @@ function hurt(n, by){
 function die(){
   state = "dead"; stateT = 0; aiming = null;
   const p = player, entry = { score: Math.floor(p.exp) + 100 * p.maxDepth, name: p.name, race: race().name, cls: cls().name, lvl: p.lvl, depth: feet(p.maxDepth), killer };
-  tomb = { ...entry, best: scores.add(entry).rank === 0, at: feet(depth) };
+  tomb = { ...entry, best: scores.add(entry).rank === 0, at: depthName(depth) };
   say("You die.");
 }
 function monsterTurn(m){
@@ -716,13 +774,20 @@ function step(m, x, y){
 }
 function monsterAttack(m){
   const K = m.K, name = seesMon(m) ? "The " + K.name : "It";
-  for (const [dice, verb] of K.blows){
+  for (const [dice, verb, effect] of K.blows){
     if (state !== "play") return;
     if (rng.int(100) < Math.max(15, Math.min(95, 60 + 2 * K.depth - armour()))){
+      if (effect === "steal"){   // a thief takes some gold, then slips away
+        if (!player.gold){ say(name + " fumbles at your empty purse."); continue; }
+        const n = Math.max(1, Math.floor(player.gold * (0.1 + rng.next() * 0.15)));
+        player.gold -= n; say(name + " " + verb + " you. Your purse feels " + n + " gold lighter!");
+        if (seesMon(m)) say("The " + K.name + " vanishes into the crowd.");
+        mons.splice(mons.indexOf(m), 1); return;
+      }
       let dmg = rng.dice(dice);
       if (verb === "burns" && player.bonus.res.has("fire")){ dmg = Math.ceil(dmg / 3); say(name + " burns you, but you resist the heat."); }
-      else say(name + " " + verb + " you.");
-      hurt(dmg, "a " + K.name);
+      else say(name + " " + verb + (dmg ? " you." : "."));
+      if (dmg) hurt(dmg, "a " + K.name);
     } else say(name + " misses you.");
   }
 }
@@ -762,6 +827,7 @@ function rest(){
 function contextAction(){   // the touch A button: whatever makes sense here
   const t = L.tiles[idx(player.x, player.y)];
   if (t === T.DOWN || t === T.UP) return act(() => takeStairs(t === T.DOWN));
+  if (t === T.SHOP) return openShop(L.shopAt[idx(player.x, player.y)]);
   if (itemsAt(player.x, player.y).length) return act(pickUp);
   act(() => true);   // otherwise wait a turn
 }
@@ -801,8 +867,8 @@ function crChoose(){ const r = crRows()[cr.at]; if (r.select) r.select(); else i
 function begin(){
   const p = crPreview(), C = CLASS[p.cls];
   const weapon = { sellsword: "shortsword", arcanist: "dagger", lampwarden: "mace", delver: "dagger", wayfinder: "shortsword", oathknight: "mace" }[p.cls];
-  player = { ...p, base: { ...p.stats }, name: cr.name, x: 0, y: 0, exp: 0, energy: 100, speed: 0, food: 5000, gold: rng.range(40, 120), regen: 0, mregen: 0,
-    inv: [], eq: Object.fromEntries(SLOTS.map(s => [s, null])), t: {}, know: newKnowledge(rng), maxDepth: 1, kills: 0, turns: 0 };
+  player = { ...p, base: { ...p.stats }, name: cr.name, x: 0, y: 0, exp: 0, energy: 100, speed: 0, food: 5000, gold: rng.range(250, 450), regen: 0, mregen: 0,
+    inv: [], eq: Object.fromEntries(SLOTS.map(s => [s, null])), t: {}, know: newKnowledge(rng), maxDepth: 0, kills: 0, turns: 0, recall: 0 };
   Object.assign(player.eq, { weapon: plainItem(weapon), body: plainItem("jerkin"), light: plainItem("torch") });
   for (const [k, n] of [["torch", 2], ["ration", 4], ["heal", 2], ...(C.kit || [])]){ carry(plainItem(k, n)); player.know.known[k] = true; }
   if (C.bow) player.eq.bow = plainItem(C.bow);
@@ -810,7 +876,8 @@ function begin(){
   player.mhp = player.hp = firstHp(player); player.mmana = player.mana = maxMana(player);
   log = []; msgs = []; oldMsgs = []; killer = ""; tomb = null; cr = null;
   state = "play"; stateT = 0;
-  newLevel(1);
+  shops = newShops(rng, player.know); lastTown = 0; depth = 0;
+  newLevel(0);
 }
 function statLine(s, k){ const m = statMod(s[k]); return k.toUpperCase() + " " + String(s[k]).padStart(2) + " (" + (m >= 0 ? "+" : "") + m + ")"; }
 function drawCreate(){
@@ -855,10 +922,13 @@ const { put, text, center } = pen(() => screen);   // drawing on the character g
 function drawMap(t){
   computeLight(lightNow, t);
   for (let r = 0; r < VH; r++) for (let c = 0; c < GW; c++){
-    const x = cam.x + c, y = cam.y + r; if (x >= MW || y >= MH) continue;
-    const i = idx(x, y), tile = L.tiles[i], [g, base] = TILE[tile], j = 3 * i;
+    const x = cam.x + c, y = cam.y + r; if (x < 0 || y < 0 || x >= MW || y >= MH) continue;
+    const i = idx(x, y), tile = L.tiles[i], j = 3 * i;
+    let [g, base] = TILE[tile];
+    if (tile === T.SHOP){ g = String(L.shopAt[i] + 1); base = SHOPS[L.shopAt[i]].rgb; }   // shop entrances show their number
+    else if (tile === T.GROUND && (x * 7 + y * 13) % 9 === 0) g = ",";                      // a little grass among the dirt
     // drawn lit: what the turn saw, plus anything in sight that a flying spell or flash lights up right now
-    if (visible(i) || (inFov[i] === turnNo && lum(lightNow, j) > 0.03)){
+    if (visible(i) || ((inFov[i] === turnNo || depth === 0) && lum(lightNow, j) > 0.03)){   // the town: every lit street and roof shows
       const k = 1.7;
       put(c, VY + r, [base[0] * lightNow[j] * k, base[1] * lightNow[j + 1] * k, base[2] * lightNow[j + 2] * k], 1, 1, g.charCodeAt(0));
     } else if (mem[i]) put(c, VY + r, [base[0] * MEM_RGB[0] * 2, base[1] * MEM_RGB[1] * 2, base[2] * MEM_RGB[2] * 2], 1, 1, g.charCodeAt(0));   // remembered: dim and blue
@@ -888,7 +958,7 @@ function drawUI(){
   seg("LV " + p.lvl, WHITE); seg("EXP " + Math.floor(p.exp) + "/" + expNeeded(p, p.lvl + 1), WHITE);
   seg("HP " + Math.max(0, p.hp) + "/" + p.mhp, low ? RED : GREEN);
   if (p.mmana) seg("MP " + p.mana + "/" + p.mmana, BLUE);
-  seg("AC " + armour(), WHITE); seg(feet(depth) + " ft", WHITE);
+  seg("AC " + armour(), WHITE); seg(depth ? feet(depth) + " ft" : "Town, " + (isDay() ? "day" : "night"), WHITE);
   x = 0;
   const seg2 = (s, rgb) => { text(x, GH - 1, s, rgb); x += s.length + 2; };
   seg2(lt ? ITEM[lt.k].name + " " + lt.fuel : "No light", lt && lt.fuel > 500 ? ACCENT : RED);
@@ -907,7 +977,7 @@ function drawTitle(t){
     for (let i = 0; i < MW * MH; i++) if (L.room[i] === r.id){ roomLight[3 * i] = ROOM_RGB[0] * 0.6; roomLight[3 * i + 1] = ROOM_RGB[1] * 0.6; roomLight[3 * i + 2] = ROOM_RGB[2] * 0.6; } }   // the biggest room, dimly lit
   computeLight(lightNow, t);
   for (let r = 0; r < VH; r++) for (let c = 0; c < GW; c++){
-    const x = cam.x + c, y = cam.y + r; if (x >= MW || y >= MH) continue;
+    const x = cam.x + c, y = cam.y + r; if (x < 0 || y < 0 || x >= MW || y >= MH) continue;
     const i = idx(x, y), j = 3 * i, v = lum(lightNow, j); if (v < 0.02) continue;
     const [g, base] = TILE[L.tiles[i]];
     put(c, VY + r, [base[0] * lightNow[j] * 1.7, base[1] * lightNow[j + 1] * 1.7, base[2] * lightNow[j + 2] * 1.7], 1, 1, g.charCodeAt(0));
@@ -924,7 +994,7 @@ function drawTitle(t){
   }
 }
 function drawTomb(){
-  const T0 = tomb, lines = ["R.I.P.", "", T0.name, "the " + T0.race + " " + T0.cls, "of level " + T0.lvl, "killed by " + T0.killer, "at " + T0.at + " ft", "", "Score " + T0.score + (T0.best ? "  (best!)" : ""), "",
+  const T0 = tomb, lines = ["R.I.P.", "", T0.name, "the " + T0.race + " " + T0.cls, "of level " + T0.lvl, "killed by " + T0.killer, (T0.at === "the town" ? "in the town" : "at " + T0.at), "", "Score " + T0.score + (T0.best ? "  (best!)" : ""), "",
     pad.touch ? "Press A for the title" : "Press Space for the title"];
   const w = 34, top = Math.max(2, (GH >> 1) - 8), x0 = (GW - w) >> 1;
   for (let r = 0; r < lines.length + 4; r++) text(x0, top + r, r === 0 || r === lines.length + 3 ? "+" + "-".repeat(w - 2) + "+" : "|" + " ".repeat(w - 2) + "|", DIM);
@@ -946,6 +1016,60 @@ const list = createMenu(() => listRows);
 function openList(title, rows, note = ""){ listTitle = title; listRows = rows; listNote = note; list.at = 0; if (!list.open) list.show(); }
 const info = s => ({ label: s, select: () => {} });
 const done = fn => () => { list.hide(); fn(); };
+/* ---------- shops: buy, sell, and selling tells you what a thing was ---------- */
+const shopName = it => itemName(it, { ...player.know, known: SHOP_KNOWS.known });
+const shopCol = () => Math.max(24, Math.min(40, GW - 26));   // the name column, narrower on a phone
+const shopTitle = i => SHOPS[i].name.toUpperCase() + "   GOLD " + player.gold;
+function openShop(i){
+  const S = SHOPS[i]; oldMsgs = []; msgs = [];
+  say("You enter the " + S.name + ". " + S.keeper + ": \"" + rng.pick(S.hello) + "\"");
+  shopMain(i);
+}
+function shopMain(i){
+  openList(shopTitle(i), [{ label: "Buy", select: () => shopBuy(i) }, { label: "Sell", select: () => shopSell(i) }, { label: "Leave", select: () => list.hide() }], SHOPS[i].keeper.toUpperCase());
+}
+function shopBuy(i, at = 0){
+  const S = SHOPS[i], stock = shops[i].stock;
+  const rows = stock.map(it => ({ label: cap(shopName(it)).padEnd(shopCol()) + String(buyPrice(it, S, player.stats.cha)).padStart(6) + " gold", select: () => buy(i, it) }));
+  rows.push({ label: "Back", select: () => shopMain(i) });
+  openList(shopTitle(i), rows, "PRICES ARE FOR ONE"); list.at = Math.min(at, rows.length - 1);
+}
+function buy(i, it){
+  const S = SHOPS[i], price = buyPrice(it, S, player.stats.cha), at = list.at;
+  oldMsgs = []; msgs = [];
+  if (player.gold < price) say(S.keeper + ": \"Come back when you can afford it.\"");
+  else {
+    const one = { ...it, n: 1 }, got = carry(one);
+    if (!got) say("You have no room in your pack.");
+    else {
+      player.gold -= price; player.know.known[it.k] = true;
+      if (--it.n <= 0) shops[i].stock.splice(shops[i].stock.indexOf(it), 1);
+      say("You buy " + nameOf(one) + " for " + price + " gold."); recalc();
+    }
+  }
+  shopBuy(i, at);
+}
+function shopSell(i, at = 0){
+  const S = SHOPS[i];
+  const rows = player.inv.map((it, k) => ({ label: (String.fromCharCode(97 + k) + ") " + nameOf(it)).padEnd(shopCol()) + (shopBuys(S, it) ? (it.id && kindKnown(ITEM[it.k], player.know) ? String(sellPrice(it, S, player.stats.cha)).padStart(6) + " gold" : "     ? gold") : "     -"), select: () => sell(i, it) }));
+  if (!rows.length) rows.push(info("You have nothing to sell."));
+  rows.push({ label: "Back", select: () => shopMain(i) });
+  openList(shopTitle(i), rows, "SELLING ONE ALSO TELLS YOU WHAT IT IS"); list.at = Math.min(at, rows.length - 1);
+}
+function sell(i, it){
+  const S = SHOPS[i], at = list.at;
+  oldMsgs = []; msgs = [];
+  if (!shopBuys(S, it)){ say(S.keeper + ": \"I don't deal in those.\""); return shopSell(i, at); }
+  const knew = it.id && kindKnown(ITEM[it.k], player.know);
+  it.id = true; delete it.sense; player.know.known[it.k] = true;   // the keeper looks it over and tells you
+  if (!knew) say("The keeper looks it over: it is " + nameOf(it, 1) + ".");
+  const price = sellPrice(it, S, player.stats.cha);
+  if (price <= 0){ say(S.keeper + ": \"That's worth nothing to me.\""); return shopSell(i, at); }
+  const one = { ...it, n: 1 }; takeOne(it); player.gold += price;
+  const same = shops[i].stock.find(o => sameItem(o, one)); if (same) same.n++; else shops[i].stock.push(one);
+  say("You sell " + nameOf(one) + " for " + price + " gold."); recalc();
+  shopSell(i, at);
+}
 function commandList(){
   const P = POWERS[powerFor(cls())];
   openList("COMMANDS", [
@@ -1013,7 +1137,7 @@ const EFFECT_TEXT = { heal: "heals wounds", healFull: "heals you completely", ma
   salt: "makes you sick", gainStat: "raises a stat for good", enlight: "shows you the whole level", exp: "gives experience", clairvoyance: "shows you the level and its objects",
   identify: "identifies an item", removeCurse: "removes curses from your equipment", lightArea: "lights up the area", darkness: "darkens the area and blinds you",
   map: "maps the area around you", detectObj: "shows objects nearby", detectMon: "shows monsters nearby", detection: "shows monsters and objects nearby",
-  phase: "teleports you a short way", teleport: "teleports you far away", teleLevel: "takes you up or down a level", deepDescent: "drops you two levels",
+  recall: "takes you to the town, or back down to your deepest level", phase: "teleports you a short way", teleport: "teleports you far away", teleLevel: "takes you up or down a level", deepDescent: "drops you two levels",
   enchHit: "makes your weapon more accurate", enchDam: "makes your weapon hit harder", enchAc: "strengthens a piece of armour", bless: "blesses you", chant: "blesses you for longer",
   satisfy: "fills your stomach", monConf: "makes your next hit confuse", slumber: "puts monsters next to you to sleep", aggravate: "wakes every monster",
   curseArmour: "curses your armour", summonUndead: "calls the undead", summon: "calls monsters", bolt: "fires a bolt", beam: "fires a beam that goes through monsters",
@@ -1064,7 +1188,7 @@ function helpList(){
   const ro = keySet === "roguelike";
   openList("HELP", [
     info(ro ? "hjklyubn  move (Shift runs)" : "Arrows/numpad  move"), info(ro ? "arrows also move" : "Shift + move  run"),
-    info("Walk into a monster to attack"), info("Walk into a door to open it"),
+    info("Walk into a monster to attack"), info("Walk into a door to open it"), info("In town, walk onto a number to shop"),
     info("g or ,  pick up"), info("i  pack   e  equipment"), info("w  wear   " + (ro ? "T" : "t") + "  take off   d  drop"),
     info("E  eat   q  drink   r  read"), info("a  aim a wand   " + (ro ? "Z" : "u") + "  use a staff"), info("z  zap a rod   F  fill lantern"),
     info("f  fire   v  throw   I  inspect"), info("m  cast or pray"), info("  then a direction, or ' / t"), info("  for the nearest monster"),

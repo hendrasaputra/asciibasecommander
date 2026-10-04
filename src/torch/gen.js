@@ -2,8 +2,10 @@
 // Rooms of a few shapes joined by corridors, with doors where a corridor passes through a room's wall, and stairs.
 // Original code: the layout ideas (rooms, tunnels, lit rooms that get rarer with depth) are common to the genre.
 const MW = 198, MH = 66;   // map size, as in Moria
-const T = { EDGE: 0, WALL: 1, FLOOR: 2, DOOR: 3, OPEN: 4, DOWN: 5, UP: 6 };
-const passable = t => t >= T.FLOOR && t !== T.DOOR;   // closed doors open when you walk into them
+// Town tiles: GROUND (open ground), SHOP (a shop's entrance; L.shopAt says which), LAMP (a lamp post: blocks your
+// way but not your view).
+const T = { EDGE: 0, WALL: 1, FLOOR: 2, DOOR: 3, OPEN: 4, DOWN: 5, UP: 6, SHOP: 7, GROUND: 8, LAMP: 9 };
+const passable = t => t >= T.FLOOR && t !== T.DOOR && t !== T.LAMP;   // closed doors open when you walk into them
 const opaque = t => t <= T.WALL || t === T.DOOR;
 
 function generateLevel(rng, depth){
@@ -69,8 +71,43 @@ function generateLevel(rng, depth){
     return rooms[0].cells[0];
   };
   for (let k = 0; k < 1 + rng.int(2); k++) tiles[spot()] = T.DOWN;
-  if (depth > 1) for (let k = 0; k < 1 + rng.int(2); k++) tiles[spot()] = T.UP;
-  return { tiles, room, lit, rooms, spot };
+  for (let k = 0; k < 1 + rng.int(2); k++) tiles[spot()] = T.UP;   // on level 1 they lead up to the town
+  return { tiles, room, lit, rooms, spot, w: MW, h: MH };
+}
+
+/* ---------- the town ---------- */
+// A walled town on the surface: six shops in two rows along a main street, a few houses, lamp posts, and the
+// stairs down. It uses the top-left TW x TH of the map; L.w and L.h tell the camera where it ends.
+const TW = 80, TH = 26;
+function generateTown(rng){
+  const tiles = new Uint8Array(MW * MH).fill(T.EDGE), room = new Int16Array(MW * MH).fill(-1), lit = new Uint8Array(MW * MH);
+  const shopAt = new Int8Array(MW * MH).fill(-1), at = (x, y) => y * MW + x;
+  for (let y = 1; y < TH - 1; y++) for (let x = 1; x < TW - 1; x++) tiles[at(x, y)] = T.GROUND;
+  const shops = [], houses = [], lamps = [];
+  const building = (x0, y0, w, h) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) tiles[at(x, y)] = T.WALL; };
+  // shops: three facing the street from above, three from below; the street runs along the middle
+  const order = rng.shuffle([0, 1, 2, 3, 4, 5]), street = TH >> 1;
+  for (let k = 0; k < 6; k++){
+    const top = k < 3, col = k % 3, w = 12 + rng.int(4), h = 5, x0 = 5 + col * 25 + rng.int(4), y0 = top ? street - h - 2 - rng.int(2) : street + 3 + rng.int(2);
+    building(x0, y0, w, h);
+    const dx = x0 + 2 + rng.int(w - 4), dy = top ? y0 + h - 1 : y0, door = at(dx, dy);   // the entrance faces the street
+    tiles[door] = T.SHOP; shopAt[door] = order[k];
+    shops[order[k]] = { x0, y0, w, h, door };
+  }
+  // small houses, and lamp posts along the street
+  for (let tries = 0; tries < 60 && houses.length < 6; tries++){
+    const w = 4 + rng.int(4), h = 3 + rng.int(2), x0 = 2 + rng.int(TW - w - 4), y0 = 2 + rng.int(TH - h - 4);
+    let free = true;
+    for (let y = y0 - 1; y <= y0 + h && free; y++) for (let x = x0 - 1; x <= x0 + w && free; x++) if (tiles[at(x, y)] !== T.GROUND || Math.abs(y - street) <= 1) free = false;
+    if (free){ building(x0, y0, w, h); houses.push({ x0, y0, w, h }); }
+  }
+  for (let x = 6; x < TW - 4; x += 12) for (const y of [street - 1, street + 1]) if (tiles[at(x, y)] === T.GROUND){ tiles[at(x, y)] = T.LAMP; lamps.push(at(x, y)); }
+  // the stairs down, somewhere on open ground away from the street
+  const ground = []; for (let i = 0; i < tiles.length; i++) if (tiles[i] === T.GROUND) ground.push(i);
+  let down;
+  do down = rng.pick(ground); while (Math.abs(Math.floor(down / MW) - street) < 3);
+  tiles[down] = T.DOWN;
+  return { tiles, room, lit, rooms: [{ cells: ground.filter(i => i !== down) }], spot: () => down, w: TW, h: TH, town: true, shops, shopAt, lamps, houses, street };
 }
 // Every cell a player can stand on, reached from the first room (closed doors count as passable).
 function reachable(L){

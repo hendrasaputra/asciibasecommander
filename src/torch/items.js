@@ -84,7 +84,7 @@ const ITEMS = [
       ["senchac", "Enchant Armour", "enchAc", 6, 2, 125], ["sbless", "Blessing", "bless", 1, 1, 15], ["schant", "Holy Chant", "chant", 10, 2, 40],
       ["sfood", "Satisfy Hunger", "satisfy", 5, 2, 10], ["sconf", "Monster Confusion", "monConf", 3, 2, 30], ["sslumber", "Slumber", "slumber", 4, 2, 35],
       ["sdark", "Darkness", "darkness", 1, 1, 0], ["saggr", "Aggravate Monsters", "aggravate", 5, 1, 0], ["scursearm", "Curse Armour", "curseArmour", 10, 2, 0],
-      ["sundead", "Summon Undead", "summonUndead", 15, 2, 0]]
+      ["sundead", "Summon Undead", "summonUndead", 15, 2, 0], ["srecall", "Word of Recall", "recall", 5, 2, 125]]
     .map(([id, n, e, dep, r, c]) => I("scroll", id, n, dep, r, 0.5, c, { effect: e })),
   // wands: aimed, with charges
   ...[["wmissile", "Magic Missile", "bolt", { elem: "arcane", dice: "3d4" }, 2, 1, 100, "5d4"], ["wstink", "Stinking Cloud", "ball", { elem: "poison", dmg: 12, r: 2 }, 5, 1, 400, "5d3"],
