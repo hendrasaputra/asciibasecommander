@@ -1267,7 +1267,8 @@ const CAT = {   // per category: glyph, colour, slot, and whether its kinds are 
   light: { glyph: "~", rgb: [1.0, 0.7, 0.3], slot: "light" }, food: { glyph: ",", rgb: [0.85, 0.7, 0.45] }, flask: { glyph: "!", rgb: [0.9, 0.8, 0.4] },
   mushroom: { glyph: ",", flavour: true }, potion: { glyph: "!", flavour: true }, scroll: { glyph: "?", flavour: true },
   wand: { glyph: "-", flavour: true }, staff: { glyph: "_", flavour: true }, rod: { glyph: "-", flavour: true },
-  ring: { glyph: "=", flavour: true, slot: "ring" }, amulet: { glyph: "\"", flavour: true, slot: "neck" }
+  ring: { glyph: "=", flavour: true, slot: "ring" }, amulet: { glyph: "\"", flavour: true, slot: "neck" },
+  book: { glyph: "?", rgb: [0.8, 0.8, 0.8] }
 };
 const ARMOUR_CATS = ["body", "shield", "head", "hands", "feet", "cloak"];
 const I = (cat, id, name, depth, rarity, wt, cost, o = {}) => ({ cat, id, name, depth, rarity, wt, cost, ...o });
@@ -1360,6 +1361,11 @@ const ITEMS = [
       ["rcure", "Curing", "cure", 15, 3, 1500, 40], ["rodfire", "Fire Bolts", "bolt", 20, 3, 2500, 15, true, { elem: "fire", dice: "9d8" }],
       ["rodcold", "Frost Bolts", "bolt", 18, 3, 2200, 13, true, { elem: "cold", dice: "6d8" }], ["robj", "Treasure Location", "detectObj", 5, 2, 800, 30]]
     .map(([id, n, e, dep, r, c, time, aim, o]) => I("rod", id, n, dep, r, 1.5, c, { effect: e, recharge: time, aim: !!aim, ...(o || {}) })),
+  // spell books (phase 5): four for each realm; casting needs the book in your pack
+  ...[["abook1", "Book of First Sparks", 1, 1, 25], ["abook2", "Book of Hidden Ways", 10, 2, 150], ["abook3", "Book of Storm and Frost", 20, 3, 800], ["abook4", "Book of Deep Sorcery", 35, 4, 2500]]
+    .map(([id, n, dep, r, c], i) => I("book", id, n, dep, r, 3, c, { realm: "arcane", book: i + 1, rgb: [0.55, 0.65, 1.3] })),
+  ...[["hbook1", "Lamp Psalter", 1, 1, 25], ["hbook2", "Hymns of the Hearth", 10, 2, 150], ["hbook3", "Litany of Dawn", 20, 3, 800], ["hbook4", "Rites of the Unbroken Flame", 35, 4, 2500]]
+    .map(([id, n, dep, r, c], i) => I("book", id, n, dep, r, 3, c, { realm: "holy", book: i + 1, rgb: [1.3, 1.1, 0.55] })),
   // rings and amulets: worn; pval is rolled when made
   ...[["rprot", "Protection", 5, 1, { pac: true }, 400], ["rstr", "Strength", 20, 3, { pstat: "str" }, 1500], ["rint", "Intellect", 20, 3, { pstat: "int" }, 1500],
       ["rdex", "Dexterity", 20, 3, { pstat: "dex" }, 1500], ["rcon", "Constitution", 22, 3, { pstat: "con" }, 1500], ["racc", "Accuracy", 8, 2, { phit: true }, 500],
@@ -1552,16 +1558,16 @@ const SHOPS = [
     buys: ["body", "shield", "head", "hands", "feet", "cloak"], hello: ["Good steel saves lives.", "Try it on. It's the only way to know.", "Dents are extra."] },
   { name: "Weaponsmith", keeper: "Kessa Edgewright", greed: 1.25, rgb: [1.2, 0.7, 0.5], size: [10, 14], cats: ["weapon", "bow", "ammo"], maxDepth: 14,
     buys: ["weapon", "bow", "ammo", "dart"], hello: ["Every blade here is sharp. I checked.", "Point the sharp end away from you.", "Bring me something good from below."] },
-  { name: "Temple", keeper: "Sister Ilvane", greed: 1.15, rgb: [1.3, 1.2, 0.9], size: [10, 14], always: ["heal"],
-    sells: ["heal", "bigheal", "pclear", "ppoisoncure", "sbless", "schant", "suncurse", "srecall", "mace", "flail", "morningstar", "warhammer"],
-    buys: ["potion", "scroll"], hello: ["May your light never fail.", "The flame keeps watch over all of us.", "Rest here a while, if you need."] },
+  { name: "Temple", keeper: "Sister Ilvane", greed: 1.15, rgb: [1.3, 1.2, 0.9], size: [10, 14], always: ["heal", "hbook1"],
+    sells: ["hbook1", "hbook2", "heal", "bigheal", "pclear", "ppoisoncure", "sbless", "schant", "suncurse", "srecall", "mace", "flail", "morningstar", "warhammer"],
+    buys: ["potion", "scroll", "book"], hello: ["May your light never fail.", "The flame keeps watch over all of us.", "Rest here a while, if you need."] },
   { name: "Alchemist", keeper: "Thorne Vialkeeper", greed: 1.3, rgb: [0.7, 1.2, 0.8], size: [10, 15], always: ["heal", "sident", "srecall"],
     sells: ["heal", "bigheal", "pfire", "pcold", "pinfra", "phero", "pspeed", "sident", "slight", "sphase", "smap", "sobj", "smon", "sfood", "srecall", "senchhit", "senchdam", "senchac", "stele"],
     buys: ["potion", "scroll"], hello: ["Don't touch the green ones.", "Every bottle has a story. Some of them explode.", "Read the label. Then read it again."] },
   { name: "Magic Shop", keeper: "Maelis of the Blue Door", greed: 1.4, rgb: [0.8, 0.7, 1.4], size: [8, 12],
-    sells: ["wmissile", "wsleep", "wslow", "wconf", "wstink", "wlight", "wmud", "tlight", "tdetmon", "tdetobj", "tcure", "rillum", "rlight", "robj",
+    always: ["abook1"], sells: ["abook1", "abook2", "wmissile", "wsleep", "wslow", "wconf", "wstink", "wlight", "wmud", "tlight", "tdetmon", "tdetobj", "tcure", "rillum", "rlight", "robj",
       "rprot", "rfire", "rcold", "racc", "rdam", "adigest", "ainfra", "acha"],
-    buys: ["wand", "staff", "rod", "ring", "amulet"], hello: ["Everything here does something. Mostly what it should.", "Charges not included. Well, some are.", "Ah, a customer with taste."] }
+    buys: ["wand", "staff", "rod", "ring", "amulet", "book"], hello: ["Everything here does something. Mostly what it should.", "Charges not included. Well, some are.", "Ah, a customer with taste."] }
 ];
 // What an item is worth (in gold), from its kind and what was rolled for it. Cursed or broken things are worth nothing.
 function itemValue(it){
@@ -1652,31 +1658,25 @@ const CLASSES = [
   { id: "arcanist", name: "Arcanist", stats: { str: -4, int: 3, dex: 1, con: -2, cha: 1 }, hd: 4, xp: 30, realm: "arcane", stat: "int",
     fight: [35, 1.5], shoot: [40, 1.5], save: [40, 1.6], stealth: 2, disarm: [35, 1.4], device: [50, 2.0], search: [25, 0.8], notice: [30, 0.8],
     titles: ["Novice", "Scribe", "Spark-wright", "Conjurer", "Spellbinder", "Thaumaturge", "Magister", "Arch-scholar", "Stormcaller", "Archmage"],
-    desc: "A student of the arcane. Frail, but casts Spark: a bolt of light that strikes from a distance." },
+    desc: "A student of the arcane. Frail, but learns the most spells, starting with Spark: a bolt that strikes from a distance." },
   { id: "lampwarden", name: "Lampwarden", stats: { str: -1, int: -2, wis: 3, dex: -1, con: 1, cha: 2 }, hd: 6, xp: 20, realm: "holy", stat: "wis", lightBonus: 1,
     fight: [45, 2.0], shoot: [35, 1.2], save: [45, 1.8], stealth: 1, disarm: [25, 1.0], device: [40, 1.6], search: [25, 0.8], notice: [30, 0.8],
     titles: ["Acolyte", "Lamp-bearer", "Keeper", "Watcher", "Warden", "Beacon", "High Keeper", "Lightward", "Dawnbringer", "Lamp of the Deep"],
-    desc: "A keeper of the sacred flame. Their light reaches one step further, and they pray Mend to heal." },
-  { id: "delver", name: "Delver", stats: { int: 1, wis: -2, dex: 3, cha: -1 }, hd: 7, xp: 25, ambush: true,
+    desc: "A keeper of the sacred flame. Their light reaches one step further, and they learn every prayer, starting with Mend." },
+  { id: "delver", name: "Delver", stats: { int: 1, wis: -2, dex: 3, cha: -1 }, hd: 7, xp: 25, ambush: true, realm: "arcane", stat: "int", manaK: 0.5, pace: 1.5, start: 3,
     fight: [50, 2.2], shoot: [55, 2.4], save: [35, 1.4], stealth: 5, disarm: [55, 2.2], device: [40, 1.6], search: [45, 1.4], notice: [45, 1.4],
     titles: ["Footpad", "Cutpurse", "Sneak", "Prowler", "Shadow", "Infiltrator", "Vaultbreaker", "Nightblade", "Master Delver", "Unseen"],
-    desc: "A quiet treasure-seeker. Monsters stay asleep longer, and a sleeping one takes double damage." },
-  { id: "wayfinder", name: "Wayfinder", stats: { int: 1, wis: -1, dex: 2, con: 1 }, hd: 8, xp: 30, kit: [["dart", 10], ["shot", 30]], bow: "sling",
+    desc: "A quiet treasure-seeker. Monsters stay asleep longer, a sleeping one takes double damage, and a little arcane magic comes later." },
+  { id: "wayfinder", name: "Wayfinder", stats: { int: 1, wis: -1, dex: 2, con: 1 }, hd: 8, xp: 30, kit: [["dart", 10], ["shot", 30]], bow: "sling", realm: "arcane", stat: "int", manaK: 0.5, pace: 1.5, start: 3,
     fight: [52, 2.4], shoot: [70, 3.2], save: [35, 1.4], stealth: 3, disarm: [35, 1.4], device: [35, 1.4], search: [40, 1.2], notice: [45, 1.4],
     titles: ["Trailhand", "Scout", "Tracker", "Pathfinder", "Outrider", "Hunter", "Far-strider", "Deepranger", "Wayfinder", "Warden of Roads"],
-    desc: "A scout of the deep roads. The best shot: starts with a sling, iron shot and throwing darts." },
-  { id: "oathknight", name: "Oathknight", stats: { str: 2, int: -3, wis: 1, con: 1, cha: 2 }, hd: 9, xp: 35, realm: "holy", stat: "wis", manaK: 0.6,
+    desc: "A scout of the deep roads. The best shot: starts with a sling, iron shot and throwing darts; learns some arcane magic later." },
+  { id: "oathknight", name: "Oathknight", stats: { str: 2, int: -3, wis: 1, con: 1, cha: 2 }, hd: 9, xp: 35, realm: "holy", stat: "wis", manaK: 0.6, pace: 1.4, start: 2,
     fight: [60, 2.8], shoot: [40, 1.6], save: [40, 1.6], stealth: 1, disarm: [25, 1.0], device: [30, 1.2], search: [20, 0.5], notice: [25, 0.6],
     titles: ["Squire", "Sworn", "Shieldbearer", "Knight", "Oathkeeper", "Knight-Captain", "Lord Protector", "Banneret", "Paragon", "Oathbound"],
-    desc: "A holy warrior. Fights nearly as well as a Sellsword and can pray Mend, with less power." }
+    desc: "A holy warrior. Fights nearly as well as a Sellsword, and learns prayers more slowly." }
 ];
 const RACE = Object.fromEntries(RACES.map(r => [r.id, r])), CLASS = Object.fromEntries(CLASSES.map(c => [c.id, c]));
-// Class powers: each caster's first spell. Phase 5 folds these into full spell books.
-const POWERS = {
-  spark: { name: "Spark", cost: 1, realm: "arcane", dice: "3d4", aim: true, desc: "a bolt of light" },
-  mend: { name: "Mend", cost: 2, realm: "holy", heal: "3d6", desc: "heals wounds" }
-};
-const powerFor = C => C.realm === "arcane" ? "spark" : C.realm === "holy" ? "mend" : null;
 
 const statMod = v => Math.floor((v - 10) / 2);
 const clampStat = v => Math.max(3, Math.min(25, v));
@@ -1711,6 +1711,91 @@ function randomName(rng){
   const b = ["a", "e", "i", "o", "an", "en", "ir", "or", "ul", "ar"], c = ["d", "n", "th", "k", "l", "ra", "wyn", "mir", "dor", "sa", "ric", "ven"];
   return rng.pick(a) + (rng.chance(0.6) ? rng.pick(b) : "") + rng.pick(c);
 }
+/* ---------- Torchlight Dungeons: magic and prayers (phase 5) ---------- */
+// Original content: the spells, their names, levels, costs and effects are this game's own. Two realms of 30, four
+// books each. lv is the level a full caster learns it at; mana its cost; fail its base chance of failing (%).
+// fx names an effect handler in game.js (shared with items); also names a second one. The rest are its numbers.
+const SPELLS = [
+  // ---- arcane: Book of First Sparks
+  { id: "spark", name: "Spark", realm: "arcane", book: 1, lv: 1, mana: 1, fail: 22, fx: "bolt", elem: "arcane", dice: "3d4", aim: true, desc: "a bolt of light that never misses" },
+  { id: "senseFoes", name: "Sense Foes", realm: "arcane", book: 1, lv: 2, mana: 1, fail: 22, fx: "detectMon", desc: "shows monsters nearby" },
+  { id: "phaseStep", name: "Phase Step", realm: "arcane", book: 1, lv: 3, mana: 2, fail: 24, fx: "phase", desc: "a short teleport" },
+  { id: "kindle", name: "Kindle", realm: "arcane", book: 1, lv: 5, mana: 2, fail: 25, fx: "lightArea", desc: "lights the room around you" },
+  { id: "glint", name: "Glint of Gold", realm: "arcane", book: 1, lv: 5, mana: 2, fail: 25, fx: "detectObj", desc: "shows objects nearby" },
+  { id: "knit", name: "Knit Flesh", realm: "arcane", book: 1, lv: 7, mana: 3, fail: 27, fx: "heal", dice: "2d8", desc: "heals a little" },
+  { id: "befuddle", name: "Befuddle", realm: "arcane", book: 1, lv: 8, mana: 3, fail: 28, fx: "confMon", aim: true, desc: "confuses a monster" },
+  { id: "stench", name: "Choking Cloud", realm: "arcane", book: 1, lv: 9, mana: 4, fail: 30, fx: "ball", elem: "poison", dmg: 14, r: 2, aim: true, desc: "a ball of poison gas" },
+  // ---- arcane: Book of Hidden Ways
+  { id: "slumber", name: "Slumber", realm: "arcane", book: 2, lv: 10, mana: 4, fail: 30, fx: "sleepMon", aim: true, desc: "puts a monster to sleep" },
+  { id: "frostBolt", name: "Frost Bolt", realm: "arcane", book: 2, lv: 11, mana: 5, fail: 32, fx: "bolt", elem: "cold", dice: "6d6", aim: true, desc: "a bolt of cold" },
+  { id: "slowFoe", name: "Leaden Limbs", realm: "arcane", book: 2, lv: 12, mana: 5, fail: 33, fx: "slowMon", aim: true, desc: "slows a monster" },
+  { id: "knowing", name: "Knowing", realm: "arcane", book: 2, lv: 13, mana: 7, fail: 35, fx: "identify", desc: "identifies an item" },
+  { id: "lightLance", name: "Light Lance", realm: "arcane", book: 2, lv: 14, mana: 5, fail: 33, fx: "beamLight", aim: true, desc: "lights a line through the dark" },
+  { id: "melt", name: "Melt Stone", realm: "arcane", book: 2, lv: 15, mana: 6, fail: 35, fx: "stoneMud", aim: true, desc: "turns a wall to mud" },
+  { id: "blink", name: "Far Step", realm: "arcane", book: 2, lv: 17, mana: 8, fail: 37, fx: "teleport", desc: "teleports you far away" },
+  { id: "recharge", name: "Recharge", realm: "arcane", book: 2, lv: 19, mana: 9, fail: 40, fx: "recharge", desc: "adds charges to a wand or staff (it may break)" },
+  // ---- arcane: Book of Storm and Frost
+  { id: "lightning", name: "Forked Lightning", realm: "arcane", book: 3, lv: 20, mana: 8, fail: 38, fx: "beam", elem: "elec", dice: "6d8", aim: true, desc: "a beam of lightning through every monster in line" },
+  { id: "ward", name: "Ward of Elements", realm: "arcane", book: 3, lv: 21, mana: 8, fail: 38, fx: "wardElements", desc: "resists heat and cold for a while" },
+  { id: "fireBolt", name: "Fire Bolt", realm: "arcane", book: 3, lv: 22, mana: 9, fail: 40, fx: "bolt", elem: "fire", dice: "9d8", aim: true, desc: "a bolt of fire" },
+  { id: "chart", name: "Chart the Depths", realm: "arcane", book: 3, lv: 23, mana: 9, fail: 40, fx: "map", desc: "maps the area around you" },
+  { id: "banishOne", name: "Send Away", realm: "arcane", book: 3, lv: 24, mana: 10, fail: 42, fx: "teleOther", aim: true, desc: "teleports a monster far away" },
+  { id: "frostBall", name: "Frost Ball", realm: "arcane", book: 3, lv: 25, mana: 12, fail: 44, fx: "ball", elem: "cold", dmg: 45, r: 2, aim: true, desc: "an exploding ball of cold" },
+  { id: "recallA", name: "Homeward Path", realm: "arcane", book: 3, lv: 26, mana: 14, fail: 45, fx: "recall", desc: "Word of Recall" },
+  { id: "haste", name: "Quicken", realm: "arcane", book: 3, lv: 27, mana: 14, fail: 46, fx: "fast", desc: "makes you faster for a while" },
+  // ---- arcane: Book of Deep Sorcery
+  { id: "fireBall", name: "Fire Ball", realm: "arcane", book: 4, lv: 30, mana: 18, fail: 48, fx: "ball", elem: "fire", dmg: 75, r: 2, aim: true, desc: "an exploding ball of fire" },
+  { id: "quake", name: "Shake the Earth", realm: "arcane", book: 4, lv: 32, mana: 20, fail: 50, fx: "earthquake", desc: "brings walls down around you" },
+  { id: "deepSight", name: "Deep Sight", realm: "arcane", book: 4, lv: 33, mana: 22, fail: 52, fx: "enlight", desc: "shows you the whole level" },
+  { id: "acidStorm", name: "Acid Storm", realm: "arcane", book: 4, lv: 35, mana: 24, fail: 54, fx: "ball", elem: "acid", dmg: 100, r: 3, aim: true, desc: "a wide storm of acid" },
+  { id: "unravel", name: "Unravel", realm: "arcane", book: 4, lv: 38, mana: 30, fail: 58, fx: "destruction", desc: "tears the dungeon around you to pieces" },
+  { id: "manaStorm", name: "Mana Storm", realm: "arcane", book: 4, lv: 40, mana: 35, fail: 60, fx: "ball", elem: "arcane", dmg: 160, r: 3, aim: true, desc: "a storm of raw magic" },
+  // ---- holy: Lamp Psalter
+  { id: "mend", name: "Mend", realm: "holy", book: 1, lv: 1, mana: 2, fail: 20, fx: "heal", dice: "3d6", desc: "heals wounds" },
+  { id: "bless", name: "Blessing", realm: "holy", book: 1, lv: 1, mana: 1, fail: 20, fx: "bless", desc: "better aim and armour for a while" },
+  { id: "senseEvil", name: "Sense Evil", realm: "holy", book: 1, lv: 3, mana: 1, fail: 22, fx: "detectEvil", desc: "shows evil monsters nearby" },
+  { id: "sacredLight", name: "Sacred Light", realm: "holy", book: 1, lv: 3, mana: 2, fail: 22, fx: "lightArea", desc: "lights the room around you" },
+  { id: "cleanse", name: "Cleanse", realm: "holy", book: 1, lv: 5, mana: 2, fail: 24, fx: "curePoison", desc: "cures poison" },
+  { id: "sanctuary", name: "Sanctuary", realm: "holy", book: 1, lv: 7, mana: 3, fail: 26, fx: "slumber", desc: "puts monsters next to you to sleep" },
+  { id: "tendFlame", name: "Tend the Flame", realm: "holy", book: 1, lv: 8, mana: 3, fail: 26, fx: "refuel", desc: "refills your torch or lantern" },
+  { id: "breadOfLight", name: "Bread of Light", realm: "holy", book: 1, lv: 9, mana: 4, fail: 28, fx: "satisfy", desc: "fills your stomach" },
+  // ---- holy: Hymns of the Hearth
+  { id: "greaterMend", name: "Greater Mend", realm: "holy", book: 2, lv: 11, mana: 5, fail: 30, fx: "heal", dice: "6d8", desc: "heals serious wounds" },
+  { id: "chant", name: "Hearth Chant", realm: "holy", book: 2, lv: 12, mana: 5, fail: 30, fx: "chant", desc: "a long blessing" },
+  { id: "senseWays", name: "Sense the Ways", realm: "holy", book: 2, lv: 13, mana: 6, fail: 32, fx: "map", desc: "maps the area around you" },
+  { id: "purify", name: "Purify", realm: "holy", book: 2, lv: 14, mana: 6, fail: 32, fx: "cure", desc: "cures poison, confusion and blindness" },
+  { id: "hearthWard", name: "Hearth Ward", realm: "holy", book: 2, lv: 15, mana: 7, fail: 34, fx: "wardElements", desc: "resists heat and cold for a while" },
+  { id: "orb", name: "Orb of Radiance", realm: "holy", book: 2, lv: 16, mana: 7, fail: 34, fx: "ball", elem: "light", dmg: 24, r: 1, aim: true, desc: "a ball of holy light (twice as hard on the undead)" },
+  { id: "uncurse", name: "Lift Curse", realm: "holy", book: 2, lv: 17, mana: 8, fail: 36, fx: "removeCurse", desc: "removes curses from your equipment" },
+  { id: "portal", name: "Portal", realm: "holy", book: 2, lv: 19, mana: 9, fail: 38, fx: "teleport", desc: "teleports you far away" },
+  // ---- holy: Litany of Dawn
+  { id: "healing", name: "Healing", realm: "holy", book: 3, lv: 20, mana: 10, fail: 38, fx: "heal", dice: "10d8", desc: "heals grievous wounds" },
+  { id: "heroism", name: "Valor", realm: "holy", book: 3, lv: 21, mana: 9, fail: 38, fx: "hero", desc: "makes you heroic" },
+  { id: "dispelUndead", name: "Turn the Dead", realm: "holy", book: 3, lv: 22, mana: 11, fail: 40, fx: "dispel", flag: "undead", dice: "4d10", desc: "harms every undead monster in sight" },
+  { id: "dawn", name: "Searing Dawn", realm: "holy", book: 3, lv: 24, mana: 12, fail: 42, fx: "ball", elem: "light", dmg: 55, r: 2, aim: true, desc: "a burst of dawn light" },
+  { id: "protEvil", name: "Shield from Evil", realm: "holy", book: 3, lv: 25, mana: 12, fail: 42, fx: "protEvil", desc: "evil monsters often fail to touch you" },
+  { id: "recallH", name: "Path Home", realm: "holy", book: 3, lv: 26, mana: 14, fail: 44, fx: "recall", desc: "Word of Recall" },
+  { id: "vision", name: "Vision", realm: "holy", book: 3, lv: 27, mana: 14, fail: 45, fx: "clairvoyance", desc: "shows the level and its objects" },
+  { id: "restore", name: "Restoration", realm: "holy", book: 3, lv: 29, mana: 16, fail: 46, fx: "healFull", desc: "heals you completely" },
+  // ---- holy: Rites of the Unbroken Flame
+  { id: "dispelEvil", name: "Dispel Evil", realm: "holy", book: 4, lv: 30, mana: 18, fail: 48, fx: "dispel", flag: "evil", dice: "6d10", desc: "harms every evil monster in sight" },
+  { id: "quakeH", name: "Wrath of Stone", realm: "holy", book: 4, lv: 31, mana: 20, fail: 50, fx: "earthquake", desc: "brings walls down around you" },
+  { id: "holyWord", name: "Holy Word", realm: "holy", book: 4, lv: 33, mana: 25, fail: 52, fx: "dispel", flag: "evil", dice: "4d10", also: "healFull", desc: "harms evil in sight and heals you completely" },
+  { id: "banishEvil", name: "Banish Evil", realm: "holy", book: 4, lv: 35, mana: 28, fail: 55, fx: "banish", desc: "sends every evil monster in sight far away" },
+  { id: "sunburst", name: "Sunburst", realm: "holy", book: 4, lv: 37, mana: 30, fail: 56, fx: "ball", elem: "light", dmg: 120, r: 3, aim: true, also: "lightArea", desc: "a blinding burst that lights the room" },
+  { id: "avatar", name: "Unbroken Flame", realm: "holy", book: 4, lv: 40, mana: 40, fail: 60, fx: "avatar", desc: "heals you, and makes you fast, heroic, blessed and warded" }
+];
+const SPELL = Object.fromEntries(SPELLS.map(S => [S.id, S]));
+// Full casters learn a spell at its level; part-time casters later (pace, start). A spell beyond level 40 is out of reach.
+const spellLevel = (S, C) => S.realm !== C.realm ? 99 : Math.round(S.lv * (C.pace || 1) + (C.start || 0));
+function spellFail(S, p){
+  const C = CLASS[p.cls];
+  return Math.max(5, Math.min(95, S.fail - 3 * (p.lvl - spellLevel(S, C)) - 3 * statMod(p.stats[C.stat]) + ((C.pace || 1) > 1 ? 5 : 0)));
+}
+const bookOf = S => (S.realm === "arcane" ? "abook" : "hbook") + S.book;
+// Spells you could study now: your realm, your level reached, its book in your pack, not yet known.
+const learnable = (p, carried) => SPELLS.filter(S => S.realm === CLASS[p.cls].realm && !p.spells.includes(S.id) && spellLevel(S, CLASS[p.cls]) <= p.lvl && carried.has(bookOf(S)));
+const firstSpell = C => C.realm ? SPELLS.find(S => S.realm === C.realm) : null;
 (() => {
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
@@ -1718,7 +1803,7 @@ const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stag
 // see what your light (or a lit room, a glowing monster, a flying spell) shows you, and warm bodies within your
 // infravision. Characters come from chars.js. The engine draws the light and throws a little physics debris.
 // See TORCHLIGHT_PLAN.md for the phases.
-const TORCH_RGB = [1.0, 0.62, 0.3], ROOM_RGB = [0.42, 0.42, 0.47], MEM_RGB = [0.07, 0.08, 0.12], SPARK_RGB = [1.0, 0.95, 0.55];
+const TORCH_RGB = [1.0, 0.62, 0.3], ROOM_RGB = [0.42, 0.42, 0.47], MEM_RGB = [0.07, 0.08, 0.12];
 const WHITE = [1.6, 1.6, 1.6], DIM = [0.45, 0.48, 0.6], ACCENT = [1.6, 1.15, 0.5], RED = [1.6, 0.4, 0.35], GREEN = [0.6, 1.4, 0.6], BLUE = [0.6, 0.85, 1.6];
 const TILE = {   // glyph and base colour per tile
   [T.EDGE]: ["#", [0.5, 0.46, 0.42]], [T.WALL]: ["#", [0.55, 0.5, 0.45]], [T.FLOOR]: [".", [0.32, 0.32, 0.32]],
@@ -1763,7 +1848,7 @@ let keySet = store.getJSON("keys", "original");
 /* ---------- items: names, carrying, and what worn things add ---------- */
 const nameOf = (it, n) => itemName(it, player.know, n);
 const cap = s => s[0].toUpperCase() + s.slice(1);
-const sameItem = (a, b) => a.k === b.k && (["potion", "scroll", "food", "mushroom", "flask"].includes(ITEM[a.k].cat) || a.fuel === b.fuel && a.charges === undefined && b.charges === undefined && a.timeout === undefined && b.timeout === undefined
+const sameItem = (a, b) => a.k === b.k && (["potion", "scroll", "food", "mushroom", "flask", "book"].includes(ITEM[a.k].cat) || a.fuel === b.fuel && a.charges === undefined && b.charges === undefined && a.timeout === undefined && b.timeout === undefined
   && !!a.id === !!b.id && a.sense === b.sense && (a.tohit || 0) === (b.tohit || 0) && (a.todam || 0) === (b.todam || 0) && (a.toac || 0) === (b.toac || 0)
   && a.ego === b.ego && !a.art && !b.art && a.pval === b.pval && !!a.cursed === !!b.cursed);
 function carry(it){
@@ -1999,6 +2084,8 @@ function gainExp(e){
     player.lvl++; const up = levelHp(player, rng); player.mhp += up; player.hp += up;
     player.mmana = maxMana(player);
     say("Welcome to level " + player.lvl + "." + (titleOf(player) !== before ? " You are now a " + titleOf(player) + "." : ""));
+    const n = player.spells && learnable(player, books()).length;
+    if (n) say("You can learn " + n + " new " + realmWord() + (n > 1 ? "s" : "") + ". Press S to study.");
   }
 }
 // Bits that tumble from a kill (or sparks from a hit, or glass from a potion), lit by your torch.
@@ -2120,7 +2207,7 @@ const ELEM_RGB = { fire: [1.0, 0.45, 0.15], cold: [0.5, 0.75, 1.0], elec: [0.8, 
 const TIMERS = { fast: ["You feel yourself moving faster!", "You feel yourself slow down."], hero: ["You feel like a hero!", "The heroism wears off."],
   berserk: ["You feel a terrible rage!", "You feel less violent."], bless: ["You feel righteous!", "The prayer has expired."],
   resFire: ["You feel safe from heat.", "You feel less safe from heat."], resCold: ["You feel safe from cold.", "You feel less safe from cold."],
-  infra: ["Your eyes begin to tingle.", "Your eyes stop tingling."], poison: ["You are poisoned!", "You are no longer poisoned."],
+  infra: ["Your eyes begin to tingle.", "Your eyes stop tingling."], protEvil: ["You feel safe from evil!", "You no longer feel safe from evil."], poison: ["You are poisoned!", "You are no longer poisoned."],
   confused: ["You are confused!", "You feel less confused now."], blind: ["You are blind!", "You can see again."], asleep: ["You fall asleep.", "You wake up."] };
 function setTimer(k, n){ const was = player.t[k] > 0; player.t[k] = Math.max(player.t[k] || 0, n); if (!was) say(TIMERS[k][0]); recalc(); return true; }
 function clearTimer(k){ if (!(player.t[k] > 0)) return false; player.t[k] = 0; say(TIMERS[k][1]); recalc(); return true; }
@@ -2128,6 +2215,7 @@ const resists = m => rng.int(100) < 10 + 3 * m.K.depth;   // monsters save again
 function hurtMon(m, dmg, elem, msg, delay){
   if (elem === "drain" && m.K.undead){ say(cap(theName(m)) + " is unaffected."); return false; }
   if (elem && (m.K.res || []).includes(elem)){ dmg = Math.ceil(dmg / 3); msg += " It resists a lot."; }
+  if (elem === "light" && m.K.undead){ dmg *= 2; msg += " It burns!"; }   // holy light is twice as hard on the undead
   return damage(m, dmg, msg, delay);
 }
 function missile(path, elem, speed = 40){   // the visible flight of a bolt, and its flash where it stops
@@ -2189,7 +2277,7 @@ function allInView(what){
   return n > 0;
 }
 const FX = {
-  heal: c => { player.hp = Math.min(player.mhp, player.hp + rng.dice(c.K.dice)); say(player.hp >= player.mhp ? "You feel very good." : "You feel better."); return true; },
+  heal: c => { player.hp = Math.min(player.mhp, player.hp + rng.dice(c.K.dice) + (c.power || 0)); say(player.hp >= player.mhp ? "You feel very good." : "You feel better."); return true; },
   healFull: () => { player.hp = player.mhp; for (const k of ["poison", "confused", "blind"]) clearTimer(k); say("You feel wonderful!"); return true; },
   mana: c => { player.mana = Math.min(player.mmana, player.mana + c.K.amount); say("Your mind feels clearer."); return true; },
   fast: () => setTimer("fast", 20 + rng.int(25)), hero: () => setTimer("hero", 25 + rng.int(25)),
@@ -2239,14 +2327,14 @@ const FX = {
     const it = player.eq[rng.pick(worn)]; it.cursed = true; it.toac = -(1 + rng.int(5)); delete it.ego; say("Your " + ITEM[it.k].name.toLowerCase() + " glows black!"); recalc(); return true; },
   summonUndead: () => summonNear(MONSTERS.filter(K => K.undead && K.depth <= depth + 5), 1 + rng.int(3)) > 0 && (say("Cold, dead things appear around you!"), true),
   summon: () => summonNear(MONSTERS.filter(K => K.depth <= depth + 2), 2 + rng.int(3)) > 0 && (say("Monsters appear around you!"), true),
-  bolt: c => { const { path, m } = flight(c.tx, c.ty, 18), delay = missile(path, c.K.elem); if (m) hurtMon(m, rng.dice(c.K.dice), c.K.elem, "The bolt hits " + theName(m) + ".", delay); return true; },
+  bolt: c => { const { path, m } = flight(c.tx, c.ty, 18), delay = missile(path, c.K.elem); if (m) hurtMon(m, rng.dice(c.K.dice) + ((c.power || 0) >> 1), c.K.elem, "The bolt hits " + theName(m) + ".", delay); return true; },
   beam: c => { const { path } = lineToWall(c.tx, c.ty, 18), delay = missile(path, c.K.elem, 60);
-    for (const [x, y] of path){ const m = monAt(x, y); if (m) hurtMon(m, rng.dice(c.K.dice), c.K.elem, "The lightning strikes " + theName(m) + ".", delay); } return true; },
+    for (const [x, y] of path){ const m = monAt(x, y); if (m) hurtMon(m, rng.dice(c.K.dice) + ((c.power || 0) >> 1), c.K.elem, "The lightning strikes " + theName(m) + ".", delay); } return true; },
   ball: c => {
     const { path } = flight(c.tx, c.ty, 18), end = path.length ? path[path.length - 1] : [player.x, player.y], delay = missile(path, c.K.elem), rgb = ELEM_RGB[c.K.elem];
     later.push({ t: delay, fn: () => { flashes.push({ x: end[0], y: end[1], t: 0.6, t0: 0.6, rgb: rgb.map(v => v * 1.6) }); burst(end[0], end[1], rgb, 10);
       if (screen) world.forces.push({ x: (end[0] - cam.x + 0.5) * screen.cw, y: (end[1] - cam.y + VY + 0.5) * screen.ch, radius: screen.ch * 6, strength: world.h * 12, t: 0.08 }); } });
-    for (const m of [...mons]) if (m.K && dist(m.x, m.y, end[0], end[1]) <= c.K.r) hurtMon(m, Math.floor(c.K.dmg / (1 + dist(m.x, m.y, end[0], end[1]))), c.K.elem, "The blast engulfs " + theName(m) + ".", delay);
+    for (const m of [...mons]) if (m.K && dist(m.x, m.y, end[0], end[1]) <= c.K.r) hurtMon(m, Math.floor((c.K.dmg + (c.power || 0)) / (1 + dist(m.x, m.y, end[0], end[1]))), c.K.elem, "The blast engulfs " + theName(m) + ".", delay);
     return true;
   },
   sleepMon: c => statusBolt(c, "sleep"), slowMon: c => statusBolt(c, "slow"), confMon: c => statusBolt(c, "confuse"), scareMon: c => statusBolt(c, "scare"),
@@ -2262,6 +2350,62 @@ const FX = {
     return true;
   }
 };
+// Moves a monster to a far, empty spot on the level.
+function sendAway(m){
+  for (let tries = 0; tries < 200; tries++){
+    const i = rng.pick(rng.pick(L.rooms).cells), x = i % MW, y = Math.floor(i / MW);
+    if (passable(L.tiles[i]) && !monAt(x, y) && dist(x, y, player.x, player.y) > 20){ m.x = x; m.y = y; m.sleep = 0; return true; }
+  }
+  return false;
+}
+// Walls fall and floors heave within r cells: the stone breaks into rubble that tumbles (physics), then settles.
+function shake(r, wipe){
+  let fallen = 0;
+  for (let y = player.y - r; y <= player.y + r; y++) for (let x = player.x - r; x <= player.x + r; x++){
+    if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1 || Math.hypot(x - player.x, (y - player.y) * 1.6) > r || (x === player.x && y === player.y)) continue;
+    const i = idx(x, y), t = L.tiles[i];
+    if (t === T.EDGE || t === T.DOWN || t === T.UP || t === T.SHOP) continue;
+    const m = monAt(x, y);
+    if (wipe){   // Unravel: everything in reach is torn apart
+      if (m && m.K) mons.splice(mons.indexOf(m), 1);
+      floor = floor.filter(f => f.x !== x || f.y !== y);
+      L.tiles[i] = rng.chance(0.5) ? T.WALL : T.FLOOR; L.lit[i] = 0; roomLight[3 * i] = roomLight[3 * i + 1] = roomLight[3 * i + 2] = 0; mem[i] = 0;
+    } else {
+      if (!rng.chance(0.3) || m || itemsAt(x, y).length) continue;
+      L.tiles[i] = opaque(t) ? T.FLOOR : T.WALL;
+    }
+    if (inFov[i] === turnNo && fallen++ < 30) later.push({ t: rng.next() * 0.3, fn: () => burst(x, y, [0.55, 0.5, 0.45], 3) });
+  }
+  if (screen) world.forces.push({ x: (player.x - cam.x + 0.5) * screen.cw, y: (player.y - cam.y + VY + 0.5) * screen.ch, radius: screen.ch * r * 2, strength: world.h * 6, t: 0.1 });
+  rebuildTerrain();
+}
+Object.assign(FX, {
+  recharge: () => {
+    chooseItem("RECHARGE WHICH?", it => ITEM[it.k].cat === "wand" || ITEM[it.k].cat === "staff", it => {
+      if (rng.chance(it.charges > 8 ? 0.35 : 0.08)){ takeOne(it); say("There is a bright flash. It has exploded!"); burst(player.x, player.y, [1.2, 0.9, 0.5], 8); }
+      else { it.charges += rng.range(2, 4 + Math.floor(player.lvl / 5)); say("It glows for a moment."); }
+    }, "You have nothing to recharge.");
+    return true;
+  },
+  teleOther: c => { const { path, m } = flight(c.tx, c.ty, 18); missile(path, "arcane"); if (!m) return false; if (sendAway(m)) say(cap(theName(m)) + " disappears!"); return true; },
+  wardElements: () => { setTimer("resFire", 20 + rng.int(20)); setTimer("resCold", 20 + rng.int(20)); return true; },
+  detectEvil: () => { let n = 0; for (const m of mons) if (m.K && m.K.evil && dist(m.x, m.y, player.x, player.y) <= 30){ m.det = turnNo + 1; n++; } say(n ? "You sense the presence of evil!" : "You sense no evil."); return true; },
+  refuel: () => {
+    const lt = player.eq.light;
+    if (!lt){ say("You have no light to tend."); return true; }
+    if (lt.fuel === undefined){ say("Your light needs no tending."); return true; }
+    const K = ITEM[lt.k]; lt.fuel = K.maxFuel ? Math.min(K.maxFuel, lt.fuel + 7500) : K.fuel;
+    flashes.push({ x: player.x, y: player.y, t: 0.5, t0: 0.5, rgb: TORCH_RGB }); say("Your light burns bright and fresh again."); return true;
+  },
+  dispel: c => { let n = 0; flashes.push({ x: player.x, y: player.y, t: 0.5, t0: 0.5, rgb: ELEM_RGB.light });
+    for (const m of [...mons]) if (m.K && seesMon(m) && (!c.K.flag || m.K[c.K.flag])){ n++; hurtMon(m, rng.dice(c.K.dice), null, cap(theName(m)) + " shudders."); }
+    if (!n) say("Nothing in sight answers to it."); return true; },
+  protEvil: () => setTimer("protEvil", 25 + player.lvl * 2),
+  banish: () => { let n = 0; for (const m of mons) if (m.K && m.K.evil && seesMon(m) && sendAway(m)) n++; say(n ? "The evil around you is swept away!" : "There is no evil in sight."); return true; },
+  avatar: () => { FX.healFull(); setTimer("fast", 20 + rng.int(20)); setTimer("hero", 30); setTimer("bless", 30); setTimer("resFire", 30); setTimer("resCold", 30); say("The unbroken flame burns within you!"); return true; },
+  earthquake: () => { shake(8, false); say("The ground shakes, and the walls come down!"); return true; },
+  destruction: () => { shake(12, true); say("There is a searing blast of light, and the dungeon tears apart!"); setTimer("blind", 5 + rng.int(5)); return true; }
+});
 function enchant(it, field){
   if (!it){ say("You have nothing to enchant."); return true; }
   const v = it[field] || 0, chance = v < 0 ? 100 : Math.max(10, 100 - v * 12);
@@ -2351,27 +2495,46 @@ function fire(){
   const ammo = ITEM[bow.k].ammo;
   chooseItem("FIRE WHICH?", it => ITEM[it.k].ammo === ammo && ITEM[it.k].cat === "ammo", fireAmmo, "You have nothing to fire from your " + ITEM[bow.k].name.toLowerCase() + ".");
 }
-function cast(){
-  const C = cls(), P = POWERS[powerFor(C)];
-  if (!P){ say("You know no spells or prayers."); return false; }
-  if (player.mana < P.cost){ say("You do not have enough mana to " + (C.realm === "holy" ? "pray " : "cast ") + P.name + "."); return false; }
-  const fail = Math.max(5, Math.min(95, 30 - 3 * statMod(player.stats[C.stat]) - 2 * (player.lvl - 1)));
+const books = () => new Set(player.inv.filter(it => ITEM[it.k].cat === "book").map(it => it.k));
+const realmWord = () => cls().realm === "holy" ? "prayer" : "spell";
+function castMenu(){
+  const C = cls();
+  if (!C.realm){ say("You know no spells or prayers."); return; }
+  const known = SPELLS.filter(S => player.spells.includes(S.id));
+  if (!known.length){ oldMsgs = []; msgs = []; say("You have not learned any " + realmWord() + "s yet." + (learnable(player, books()).length ? " Press S to study." : "")); return; }
+  const have = books();
+  openList((C.realm === "holy" ? "PRAY" : "CAST") + "   MANA " + player.mana + "/" + player.mmana, known.map(S => ({
+    label: S.name.padEnd(20) + String(S.mana).padStart(3) + " MP" + String(spellFail(S, player)).padStart(4) + "% fail" + (have.has(bookOf(S)) ? "" : "  (no book)"),
+    select: done(() => castSpell(S)) })), "A SPELL NEEDS ITS BOOK IN YOUR PACK");
+}
+function castSpell(S){
+  const holy = S.realm === "holy";
+  if (!books().has(bookOf(S))){ say("You need the " + ITEM[bookOf(S)].name + " to " + (holy ? "pray " : "cast ") + S.name + "."); return false; }
+  if (player.mana < S.mana){ say("You do not have enough mana to " + (holy ? "pray " : "cast ") + S.name + "."); return false; }
+  if (player.t.blind || player.t.confused){ say(player.t.blind ? "You cannot see to read your book!" : "You are too confused."); return false; }
   const go = (tx, ty) => {
-    player.mana -= P.cost;
-    if (rng.int(100) < fail){ say(C.realm === "holy" ? "You lose your concentration." : "You failed to get the spell off!"); return true; }
-    if (P.heal){ const h = rng.dice(P.heal) + player.lvl; player.hp = Math.min(player.mhp, player.hp + h); say("A warm light closes your wounds."); flashes.push({ x: player.x, y: player.y, t: 0.4, t0: 0.4, rgb: [1.0, 0.85, 0.5] }); return true; }
-    // Spark: a bolt of light that always hits the first monster in its path
-    const { path, m } = flight(tx, ty, 15);
-    if (!path.length){ say("The spark fizzles against the wall."); return true; }
-    shots.push({ path, t: 0, speed: 40, glyph: "*", rgb: [1.8, 1.7, 1.0], light: SPARK_RGB });
-    const delay = path.length / 40, end = path[path.length - 1];
-    later.push({ t: delay, fn: () => { flashes.push({ x: end[0], y: end[1], t: 0.35, t0: 0.35, rgb: SPARK_RGB }); burst(end[0], end[1], [1.6, 1.4, 0.6], 3); } });
-    if (m) damage(m, rng.dice(P.dice) + Math.floor(player.lvl / 2), "The spark strikes " + theName(m) + ".", delay);
+    player.mana -= S.mana;
+    if (rng.int(100) < spellFail(S, player)){ say(holy ? "You lose your concentration." : "You failed to get the spell off!"); return true; }
+    // a spell grows with its caster: power is added to bolts, beams, balls and healing (items stay as they are)
+    FX[S.fx]({ K: S, tx, ty, power: player.lvl });
+    if (S.also) FX[S.also]({ K: S, tx, ty, power: player.lvl });
+    if (!player.cast.includes(S.id)){ player.cast.push(S.id); gainExp(spellLevel(S, cls()) * 2); }   // the first casting teaches you something
     return true;
   };
-  if (P.aim) aim("Cast " + P.name + ".", go);
+  if (S.aim) aim((holy ? "Pray " : "Cast ") + S.name + ".", go);
   else act(() => go());
   return false;
+}
+// Studying: an arcane caster chooses the spell; a holy one is granted a prayer, as in Moria.
+function study(){
+  const C = cls();
+  oldMsgs = []; msgs = [];
+  if (!C.realm){ say("You cannot learn magic."); return; }
+  const can = learnable(player, books());
+  if (!can.length){ say("You have nothing new to " + (C.realm === "holy" ? "pray for" : "learn") + " right now."); return; }
+  const learn = S => { player.spells.push(S.id); say((C.realm === "holy" ? "You have been granted the prayer of " : "You have learned the spell of ") + S.name + ": " + S.desc + "."); };
+  if (C.realm === "holy") return learn(rng.pick(can));
+  openList("STUDY WHICH SPELL?", can.map(S => ({ label: S.name.padEnd(20) + " " + S.desc.slice(0, 30), select: done(() => learn(S)) })));
 }
 
 /* ---------- a turn: the player acts, then everyone faster or as fast acts until it is the player's turn again ---------- */
@@ -2489,6 +2652,7 @@ function monsterAttack(m){
   const K = m.K, name = seesMon(m) ? "The " + K.name : "It";
   for (const [dice, verb, effect] of K.blows){
     if (state !== "play") return;
+    if (player.t.protEvil && K.evil && rng.int(100) < 50 + player.lvl - K.depth){ say(name + " is repelled."); continue; }
     if (rng.int(100) < Math.max(15, Math.min(95, 60 + 2 * K.depth - armour()))){
       if (effect === "steal"){   // a thief takes some gold, then slips away
         if (!player.gold){ say(name + " fumbles at your empty purse."); continue; }
@@ -2583,7 +2747,9 @@ function begin(){
   player = { ...p, base: { ...p.stats }, name: cr.name, x: 0, y: 0, exp: 0, energy: 100, speed: 0, food: 5000, gold: rng.range(250, 450), regen: 0, mregen: 0,
     inv: [], eq: Object.fromEntries(SLOTS.map(s => [s, null])), t: {}, know: newKnowledge(rng), maxDepth: 0, kills: 0, turns: 0, recall: 0 };
   Object.assign(player.eq, { weapon: plainItem(weapon), body: plainItem("jerkin"), light: plainItem("torch") });
-  for (const [k, n] of [["torch", 2], ["ration", 4], ["heal", 2], ...(C.kit || [])]){ carry(plainItem(k, n)); player.know.known[k] = true; }
+  for (const [k, n] of [["torch", 2], ["ration", 4], ["heal", 2], ...(C.realm ? [[C.realm === "holy" ? "hbook1" : "abook1", 1]] : []), ...(C.kit || [])]){ carry(plainItem(k, n)); player.know.known[k] = true; }
+  player.spells = []; player.cast = [];
+  for (const S of learnable(player, books())) player.spells.push(S.id);   // a caster starts knowing their first spells
   if (C.bow) player.eq.bow = plainItem(C.bow);
   recalc();
   player.mhp = player.hp = firstHp(player); player.mmana = player.mana = maxMana(player);
@@ -2615,7 +2781,7 @@ function drawCreate(){
     const K = CLASSES[cr.at];
     text(x1, y++, K.name, ACCENT); y++; para(K.desc); y++;
     para("Stats: " + mods(K.stats), DIM); para("Hit die " + K.hd + "   Experience +" + K.xp + "%", DIM);
-    const pw = POWERS[powerFor(K)]; para(pw ? (K.realm === "holy" ? "Prays " : "Casts ") + pw.name + ": " + pw.desc + "." : "No magic.", DIM);
+    const fs = firstSpell(K); para(fs ? (K.realm === "holy" ? "Holy prayers" : "Arcane spells") + (spellLevel(fs, K) > 1 ? " from level " + spellLevel(fs, K) : "") + ", starting with " + fs.name + ": " + fs.desc + "." : "No magic.", DIM);
     para("Titles: " + K.titles.slice(0, 3).join(", ") + " ...", DIM);
   } else {
     text(x1, y++, cr.name + ", " + R.name + " " + C.name, ACCENT); y++;
@@ -2784,13 +2950,12 @@ function sell(i, it){
   shopSell(i, at);
 }
 function commandList(){
-  const P = POWERS[powerFor(cls())];
   openList("COMMANDS", [
     { label: "Inventory", select: () => inventoryList() },
     { label: "Pick up", select: done(() => act(pickUp)) },
     { label: "Take the stairs", select: done(() => { const t = L.tiles[idx(player.x, player.y)]; act(() => takeStairs(t !== T.UP)); }) },
     { label: "Equipment", select: () => equipmentList() },
-    ...(P ? [{ label: (cls().realm === "holy" ? "Pray " : "Cast ") + P.name + " (" + P.cost + " MP)", select: done(cast) }] : []),
+    ...(cls().realm ? [{ label: cls().realm === "holy" ? "Pray" : "Cast a spell", select: () => castMenu() }, { label: "Study", select: done(study) }] : []),
     { label: "Drink a potion", select: () => useWhich("quaff") }, { label: "Read a scroll", select: () => useWhich("read") },
     { label: "Use a wand, staff or rod", select: () => chooseItem("USE WHICH?", it => ["wand", "staff", "rod"].includes(ITEM[it.k].cat), it => act(() => useItem(it, "use")), "You have no magic devices.") },
     ...(player.eq.bow ? [{ label: "Fire", select: () => fire() }] : []),
@@ -2893,6 +3058,7 @@ function characterList(){
     ...SKILLS.map(k => { const v = skillOf(p, k) + (k === "stealth" ? b.stealth : k === "search" ? b.search : 0); return info(SKILL_NAMES[k].padEnd(15) + (k === "stealth" ? stealthWord(v) : skillWord(v))); }),
     info("Infravision".padEnd(15) + (infra() ? infra() * 10 + " ft" : "none")), info("Hit die".padEnd(15) + "d" + hitDie(p)),
     info("Exp penalty".padEnd(15) + "+" + (R.xp + C.xp) + "%"),
+    ...(C.realm ? [info((C.realm === "holy" ? "Prayers" : "Spells").padEnd(15) + p.spells.length + " of " + SPELLS.filter(S => S.realm === C.realm && spellLevel(S, C) <= 40).length)] : []),
     info("Weapon " + weaponDice() + "   Gold " + p.gold), info("Deepest " + feet(p.maxDepth) + " ft   Kills " + p.kills), info("Turns " + p.turns)
   ]);
 }
@@ -2904,7 +3070,7 @@ function helpList(){
     info("Walk into a monster to attack"), info("Walk into a door to open it"), info("In town, walk onto a number to shop"),
     info("g or ,  pick up"), info("i  pack   e  equipment"), info("w  wear   " + (ro ? "T" : "t") + "  take off   d  drop"),
     info("E  eat   q  drink   r  read"), info("a  aim a wand   " + (ro ? "Z" : "u") + "  use a staff"), info("z  zap a rod   F  fill lantern"),
-    info("f  fire   v  throw   I  inspect"), info("m  cast or pray"), info("  then a direction, or ' / t"), info("  for the nearest monster"),
+    info("f  fire   v  throw   I  inspect"), info("m or p  cast or pray   S  study"), info("  then a direction, or ' / t"), info("  for the nearest monster"),
     info(">  <  take the stairs"), info("R  rest   " + (ro ? "." : ". or 5") + "  wait"), info((ro ? "x" : "l") + "  look   C  character"),
     info("Ctrl+P  messages"), info("Esc  menu"),
     info("Touch: D-pad moves (8 ways),"), info("A acts here, B commands")
@@ -2972,7 +3138,8 @@ function onKey(e){
   else if (k === "z") useWhich("rod");
   else if (k === "f") fire();
   else if (k === "I") useWhich("inspect");
-  else if (k === "m" || k === "p") cast();
+  else if (k === "m" || k === "p") castMenu();
+  else if (k === "S") study();
   else if (k === "R") rest();
   else if (k === "." || (!ro && (k === "5" || e.code === "Numpad5"))) act(() => true);
   else if (k === (ro ? "x" : "l")) look();

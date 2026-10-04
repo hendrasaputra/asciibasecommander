@@ -13,7 +13,8 @@ const CAT = {   // per category: glyph, colour, slot, and whether its kinds are 
   light: { glyph: "~", rgb: [1.0, 0.7, 0.3], slot: "light" }, food: { glyph: ",", rgb: [0.85, 0.7, 0.45] }, flask: { glyph: "!", rgb: [0.9, 0.8, 0.4] },
   mushroom: { glyph: ",", flavour: true }, potion: { glyph: "!", flavour: true }, scroll: { glyph: "?", flavour: true },
   wand: { glyph: "-", flavour: true }, staff: { glyph: "_", flavour: true }, rod: { glyph: "-", flavour: true },
-  ring: { glyph: "=", flavour: true, slot: "ring" }, amulet: { glyph: "\"", flavour: true, slot: "neck" }
+  ring: { glyph: "=", flavour: true, slot: "ring" }, amulet: { glyph: "\"", flavour: true, slot: "neck" },
+  book: { glyph: "?", rgb: [0.8, 0.8, 0.8] }
 };
 const ARMOUR_CATS = ["body", "shield", "head", "hands", "feet", "cloak"];
 const I = (cat, id, name, depth, rarity, wt, cost, o = {}) => ({ cat, id, name, depth, rarity, wt, cost, ...o });
@@ -106,6 +107,11 @@ const ITEMS = [
       ["rcure", "Curing", "cure", 15, 3, 1500, 40], ["rodfire", "Fire Bolts", "bolt", 20, 3, 2500, 15, true, { elem: "fire", dice: "9d8" }],
       ["rodcold", "Frost Bolts", "bolt", 18, 3, 2200, 13, true, { elem: "cold", dice: "6d8" }], ["robj", "Treasure Location", "detectObj", 5, 2, 800, 30]]
     .map(([id, n, e, dep, r, c, time, aim, o]) => I("rod", id, n, dep, r, 1.5, c, { effect: e, recharge: time, aim: !!aim, ...(o || {}) })),
+  // spell books (phase 5): four for each realm; casting needs the book in your pack
+  ...[["abook1", "Book of First Sparks", 1, 1, 25], ["abook2", "Book of Hidden Ways", 10, 2, 150], ["abook3", "Book of Storm and Frost", 20, 3, 800], ["abook4", "Book of Deep Sorcery", 35, 4, 2500]]
+    .map(([id, n, dep, r, c], i) => I("book", id, n, dep, r, 3, c, { realm: "arcane", book: i + 1, rgb: [0.55, 0.65, 1.3] })),
+  ...[["hbook1", "Lamp Psalter", 1, 1, 25], ["hbook2", "Hymns of the Hearth", 10, 2, 150], ["hbook3", "Litany of Dawn", 20, 3, 800], ["hbook4", "Rites of the Unbroken Flame", 35, 4, 2500]]
+    .map(([id, n, dep, r, c], i) => I("book", id, n, dep, r, 3, c, { realm: "holy", book: i + 1, rgb: [1.3, 1.1, 0.55] })),
   // rings and amulets: worn; pval is rolled when made
   ...[["rprot", "Protection", 5, 1, { pac: true }, 400], ["rstr", "Strength", 20, 3, { pstat: "str" }, 1500], ["rint", "Intellect", 20, 3, { pstat: "int" }, 1500],
       ["rdex", "Dexterity", 20, 3, { pstat: "dex" }, 1500], ["rcon", "Constitution", 22, 3, { pstat: "con" }, 1500], ["racc", "Accuracy", 8, 2, { phit: true }, 500],

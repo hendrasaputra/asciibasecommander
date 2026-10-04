@@ -5,7 +5,7 @@ const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stag
 // see what your light (or a lit room, a glowing monster, a flying spell) shows you, and warm bodies within your
 // infravision. Characters come from chars.js. The engine draws the light and throws a little physics debris.
 // See TORCHLIGHT_PLAN.md for the phases.
-const TORCH_RGB = [1.0, 0.62, 0.3], ROOM_RGB = [0.42, 0.42, 0.47], MEM_RGB = [0.07, 0.08, 0.12], SPARK_RGB = [1.0, 0.95, 0.55];
+const TORCH_RGB = [1.0, 0.62, 0.3], ROOM_RGB = [0.42, 0.42, 0.47], MEM_RGB = [0.07, 0.08, 0.12];
 const WHITE = [1.6, 1.6, 1.6], DIM = [0.45, 0.48, 0.6], ACCENT = [1.6, 1.15, 0.5], RED = [1.6, 0.4, 0.35], GREEN = [0.6, 1.4, 0.6], BLUE = [0.6, 0.85, 1.6];
 const TILE = {   // glyph and base colour per tile
   [T.EDGE]: ["#", [0.5, 0.46, 0.42]], [T.WALL]: ["#", [0.55, 0.5, 0.45]], [T.FLOOR]: [".", [0.32, 0.32, 0.32]],
@@ -50,7 +50,7 @@ let keySet = store.getJSON("keys", "original");
 /* ---------- items: names, carrying, and what worn things add ---------- */
 const nameOf = (it, n) => itemName(it, player.know, n);
 const cap = s => s[0].toUpperCase() + s.slice(1);
-const sameItem = (a, b) => a.k === b.k && (["potion", "scroll", "food", "mushroom", "flask"].includes(ITEM[a.k].cat) || a.fuel === b.fuel && a.charges === undefined && b.charges === undefined && a.timeout === undefined && b.timeout === undefined
+const sameItem = (a, b) => a.k === b.k && (["potion", "scroll", "food", "mushroom", "flask", "book"].includes(ITEM[a.k].cat) || a.fuel === b.fuel && a.charges === undefined && b.charges === undefined && a.timeout === undefined && b.timeout === undefined
   && !!a.id === !!b.id && a.sense === b.sense && (a.tohit || 0) === (b.tohit || 0) && (a.todam || 0) === (b.todam || 0) && (a.toac || 0) === (b.toac || 0)
   && a.ego === b.ego && !a.art && !b.art && a.pval === b.pval && !!a.cursed === !!b.cursed);
 function carry(it){
@@ -286,6 +286,8 @@ function gainExp(e){
     player.lvl++; const up = levelHp(player, rng); player.mhp += up; player.hp += up;
     player.mmana = maxMana(player);
     say("Welcome to level " + player.lvl + "." + (titleOf(player) !== before ? " You are now a " + titleOf(player) + "." : ""));
+    const n = player.spells && learnable(player, books()).length;
+    if (n) say("You can learn " + n + " new " + realmWord() + (n > 1 ? "s" : "") + ". Press S to study.");
   }
 }
 // Bits that tumble from a kill (or sparks from a hit, or glass from a potion), lit by your torch.
@@ -407,7 +409,7 @@ const ELEM_RGB = { fire: [1.0, 0.45, 0.15], cold: [0.5, 0.75, 1.0], elec: [0.8, 
 const TIMERS = { fast: ["You feel yourself moving faster!", "You feel yourself slow down."], hero: ["You feel like a hero!", "The heroism wears off."],
   berserk: ["You feel a terrible rage!", "You feel less violent."], bless: ["You feel righteous!", "The prayer has expired."],
   resFire: ["You feel safe from heat.", "You feel less safe from heat."], resCold: ["You feel safe from cold.", "You feel less safe from cold."],
-  infra: ["Your eyes begin to tingle.", "Your eyes stop tingling."], poison: ["You are poisoned!", "You are no longer poisoned."],
+  infra: ["Your eyes begin to tingle.", "Your eyes stop tingling."], protEvil: ["You feel safe from evil!", "You no longer feel safe from evil."], poison: ["You are poisoned!", "You are no longer poisoned."],
   confused: ["You are confused!", "You feel less confused now."], blind: ["You are blind!", "You can see again."], asleep: ["You fall asleep.", "You wake up."] };
 function setTimer(k, n){ const was = player.t[k] > 0; player.t[k] = Math.max(player.t[k] || 0, n); if (!was) say(TIMERS[k][0]); recalc(); return true; }
 function clearTimer(k){ if (!(player.t[k] > 0)) return false; player.t[k] = 0; say(TIMERS[k][1]); recalc(); return true; }
@@ -415,6 +417,7 @@ const resists = m => rng.int(100) < 10 + 3 * m.K.depth;   // monsters save again
 function hurtMon(m, dmg, elem, msg, delay){
   if (elem === "drain" && m.K.undead){ say(cap(theName(m)) + " is unaffected."); return false; }
   if (elem && (m.K.res || []).includes(elem)){ dmg = Math.ceil(dmg / 3); msg += " It resists a lot."; }
+  if (elem === "light" && m.K.undead){ dmg *= 2; msg += " It burns!"; }   // holy light is twice as hard on the undead
   return damage(m, dmg, msg, delay);
 }
 function missile(path, elem, speed = 40){   // the visible flight of a bolt, and its flash where it stops
@@ -476,7 +479,7 @@ function allInView(what){
   return n > 0;
 }
 const FX = {
-  heal: c => { player.hp = Math.min(player.mhp, player.hp + rng.dice(c.K.dice)); say(player.hp >= player.mhp ? "You feel very good." : "You feel better."); return true; },
+  heal: c => { player.hp = Math.min(player.mhp, player.hp + rng.dice(c.K.dice) + (c.power || 0)); say(player.hp >= player.mhp ? "You feel very good." : "You feel better."); return true; },
   healFull: () => { player.hp = player.mhp; for (const k of ["poison", "confused", "blind"]) clearTimer(k); say("You feel wonderful!"); return true; },
   mana: c => { player.mana = Math.min(player.mmana, player.mana + c.K.amount); say("Your mind feels clearer."); return true; },
   fast: () => setTimer("fast", 20 + rng.int(25)), hero: () => setTimer("hero", 25 + rng.int(25)),
@@ -526,14 +529,14 @@ const FX = {
     const it = player.eq[rng.pick(worn)]; it.cursed = true; it.toac = -(1 + rng.int(5)); delete it.ego; say("Your " + ITEM[it.k].name.toLowerCase() + " glows black!"); recalc(); return true; },
   summonUndead: () => summonNear(MONSTERS.filter(K => K.undead && K.depth <= depth + 5), 1 + rng.int(3)) > 0 && (say("Cold, dead things appear around you!"), true),
   summon: () => summonNear(MONSTERS.filter(K => K.depth <= depth + 2), 2 + rng.int(3)) > 0 && (say("Monsters appear around you!"), true),
-  bolt: c => { const { path, m } = flight(c.tx, c.ty, 18), delay = missile(path, c.K.elem); if (m) hurtMon(m, rng.dice(c.K.dice), c.K.elem, "The bolt hits " + theName(m) + ".", delay); return true; },
+  bolt: c => { const { path, m } = flight(c.tx, c.ty, 18), delay = missile(path, c.K.elem); if (m) hurtMon(m, rng.dice(c.K.dice) + ((c.power || 0) >> 1), c.K.elem, "The bolt hits " + theName(m) + ".", delay); return true; },
   beam: c => { const { path } = lineToWall(c.tx, c.ty, 18), delay = missile(path, c.K.elem, 60);
-    for (const [x, y] of path){ const m = monAt(x, y); if (m) hurtMon(m, rng.dice(c.K.dice), c.K.elem, "The lightning strikes " + theName(m) + ".", delay); } return true; },
+    for (const [x, y] of path){ const m = monAt(x, y); if (m) hurtMon(m, rng.dice(c.K.dice) + ((c.power || 0) >> 1), c.K.elem, "The lightning strikes " + theName(m) + ".", delay); } return true; },
   ball: c => {
     const { path } = flight(c.tx, c.ty, 18), end = path.length ? path[path.length - 1] : [player.x, player.y], delay = missile(path, c.K.elem), rgb = ELEM_RGB[c.K.elem];
     later.push({ t: delay, fn: () => { flashes.push({ x: end[0], y: end[1], t: 0.6, t0: 0.6, rgb: rgb.map(v => v * 1.6) }); burst(end[0], end[1], rgb, 10);
       if (screen) world.forces.push({ x: (end[0] - cam.x + 0.5) * screen.cw, y: (end[1] - cam.y + VY + 0.5) * screen.ch, radius: screen.ch * 6, strength: world.h * 12, t: 0.08 }); } });
-    for (const m of [...mons]) if (m.K && dist(m.x, m.y, end[0], end[1]) <= c.K.r) hurtMon(m, Math.floor(c.K.dmg / (1 + dist(m.x, m.y, end[0], end[1]))), c.K.elem, "The blast engulfs " + theName(m) + ".", delay);
+    for (const m of [...mons]) if (m.K && dist(m.x, m.y, end[0], end[1]) <= c.K.r) hurtMon(m, Math.floor((c.K.dmg + (c.power || 0)) / (1 + dist(m.x, m.y, end[0], end[1]))), c.K.elem, "The blast engulfs " + theName(m) + ".", delay);
     return true;
   },
   sleepMon: c => statusBolt(c, "sleep"), slowMon: c => statusBolt(c, "slow"), confMon: c => statusBolt(c, "confuse"), scareMon: c => statusBolt(c, "scare"),
@@ -549,6 +552,62 @@ const FX = {
     return true;
   }
 };
+// Moves a monster to a far, empty spot on the level.
+function sendAway(m){
+  for (let tries = 0; tries < 200; tries++){
+    const i = rng.pick(rng.pick(L.rooms).cells), x = i % MW, y = Math.floor(i / MW);
+    if (passable(L.tiles[i]) && !monAt(x, y) && dist(x, y, player.x, player.y) > 20){ m.x = x; m.y = y; m.sleep = 0; return true; }
+  }
+  return false;
+}
+// Walls fall and floors heave within r cells: the stone breaks into rubble that tumbles (physics), then settles.
+function shake(r, wipe){
+  let fallen = 0;
+  for (let y = player.y - r; y <= player.y + r; y++) for (let x = player.x - r; x <= player.x + r; x++){
+    if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1 || Math.hypot(x - player.x, (y - player.y) * 1.6) > r || (x === player.x && y === player.y)) continue;
+    const i = idx(x, y), t = L.tiles[i];
+    if (t === T.EDGE || t === T.DOWN || t === T.UP || t === T.SHOP) continue;
+    const m = monAt(x, y);
+    if (wipe){   // Unravel: everything in reach is torn apart
+      if (m && m.K) mons.splice(mons.indexOf(m), 1);
+      floor = floor.filter(f => f.x !== x || f.y !== y);
+      L.tiles[i] = rng.chance(0.5) ? T.WALL : T.FLOOR; L.lit[i] = 0; roomLight[3 * i] = roomLight[3 * i + 1] = roomLight[3 * i + 2] = 0; mem[i] = 0;
+    } else {
+      if (!rng.chance(0.3) || m || itemsAt(x, y).length) continue;
+      L.tiles[i] = opaque(t) ? T.FLOOR : T.WALL;
+    }
+    if (inFov[i] === turnNo && fallen++ < 30) later.push({ t: rng.next() * 0.3, fn: () => burst(x, y, [0.55, 0.5, 0.45], 3) });
+  }
+  if (screen) world.forces.push({ x: (player.x - cam.x + 0.5) * screen.cw, y: (player.y - cam.y + VY + 0.5) * screen.ch, radius: screen.ch * r * 2, strength: world.h * 6, t: 0.1 });
+  rebuildTerrain();
+}
+Object.assign(FX, {
+  recharge: () => {
+    chooseItem("RECHARGE WHICH?", it => ITEM[it.k].cat === "wand" || ITEM[it.k].cat === "staff", it => {
+      if (rng.chance(it.charges > 8 ? 0.35 : 0.08)){ takeOne(it); say("There is a bright flash. It has exploded!"); burst(player.x, player.y, [1.2, 0.9, 0.5], 8); }
+      else { it.charges += rng.range(2, 4 + Math.floor(player.lvl / 5)); say("It glows for a moment."); }
+    }, "You have nothing to recharge.");
+    return true;
+  },
+  teleOther: c => { const { path, m } = flight(c.tx, c.ty, 18); missile(path, "arcane"); if (!m) return false; if (sendAway(m)) say(cap(theName(m)) + " disappears!"); return true; },
+  wardElements: () => { setTimer("resFire", 20 + rng.int(20)); setTimer("resCold", 20 + rng.int(20)); return true; },
+  detectEvil: () => { let n = 0; for (const m of mons) if (m.K && m.K.evil && dist(m.x, m.y, player.x, player.y) <= 30){ m.det = turnNo + 1; n++; } say(n ? "You sense the presence of evil!" : "You sense no evil."); return true; },
+  refuel: () => {
+    const lt = player.eq.light;
+    if (!lt){ say("You have no light to tend."); return true; }
+    if (lt.fuel === undefined){ say("Your light needs no tending."); return true; }
+    const K = ITEM[lt.k]; lt.fuel = K.maxFuel ? Math.min(K.maxFuel, lt.fuel + 7500) : K.fuel;
+    flashes.push({ x: player.x, y: player.y, t: 0.5, t0: 0.5, rgb: TORCH_RGB }); say("Your light burns bright and fresh again."); return true;
+  },
+  dispel: c => { let n = 0; flashes.push({ x: player.x, y: player.y, t: 0.5, t0: 0.5, rgb: ELEM_RGB.light });
+    for (const m of [...mons]) if (m.K && seesMon(m) && (!c.K.flag || m.K[c.K.flag])){ n++; hurtMon(m, rng.dice(c.K.dice), null, cap(theName(m)) + " shudders."); }
+    if (!n) say("Nothing in sight answers to it."); return true; },
+  protEvil: () => setTimer("protEvil", 25 + player.lvl * 2),
+  banish: () => { let n = 0; for (const m of mons) if (m.K && m.K.evil && seesMon(m) && sendAway(m)) n++; say(n ? "The evil around you is swept away!" : "There is no evil in sight."); return true; },
+  avatar: () => { FX.healFull(); setTimer("fast", 20 + rng.int(20)); setTimer("hero", 30); setTimer("bless", 30); setTimer("resFire", 30); setTimer("resCold", 30); say("The unbroken flame burns within you!"); return true; },
+  earthquake: () => { shake(8, false); say("The ground shakes, and the walls come down!"); return true; },
+  destruction: () => { shake(12, true); say("There is a searing blast of light, and the dungeon tears apart!"); setTimer("blind", 5 + rng.int(5)); return true; }
+});
 function enchant(it, field){
   if (!it){ say("You have nothing to enchant."); return true; }
   const v = it[field] || 0, chance = v < 0 ? 100 : Math.max(10, 100 - v * 12);
@@ -638,27 +697,46 @@ function fire(){
   const ammo = ITEM[bow.k].ammo;
   chooseItem("FIRE WHICH?", it => ITEM[it.k].ammo === ammo && ITEM[it.k].cat === "ammo", fireAmmo, "You have nothing to fire from your " + ITEM[bow.k].name.toLowerCase() + ".");
 }
-function cast(){
-  const C = cls(), P = POWERS[powerFor(C)];
-  if (!P){ say("You know no spells or prayers."); return false; }
-  if (player.mana < P.cost){ say("You do not have enough mana to " + (C.realm === "holy" ? "pray " : "cast ") + P.name + "."); return false; }
-  const fail = Math.max(5, Math.min(95, 30 - 3 * statMod(player.stats[C.stat]) - 2 * (player.lvl - 1)));
+const books = () => new Set(player.inv.filter(it => ITEM[it.k].cat === "book").map(it => it.k));
+const realmWord = () => cls().realm === "holy" ? "prayer" : "spell";
+function castMenu(){
+  const C = cls();
+  if (!C.realm){ say("You know no spells or prayers."); return; }
+  const known = SPELLS.filter(S => player.spells.includes(S.id));
+  if (!known.length){ oldMsgs = []; msgs = []; say("You have not learned any " + realmWord() + "s yet." + (learnable(player, books()).length ? " Press S to study." : "")); return; }
+  const have = books();
+  openList((C.realm === "holy" ? "PRAY" : "CAST") + "   MANA " + player.mana + "/" + player.mmana, known.map(S => ({
+    label: S.name.padEnd(20) + String(S.mana).padStart(3) + " MP" + String(spellFail(S, player)).padStart(4) + "% fail" + (have.has(bookOf(S)) ? "" : "  (no book)"),
+    select: done(() => castSpell(S)) })), "A SPELL NEEDS ITS BOOK IN YOUR PACK");
+}
+function castSpell(S){
+  const holy = S.realm === "holy";
+  if (!books().has(bookOf(S))){ say("You need the " + ITEM[bookOf(S)].name + " to " + (holy ? "pray " : "cast ") + S.name + "."); return false; }
+  if (player.mana < S.mana){ say("You do not have enough mana to " + (holy ? "pray " : "cast ") + S.name + "."); return false; }
+  if (player.t.blind || player.t.confused){ say(player.t.blind ? "You cannot see to read your book!" : "You are too confused."); return false; }
   const go = (tx, ty) => {
-    player.mana -= P.cost;
-    if (rng.int(100) < fail){ say(C.realm === "holy" ? "You lose your concentration." : "You failed to get the spell off!"); return true; }
-    if (P.heal){ const h = rng.dice(P.heal) + player.lvl; player.hp = Math.min(player.mhp, player.hp + h); say("A warm light closes your wounds."); flashes.push({ x: player.x, y: player.y, t: 0.4, t0: 0.4, rgb: [1.0, 0.85, 0.5] }); return true; }
-    // Spark: a bolt of light that always hits the first monster in its path
-    const { path, m } = flight(tx, ty, 15);
-    if (!path.length){ say("The spark fizzles against the wall."); return true; }
-    shots.push({ path, t: 0, speed: 40, glyph: "*", rgb: [1.8, 1.7, 1.0], light: SPARK_RGB });
-    const delay = path.length / 40, end = path[path.length - 1];
-    later.push({ t: delay, fn: () => { flashes.push({ x: end[0], y: end[1], t: 0.35, t0: 0.35, rgb: SPARK_RGB }); burst(end[0], end[1], [1.6, 1.4, 0.6], 3); } });
-    if (m) damage(m, rng.dice(P.dice) + Math.floor(player.lvl / 2), "The spark strikes " + theName(m) + ".", delay);
+    player.mana -= S.mana;
+    if (rng.int(100) < spellFail(S, player)){ say(holy ? "You lose your concentration." : "You failed to get the spell off!"); return true; }
+    // a spell grows with its caster: power is added to bolts, beams, balls and healing (items stay as they are)
+    FX[S.fx]({ K: S, tx, ty, power: player.lvl });
+    if (S.also) FX[S.also]({ K: S, tx, ty, power: player.lvl });
+    if (!player.cast.includes(S.id)){ player.cast.push(S.id); gainExp(spellLevel(S, cls()) * 2); }   // the first casting teaches you something
     return true;
   };
-  if (P.aim) aim("Cast " + P.name + ".", go);
+  if (S.aim) aim((holy ? "Pray " : "Cast ") + S.name + ".", go);
   else act(() => go());
   return false;
+}
+// Studying: an arcane caster chooses the spell; a holy one is granted a prayer, as in Moria.
+function study(){
+  const C = cls();
+  oldMsgs = []; msgs = [];
+  if (!C.realm){ say("You cannot learn magic."); return; }
+  const can = learnable(player, books());
+  if (!can.length){ say("You have nothing new to " + (C.realm === "holy" ? "pray for" : "learn") + " right now."); return; }
+  const learn = S => { player.spells.push(S.id); say((C.realm === "holy" ? "You have been granted the prayer of " : "You have learned the spell of ") + S.name + ": " + S.desc + "."); };
+  if (C.realm === "holy") return learn(rng.pick(can));
+  openList("STUDY WHICH SPELL?", can.map(S => ({ label: S.name.padEnd(20) + " " + S.desc.slice(0, 30), select: done(() => learn(S)) })));
 }
 
 /* ---------- a turn: the player acts, then everyone faster or as fast acts until it is the player's turn again ---------- */
@@ -776,6 +854,7 @@ function monsterAttack(m){
   const K = m.K, name = seesMon(m) ? "The " + K.name : "It";
   for (const [dice, verb, effect] of K.blows){
     if (state !== "play") return;
+    if (player.t.protEvil && K.evil && rng.int(100) < 50 + player.lvl - K.depth){ say(name + " is repelled."); continue; }
     if (rng.int(100) < Math.max(15, Math.min(95, 60 + 2 * K.depth - armour()))){
       if (effect === "steal"){   // a thief takes some gold, then slips away
         if (!player.gold){ say(name + " fumbles at your empty purse."); continue; }
@@ -870,7 +949,9 @@ function begin(){
   player = { ...p, base: { ...p.stats }, name: cr.name, x: 0, y: 0, exp: 0, energy: 100, speed: 0, food: 5000, gold: rng.range(250, 450), regen: 0, mregen: 0,
     inv: [], eq: Object.fromEntries(SLOTS.map(s => [s, null])), t: {}, know: newKnowledge(rng), maxDepth: 0, kills: 0, turns: 0, recall: 0 };
   Object.assign(player.eq, { weapon: plainItem(weapon), body: plainItem("jerkin"), light: plainItem("torch") });
-  for (const [k, n] of [["torch", 2], ["ration", 4], ["heal", 2], ...(C.kit || [])]){ carry(plainItem(k, n)); player.know.known[k] = true; }
+  for (const [k, n] of [["torch", 2], ["ration", 4], ["heal", 2], ...(C.realm ? [[C.realm === "holy" ? "hbook1" : "abook1", 1]] : []), ...(C.kit || [])]){ carry(plainItem(k, n)); player.know.known[k] = true; }
+  player.spells = []; player.cast = [];
+  for (const S of learnable(player, books())) player.spells.push(S.id);   // a caster starts knowing their first spells
   if (C.bow) player.eq.bow = plainItem(C.bow);
   recalc();
   player.mhp = player.hp = firstHp(player); player.mmana = player.mana = maxMana(player);
@@ -902,7 +983,7 @@ function drawCreate(){
     const K = CLASSES[cr.at];
     text(x1, y++, K.name, ACCENT); y++; para(K.desc); y++;
     para("Stats: " + mods(K.stats), DIM); para("Hit die " + K.hd + "   Experience +" + K.xp + "%", DIM);
-    const pw = POWERS[powerFor(K)]; para(pw ? (K.realm === "holy" ? "Prays " : "Casts ") + pw.name + ": " + pw.desc + "." : "No magic.", DIM);
+    const fs = firstSpell(K); para(fs ? (K.realm === "holy" ? "Holy prayers" : "Arcane spells") + (spellLevel(fs, K) > 1 ? " from level " + spellLevel(fs, K) : "") + ", starting with " + fs.name + ": " + fs.desc + "." : "No magic.", DIM);
     para("Titles: " + K.titles.slice(0, 3).join(", ") + " ...", DIM);
   } else {
     text(x1, y++, cr.name + ", " + R.name + " " + C.name, ACCENT); y++;
@@ -1071,13 +1152,12 @@ function sell(i, it){
   shopSell(i, at);
 }
 function commandList(){
-  const P = POWERS[powerFor(cls())];
   openList("COMMANDS", [
     { label: "Inventory", select: () => inventoryList() },
     { label: "Pick up", select: done(() => act(pickUp)) },
     { label: "Take the stairs", select: done(() => { const t = L.tiles[idx(player.x, player.y)]; act(() => takeStairs(t !== T.UP)); }) },
     { label: "Equipment", select: () => equipmentList() },
-    ...(P ? [{ label: (cls().realm === "holy" ? "Pray " : "Cast ") + P.name + " (" + P.cost + " MP)", select: done(cast) }] : []),
+    ...(cls().realm ? [{ label: cls().realm === "holy" ? "Pray" : "Cast a spell", select: () => castMenu() }, { label: "Study", select: done(study) }] : []),
     { label: "Drink a potion", select: () => useWhich("quaff") }, { label: "Read a scroll", select: () => useWhich("read") },
     { label: "Use a wand, staff or rod", select: () => chooseItem("USE WHICH?", it => ["wand", "staff", "rod"].includes(ITEM[it.k].cat), it => act(() => useItem(it, "use")), "You have no magic devices.") },
     ...(player.eq.bow ? [{ label: "Fire", select: () => fire() }] : []),
@@ -1180,6 +1260,7 @@ function characterList(){
     ...SKILLS.map(k => { const v = skillOf(p, k) + (k === "stealth" ? b.stealth : k === "search" ? b.search : 0); return info(SKILL_NAMES[k].padEnd(15) + (k === "stealth" ? stealthWord(v) : skillWord(v))); }),
     info("Infravision".padEnd(15) + (infra() ? infra() * 10 + " ft" : "none")), info("Hit die".padEnd(15) + "d" + hitDie(p)),
     info("Exp penalty".padEnd(15) + "+" + (R.xp + C.xp) + "%"),
+    ...(C.realm ? [info((C.realm === "holy" ? "Prayers" : "Spells").padEnd(15) + p.spells.length + " of " + SPELLS.filter(S => S.realm === C.realm && spellLevel(S, C) <= 40).length)] : []),
     info("Weapon " + weaponDice() + "   Gold " + p.gold), info("Deepest " + feet(p.maxDepth) + " ft   Kills " + p.kills), info("Turns " + p.turns)
   ]);
 }
@@ -1191,7 +1272,7 @@ function helpList(){
     info("Walk into a monster to attack"), info("Walk into a door to open it"), info("In town, walk onto a number to shop"),
     info("g or ,  pick up"), info("i  pack   e  equipment"), info("w  wear   " + (ro ? "T" : "t") + "  take off   d  drop"),
     info("E  eat   q  drink   r  read"), info("a  aim a wand   " + (ro ? "Z" : "u") + "  use a staff"), info("z  zap a rod   F  fill lantern"),
-    info("f  fire   v  throw   I  inspect"), info("m  cast or pray"), info("  then a direction, or ' / t"), info("  for the nearest monster"),
+    info("f  fire   v  throw   I  inspect"), info("m or p  cast or pray   S  study"), info("  then a direction, or ' / t"), info("  for the nearest monster"),
     info(">  <  take the stairs"), info("R  rest   " + (ro ? "." : ". or 5") + "  wait"), info((ro ? "x" : "l") + "  look   C  character"),
     info("Ctrl+P  messages"), info("Esc  menu"),
     info("Touch: D-pad moves (8 ways),"), info("A acts here, B commands")
@@ -1259,7 +1340,8 @@ function onKey(e){
   else if (k === "z") useWhich("rod");
   else if (k === "f") fire();
   else if (k === "I") useWhich("inspect");
-  else if (k === "m" || k === "p") cast();
+  else if (k === "m" || k === "p") castMenu();
+  else if (k === "S") study();
   else if (k === "R") rest();
   else if (k === "." || (!ro && (k === "5" || e.code === "Numpad5"))) act(() => true);
   else if (k === (ro ? "x" : "l")) look();

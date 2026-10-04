@@ -39,31 +39,25 @@ const CLASSES = [
   { id: "arcanist", name: "Arcanist", stats: { str: -4, int: 3, dex: 1, con: -2, cha: 1 }, hd: 4, xp: 30, realm: "arcane", stat: "int",
     fight: [35, 1.5], shoot: [40, 1.5], save: [40, 1.6], stealth: 2, disarm: [35, 1.4], device: [50, 2.0], search: [25, 0.8], notice: [30, 0.8],
     titles: ["Novice", "Scribe", "Spark-wright", "Conjurer", "Spellbinder", "Thaumaturge", "Magister", "Arch-scholar", "Stormcaller", "Archmage"],
-    desc: "A student of the arcane. Frail, but casts Spark: a bolt of light that strikes from a distance." },
+    desc: "A student of the arcane. Frail, but learns the most spells, starting with Spark: a bolt that strikes from a distance." },
   { id: "lampwarden", name: "Lampwarden", stats: { str: -1, int: -2, wis: 3, dex: -1, con: 1, cha: 2 }, hd: 6, xp: 20, realm: "holy", stat: "wis", lightBonus: 1,
     fight: [45, 2.0], shoot: [35, 1.2], save: [45, 1.8], stealth: 1, disarm: [25, 1.0], device: [40, 1.6], search: [25, 0.8], notice: [30, 0.8],
     titles: ["Acolyte", "Lamp-bearer", "Keeper", "Watcher", "Warden", "Beacon", "High Keeper", "Lightward", "Dawnbringer", "Lamp of the Deep"],
-    desc: "A keeper of the sacred flame. Their light reaches one step further, and they pray Mend to heal." },
-  { id: "delver", name: "Delver", stats: { int: 1, wis: -2, dex: 3, cha: -1 }, hd: 7, xp: 25, ambush: true,
+    desc: "A keeper of the sacred flame. Their light reaches one step further, and they learn every prayer, starting with Mend." },
+  { id: "delver", name: "Delver", stats: { int: 1, wis: -2, dex: 3, cha: -1 }, hd: 7, xp: 25, ambush: true, realm: "arcane", stat: "int", manaK: 0.5, pace: 1.5, start: 3,
     fight: [50, 2.2], shoot: [55, 2.4], save: [35, 1.4], stealth: 5, disarm: [55, 2.2], device: [40, 1.6], search: [45, 1.4], notice: [45, 1.4],
     titles: ["Footpad", "Cutpurse", "Sneak", "Prowler", "Shadow", "Infiltrator", "Vaultbreaker", "Nightblade", "Master Delver", "Unseen"],
-    desc: "A quiet treasure-seeker. Monsters stay asleep longer, and a sleeping one takes double damage." },
-  { id: "wayfinder", name: "Wayfinder", stats: { int: 1, wis: -1, dex: 2, con: 1 }, hd: 8, xp: 30, kit: [["dart", 10], ["shot", 30]], bow: "sling",
+    desc: "A quiet treasure-seeker. Monsters stay asleep longer, a sleeping one takes double damage, and a little arcane magic comes later." },
+  { id: "wayfinder", name: "Wayfinder", stats: { int: 1, wis: -1, dex: 2, con: 1 }, hd: 8, xp: 30, kit: [["dart", 10], ["shot", 30]], bow: "sling", realm: "arcane", stat: "int", manaK: 0.5, pace: 1.5, start: 3,
     fight: [52, 2.4], shoot: [70, 3.2], save: [35, 1.4], stealth: 3, disarm: [35, 1.4], device: [35, 1.4], search: [40, 1.2], notice: [45, 1.4],
     titles: ["Trailhand", "Scout", "Tracker", "Pathfinder", "Outrider", "Hunter", "Far-strider", "Deepranger", "Wayfinder", "Warden of Roads"],
-    desc: "A scout of the deep roads. The best shot: starts with a sling, iron shot and throwing darts." },
-  { id: "oathknight", name: "Oathknight", stats: { str: 2, int: -3, wis: 1, con: 1, cha: 2 }, hd: 9, xp: 35, realm: "holy", stat: "wis", manaK: 0.6,
+    desc: "A scout of the deep roads. The best shot: starts with a sling, iron shot and throwing darts; learns some arcane magic later." },
+  { id: "oathknight", name: "Oathknight", stats: { str: 2, int: -3, wis: 1, con: 1, cha: 2 }, hd: 9, xp: 35, realm: "holy", stat: "wis", manaK: 0.6, pace: 1.4, start: 2,
     fight: [60, 2.8], shoot: [40, 1.6], save: [40, 1.6], stealth: 1, disarm: [25, 1.0], device: [30, 1.2], search: [20, 0.5], notice: [25, 0.6],
     titles: ["Squire", "Sworn", "Shieldbearer", "Knight", "Oathkeeper", "Knight-Captain", "Lord Protector", "Banneret", "Paragon", "Oathbound"],
-    desc: "A holy warrior. Fights nearly as well as a Sellsword and can pray Mend, with less power." }
+    desc: "A holy warrior. Fights nearly as well as a Sellsword, and learns prayers more slowly." }
 ];
 const RACE = Object.fromEntries(RACES.map(r => [r.id, r])), CLASS = Object.fromEntries(CLASSES.map(c => [c.id, c]));
-// Class powers: each caster's first spell. Phase 5 folds these into full spell books.
-const POWERS = {
-  spark: { name: "Spark", cost: 1, realm: "arcane", dice: "3d4", aim: true, desc: "a bolt of light" },
-  mend: { name: "Mend", cost: 2, realm: "holy", heal: "3d6", desc: "heals wounds" }
-};
-const powerFor = C => C.realm === "arcane" ? "spark" : C.realm === "holy" ? "mend" : null;
 
 const statMod = v => Math.floor((v - 10) / 2);
 const clampStat = v => Math.max(3, Math.min(25, v));

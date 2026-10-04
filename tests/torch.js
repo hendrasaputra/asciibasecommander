@@ -1,8 +1,8 @@
 // Checks for Torchlight Dungeons' rules. Run: node tests/torch.js
 // Loads the game's logic files without a browser: random numbers, sight and light, turns, levels and data.
 const fs = require("fs"), vm = require("vm"), path = require("path");
-const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js", "items.js", "shops.js", "chars.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
-const G = vm.runInNewContext(files.join("\n") + "\n;({ RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS, ITEM, EGOS, ARTIFACTS, CAT, SLOTS, newKnowledge, makeItem, rollItem, itemName, itemPowers, kindKnown, SHOPS, newShops, restock, itemValue, buyPrice, sellPrice, shopBuys, generateTown, TW, TH, RACES, CLASSES, RACE, CLASS, STATS, SKILLS, rollStats, finalStats, skillOf, expNeeded, maxMana, firstHp, levelHp, titleOf, buySpent, BUY_POINTS, randomName, powerFor, POWERS })", { Math, console });
+const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js", "items.js", "shops.js", "chars.js", "spells.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
+const G = vm.runInNewContext(files.join("\n") + "\n;({ RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS, ITEM, EGOS, ARTIFACTS, CAT, SLOTS, newKnowledge, makeItem, rollItem, itemName, itemPowers, kindKnown, SHOPS, newShops, restock, itemValue, buyPrice, sellPrice, shopBuys, generateTown, TW, TH, RACES, CLASSES, RACE, CLASS, STATS, SKILLS, rollStats, finalStats, skillOf, expNeeded, maxMana, firstHp, levelHp, titleOf, buySpent, BUY_POINTS, randomName, SPELLS, SPELL, spellLevel, spellFail, learnable, bookOf, firstSpell })", { Math, console });
 
 let failed = 0;
 const check = (name, ok, detail) => { console.log((ok ? "ok    " : "FAIL  ") + name + (detail ? "  (" + detail + ")" : "")); if (!ok) failed++; };
@@ -88,7 +88,7 @@ const { MW, MH, T } = G;
   check("every class has 10 titles", G.CLASSES.every(C => C.titles.length === 10));
   const sw = G.skillOf({ ...p, cls: "sellsword" }, "fight"), ar = G.skillOf({ ...p, cls: "arcanist", stats: p.stats }, "fight");
   check("a Sellsword fights better than an Arcanist", sw > ar + 20, `${sw} vs ${ar}`);
-  check("casters have a power, the others do not", G.CLASSES.every(C => !!G.powerFor(C) === !!C.realm && (!C.realm || G.POWERS[G.powerFor(C)])));
+  check("casters have a first spell, the others none", G.CLASSES.every(C => !!G.firstSpell(C) === !!C.realm));
 }
 
 { // stat generation: rolls stay in range; the point budget is respected by the costs
@@ -156,6 +156,25 @@ const { MW, MH, T } = G;
     && shops.every(sh => { const plain = sh.stock.filter(o => !o.tohit && !o.todam && !o.toac && !o.ego && o.charges === undefined && !o.pval).map(o => o.k + "/" + o.fuel); return new Set(plain).size === plain.length; }));
   const later = G.restock(shops[0].stock.slice(), G.SHOPS[0], rng, know, 0.5);
   check("restocking keeps a shop full and changes some goods", later.length >= G.SHOPS[0].size[0] && later.some(x => !shops[0].stock.includes(x)));
+}
+
+{ // magic: two realms of 30 in four books; every spell can be cast by someone, and has an effect in the game
+  const game = fs.readFileSync(path.join(__dirname, "..", "src", "torch", "game.js"), "utf8"), has = fx => new RegExp("\\b" + fx + ": ").test(game);
+  const realm = r => G.SPELLS.filter(S => S.realm === r);
+  check("30 arcane spells and 30 holy prayers, in books 1 to 4", realm("arcane").length === 30 && realm("holy").length === 30 && G.SPELLS.every(S => S.book >= 1 && S.book <= 4));
+  check("spell ids are unique", new Set(G.SPELLS.map(S => S.id)).size === G.SPELLS.length);
+  const noFx = G.SPELLS.filter(S => !has(S.fx) || (S.also && !has(S.also))).map(S => S.id);
+  check("every spell's effect exists in game.js", !noFx.length, noFx.join(", "));
+  check("every book is an item of the right realm", G.SPELLS.every(S => G.ITEM[G.bookOf(S)] && G.ITEM[G.bookOf(S)].realm === S.realm));
+  check("spells in a book are in level order, and a later book starts higher", ["arcane", "holy"].every(r => realm(r).every((S, i, a) => !i || S.lv >= a[i - 1].lv - 1 && S.book >= a[i - 1].book)));
+  const full = G.CLASSES.filter(C => C.realm && !(C.pace > 1)), part = G.CLASSES.filter(C => C.pace > 1);
+  check("full casters can learn their whole realm by level 40, from level 1", full.every(C => realm(C.realm).every(S => G.spellLevel(S, C) <= 40) && G.spellLevel(G.firstSpell(C), C) === 1));
+  check("part-time casters start later and learn part of their realm", part.every(C => { const n = realm(C.realm).filter(S => G.spellLevel(S, C) <= 40).length; return G.spellLevel(G.firstSpell(C), C) > 1 && n >= 10 && n < 30; }),
+    part.map(C => C.id + " " + realm(C.realm).filter(S => G.spellLevel(S, C) <= 40).length).join(", "));
+  const p = { race: "human", cls: "arcanist", lvl: 1, stats: { str: 10, int: 18, wis: 10, dex: 10, con: 10, cha: 10 }, spells: [] };
+  const f1 = G.spellFail(G.SPELL.spark, p), f20 = G.spellFail(G.SPELL.spark, { ...p, lvl: 20 });
+  check("failure falls with level and stays between 5% and 95%", f1 > f20 && f20 >= 5 && f1 <= 95, f1 + "% at level 1, " + f20 + "% at 20");
+  check("only spells whose book you carry can be studied", !G.learnable(p, new Set()).length && G.learnable(p, new Set(["abook1"])).some(S => S.id === "spark"));
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");

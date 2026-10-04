@@ -20,7 +20,7 @@ ASCII label instead.
 | [Crater Duel](crater-duel.html) | Scorched Earth | Hills that collapse after each blast, falling tanks, four weapons |
 | [Stack Smash](stack-smash.html) | Tetris | Blocks as lit slabs; cleared lines burst into boxes that land on the stack |
 | [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble |
-| [Torchlight Dungeons](torchlight-dungeons.html) | Moria | A torch that lights only what it reaches: walls cast shadows, rooms can be lit, some monsters glow; kills burst into bits. Early version: 8 peoples, 6 callings, first spells, about 200 kinds of item to identify, a town with six shops and day and night (phases 0 to 4 of [TORCHLIGHT_PLAN.md](TORCHLIGHT_PLAN.md)) |
+| [Torchlight Dungeons](torchlight-dungeons.html) | Moria | A torch that lights only what it reaches: walls cast shadows, rooms can be lit, some monsters glow; kills burst into bits. Early version: 8 peoples, 6 callings, first spells, about 200 kinds of item to identify, a town with six shops and day and night, 60 spells and prayers (phases 0 to 5 of [TORCHLIGHT_PLAN.md](TORCHLIGHT_PLAN.md)) |
 | [Physics Sandbox](ascii-physics.html) | | The engine itself: throw balls and boxes under a lamp |
 
 All games are original code and art. Rover Patrol takes its idea from msokalski's
@@ -66,7 +66,7 @@ physics, and `node tests/torch.js` for Torchlight Dungeons.
 - `src/game/`, `src/rooftop/`, `src/crater/`, `src/stack/`, `src/rover/`: each game's page markup (`head.html`) and rules
   (`game.js`).
 - `src/torch/`: Torchlight Dungeons, split by job: `rng.js` random numbers, `fov.js` sight and light, `turn.js` the
-  speed scheduler, `gen.js` levels, `data.js` monsters, `items.js` items, flavours and names, `shops.js` the town's shops and prices, `chars.js` races, classes, stats and skills, `game.js` the rest. Check its rules with
+  speed scheduler, `gen.js` levels, `data.js` monsters, `items.js` items, flavours and names, `shops.js` the town's shops and prices, `chars.js` races, classes, stats and skills, `spells.js` magic and prayers, `game.js` the rest. Check its rules with
   `node tests/torch.js`.
 - `src/engine/`, `src/tutorial/`, `src/settings/`: the sandbox, the tutorial and the settings page.
 - `favicon.svg`: the site icon, a cartridge with a lit ball on its label.

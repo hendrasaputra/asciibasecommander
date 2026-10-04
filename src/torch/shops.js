@@ -9,16 +9,16 @@ const SHOPS = [
     buys: ["body", "shield", "head", "hands", "feet", "cloak"], hello: ["Good steel saves lives.", "Try it on. It's the only way to know.", "Dents are extra."] },
   { name: "Weaponsmith", keeper: "Kessa Edgewright", greed: 1.25, rgb: [1.2, 0.7, 0.5], size: [10, 14], cats: ["weapon", "bow", "ammo"], maxDepth: 14,
     buys: ["weapon", "bow", "ammo", "dart"], hello: ["Every blade here is sharp. I checked.", "Point the sharp end away from you.", "Bring me something good from below."] },
-  { name: "Temple", keeper: "Sister Ilvane", greed: 1.15, rgb: [1.3, 1.2, 0.9], size: [10, 14], always: ["heal"],
-    sells: ["heal", "bigheal", "pclear", "ppoisoncure", "sbless", "schant", "suncurse", "srecall", "mace", "flail", "morningstar", "warhammer"],
-    buys: ["potion", "scroll"], hello: ["May your light never fail.", "The flame keeps watch over all of us.", "Rest here a while, if you need."] },
+  { name: "Temple", keeper: "Sister Ilvane", greed: 1.15, rgb: [1.3, 1.2, 0.9], size: [10, 14], always: ["heal", "hbook1"],
+    sells: ["hbook1", "hbook2", "heal", "bigheal", "pclear", "ppoisoncure", "sbless", "schant", "suncurse", "srecall", "mace", "flail", "morningstar", "warhammer"],
+    buys: ["potion", "scroll", "book"], hello: ["May your light never fail.", "The flame keeps watch over all of us.", "Rest here a while, if you need."] },
   { name: "Alchemist", keeper: "Thorne Vialkeeper", greed: 1.3, rgb: [0.7, 1.2, 0.8], size: [10, 15], always: ["heal", "sident", "srecall"],
     sells: ["heal", "bigheal", "pfire", "pcold", "pinfra", "phero", "pspeed", "sident", "slight", "sphase", "smap", "sobj", "smon", "sfood", "srecall", "senchhit", "senchdam", "senchac", "stele"],
     buys: ["potion", "scroll"], hello: ["Don't touch the green ones.", "Every bottle has a story. Some of them explode.", "Read the label. Then read it again."] },
   { name: "Magic Shop", keeper: "Maelis of the Blue Door", greed: 1.4, rgb: [0.8, 0.7, 1.4], size: [8, 12],
-    sells: ["wmissile", "wsleep", "wslow", "wconf", "wstink", "wlight", "wmud", "tlight", "tdetmon", "tdetobj", "tcure", "rillum", "rlight", "robj",
+    always: ["abook1"], sells: ["abook1", "abook2", "wmissile", "wsleep", "wslow", "wconf", "wstink", "wlight", "wmud", "tlight", "tdetmon", "tdetobj", "tcure", "rillum", "rlight", "robj",
       "rprot", "rfire", "rcold", "racc", "rdam", "adigest", "ainfra", "acha"],
-    buys: ["wand", "staff", "rod", "ring", "amulet"], hello: ["Everything here does something. Mostly what it should.", "Charges not included. Well, some are.", "Ah, a customer with taste."] }
+    buys: ["wand", "staff", "rod", "ring", "amulet", "book"], hello: ["Everything here does something. Mostly what it should.", "Charges not included. Well, some are.", "Ah, a customer with taste."] }
 ];
 // What an item is worth (in gold), from its kind and what was rolled for it. Cursed or broken things are worth nothing.
 function itemValue(it){
