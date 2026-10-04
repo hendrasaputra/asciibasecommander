@@ -75,7 +75,7 @@ const ITEMS = [
       ["pblind", "Blindness", "blind", {}, 2, 1, 0], ["psalt", "Salt Water", "salt", {}, 1, 1, 0],
       ["pstr", "Strength", "gainStat", { stat: "str" }, 25, 8, 4000], ["pint", "Intellect", "gainStat", { stat: "int" }, 25, 8, 4000], ["pwis", "Wisdom", "gainStat", { stat: "wis" }, 25, 8, 4000],
       ["pdex", "Dexterity", "gainStat", { stat: "dex" }, 25, 8, 4000], ["pcon", "Constitution", "gainStat", { stat: "con" }, 30, 8, 4000], ["pcha", "Charisma", "gainStat", { stat: "cha" }, 20, 6, 1000],
-      ["penlight", "Enlightenment", "enlight", {}, 25, 5, 800], ["pexp", "Experience", "exp", {}, 40, 10, 10000], ["pclair", "Clairvoyance", "clairvoyance", {}, 15, 4, 400]]
+      ["penlight", "Enlightenment", "enlight", {}, 25, 5, 800], ["pexp", "Experience", "exp", {}, 40, 10, 10000], ["pclair", "Clairvoyance", "clairvoyance", {}, 15, 4, 400], ["psight", "True Sight", "seeInvis", {}, 8, 2, 120]]
     .map(([id, n, e, o, dep, r, c]) => I("potion", id, n, dep, r, 0.4, c, { effect: e, ...o })),
   // scrolls
   ...[["sident", "Identify", "identify", 1, 1, 50], ["suncurse", "Remove Curse", "removeCurse", 5, 2, 100], ["slight", "Light", "lightArea", 1, 1, 15],
@@ -141,7 +141,7 @@ const EGOS = [
   { id: "racid", name: "of Resist Acid", cats: ["body", "shield", "cloak"], res: ["acid"], depth: 6 }, { id: "relec", name: "of Resist Lightning", cats: ["body", "shield", "cloak"], res: ["elec"], depth: 6 },
   { id: "resistance", name: "of Resistance", cats: ["body", "shield"], res: ["fire", "cold", "acid", "elec"], depth: 25 },
   { id: "stealth", name: "of Stealth", cats: ["cloak", "feet"], stealth: 2, depth: 6 }, { id: "speed", name: "of Speed", cats: ["feet"], speed: [1, 4], depth: 35 },
-  { id: "free", name: "of Free Action", cats: ["hands"], freeAct: true, depth: 10 }, { id: "seeing", name: "of Seeing", cats: ["head"], search: 15, infra: 2, depth: 10 },
+  { id: "free", name: "of Free Action", cats: ["hands"], freeAct: true, depth: 10 }, { id: "seeing", name: "of Seeing", cats: ["head"], search: 15, infra: 2, seeInv: true, depth: 10 },
   { id: "intellect", name: "of Intellect", cats: ["head"], stats: { int: 2 }, depth: 15 }, { id: "wisdom", name: "of Wisdom", cats: ["head"], stats: { wis: 2 }, depth: 15 },
   { id: "might", name: "of Might", cats: ["hands"], stats: { str: 2 }, depth: 15 },
   { id: "power", name: "of Power", cats: ["bow"], dam: 5, depth: 12 }, { id: "accuracy", name: "of Accuracy", cats: ["bow"], hit: 6, depth: 8 }
@@ -246,7 +246,7 @@ function rollItem(depth, rng, know){
 function itemPowers(it){
   const K = ITEM[it.k], E = it.ego ? EGO[it.ego] : null, A = it.art ? ARTIFACT[it.art] : null, out = { stats: {}, res: [] };
   const merge = s => { if (!s) return; if (s.stats) for (const [k, v] of Object.entries(s.stats)) out.stats[k] = (out.stats[k] || 0) + v; if (s.res) out.res.push(...s.res);
-    for (const f of ["brand", "slay", "freeAct", "slowDigest", "teleportCurse"]) if (s[f]) out[f] = s[f];
+    for (const f of ["brand", "slay", "freeAct", "slowDigest", "teleportCurse", "seeInv"]) if (s[f]) out[f] = s[f];
     for (const f of ["stealth", "search", "infra", "regen", "light"]) if (s[f]) out[f] = (out[f] || 0) + s[f]; };
   merge(K); merge(E); merge(A);
   const p = it.pval || 0;

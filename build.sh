@@ -21,6 +21,6 @@ game crater-duel.html crater src/audio/crater-sfx-data.js src/crater/game.js
 game stack-smash.html stack src/audio/stack-sfx-data.js src/stack/game.js
 game rover-patrol.html rover src/audio/rover-sfx-data.js src/rover/game.js
 # Torchlight is drawn in pixels with an HTML interface: it takes core.js only for the shared settings, and no pause menu
-page torchlight-dungeons.html src/torch/head.html src/core.js src/arcade.js src/torch/rng.js src/torch/fov.js src/torch/turn.js src/torch/gen.js src/torch/data.js src/torch/items.js src/torch/shops.js src/torch/chars.js src/torch/spells.js src/torch/sprites.js src/torch/game.js src/torch/render.js src/torch/ui.js
+page torchlight-dungeons.html src/torch/head.html src/core.js src/arcade.js src/torch/rng.js src/torch/fov.js src/torch/turn.js src/torch/gen.js src/torch/data.js src/torch/bestiary.js src/torch/items.js src/torch/shops.js src/torch/chars.js src/torch/spells.js src/torch/sprites.js src/torch/game.js src/torch/render.js src/torch/ui.js
 page settings.html src/settings/head.html src/core.js src/settings/page.js
 echo "Built ascii-physics.html, ascii-engine-tutorial.html, base-commander.html, rooftop-rumble.html, crater-duel.html, stack-smash.html, rover-patrol.html, torchlight-dungeons.html and settings.html"

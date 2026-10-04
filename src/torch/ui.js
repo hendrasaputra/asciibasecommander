@@ -57,7 +57,8 @@ function card(it, compare = true){
     for (const [k, v] of Object.entries(P.stats)) lines.push(sign(v) + " " + STAT_NAMES[k] + ".");
     if (P.speed) lines.push(sign(P.speed) + " speed.");
     if (P.stealth) lines.push("+" + P.stealth + " stealth.");
-    if (P.freeAct) lines.push("Keeps you from being put to sleep.");
+    if (P.freeAct) lines.push("Keeps you from being put to sleep or paralysed.");
+    if (P.seeInv) lines.push("Lets you see invisible things.");
     if (P.regen) lines.push("Speeds your healing.");
     if (P.slowDigest) lines.push("You need less food.");
     if (it.cursed) lines.push("It is cursed.");
@@ -89,6 +90,33 @@ function bindTips(root, cards){
   root.querySelectorAll("[data-r]").forEach(el => { const f = cards[+el.dataset.r]; el.onmouseenter = () => { tipFor = el; showTip(f(), el); }; el.onmouseleave = hideTip; });
 }
 
+/* ---------- monster recall: what you have learned about a kind, in words ---------- */
+const andList = a => a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+const ELEM_WORD = { fire: "fire", cold: "frost", elec: "lightning", acid: "acid", poison: "poison", dark: "darkness", light: "light", arcane: "force" };
+const BLOW_WORD = { poison: "poisons", confuse: "confuses", blind: "blinds", paralyze: "paralyses", terrify: "terrifies", fire: "burns", cold: "freezes", elec: "shocks", acid: "corrodes",
+  dark: "darkens", light: "dazzles", steal: "steals gold", stealItem: "steals items", drainExp: "drains experience", drainCharges: "drains wands", eatFood: "eats food", eatLight: "eats light" };
+function spellWord(S){ const [k, a] = S.split(":");
+  return { blink: "blink", tport: "teleport away", teleTo: "pull you to it", heal: "heal itself", haste: "haste itself", blind: "blind you", confuse: "confuse you", scare: "terrify you", slow: "slow you",
+    paralyze: "paralyse you", darkness: "make darkness", drainMana: "drain your mana", arrow: "fire missiles", bolt: ELEM_WORD[a] + " bolts", ball: ELEM_WORD[a] + " balls", breath: "breathe " + ELEM_WORD[a],
+    summon: "summon " + ({ kin: "its kin", undead: "the undead", any: "monsters" })[a] }[k]; }
+function recall(K){
+  const l = LORE[K.id] || { seen: 0, kills: 0, deaths: 0, blows: [], spells: [], res: [] }, out = [];
+  out.push(K.town ? "Lives in the town." : "Found from " + feet(K.depth) + " ft" + (K.unique ? "; there is only one." : "."));
+  if (l.seen >= 2){
+    const sp = K.speed; out.push(sp >= 20 ? "Very fast." : sp >= 10 ? "Fast." : sp <= -10 ? "Slow." : sp < 0 ? "A little slow." : "Normal speed.");
+    const f = [K.pack && "hunts in packs", K.breed && "multiplies", K.invis && "is invisible", K.passWall && "passes through walls", K.killWall && "tunnels through rock", K.still && "never moves",
+      K.erratic && "moves erratically", K.regen && "heals quickly", K.glow && "gives off light", K.cold && "has no body heat", K.mimic && "poses as treasure"].filter(Boolean);
+    if (f.length) out.push(cap(andList(f)) + ".");
+  }
+  const bl = K.blows.map(([dice, verb, fx], i) => l.blows[i] ? verb + (l.blows[i] >= 4 ? " " + dice : "") + (fx ? " (" + (BLOW_WORD[fx] || "drains " + STAT_NAMES[fx.slice(6)].toLowerCase()) + ")" : "") : null).filter(Boolean);
+  if (bl.length) out.push("Attacks: " + andList(bl) + ".");
+  if (l.spells.length) out.push("Can " + andList(l.spells.map(spellWord)) + ".");
+  if (l.res.length) out.push("Resists " + andList(l.res.map(e => ELEM_WORD[e])) + ".");
+  if (l.kills) out.push("Slain " + l.kills + (l.kills > 1 ? " times" : " time") + (l.kills >= 3 ? "; about " + Math.round(avgDice(K.hp)) + " hit points" : "") + (player && player.lvl ? "; worth " + Math.round(K.exp * K.depth / player.lvl) + " exp to you now." : "."));
+  if (l.deaths) out.push("It has killed " + l.deaths + " of your characters.");
+  return out;
+}
+
 /* ---------- the HUD ---------- */
 const healthWord = m => m.hp >= m.mhp ? "unhurt" : m.hp > m.mhp * 0.6 ? "wounded" : m.hp > m.mhp * 0.25 ? "badly wounded" : "almost dead";
 function bar(label, v, max, cls){ return `<div class="meter ${cls}"><span>${label}<b>${v} / ${max}</b></span><i><s style="width:${Math.max(0, Math.min(100, 100 * v / max))}%"></s></i></div>`; }
@@ -96,7 +124,8 @@ function drawHud(){
   const p = player, lt = p.eq.light;
   const food = p.food < 0 ? "Starving" : p.food < 1000 ? "Weak" : p.food < 2000 ? "Hungry" : "";
   const T0 = p.t, chips = [[T0.fast, "Fast", "good"], [T0.hero, "Hero", "good"], [T0.berserk, "Berserk", "good"], [T0.bless, "Blessed", "good"], [T0.protEvil, "Warded", "good"],
-    [T0.resFire, "Res. heat", "good"], [T0.resCold, "Res. cold", "good"], [T0.poison, "Poisoned", "bad"], [T0.confused, "Confused", "bad"], [T0.blind, "Blind", "bad"], [T0.asleep, "Asleep", "bad"],
+    [T0.resFire, "Res. heat", "good"], [T0.resCold, "Res. cold", "good"], [T0.seeInv, "True sight", "good"], [T0.poison, "Poisoned", "bad"], [T0.confused, "Confused", "bad"], [T0.blind, "Blind", "bad"], [T0.asleep, "Asleep", "bad"],
+    [T0.afraid, "Afraid", "bad"], [T0.paralyzed, "Paralysed", "bad"], [T0.slow, "Slowed", "bad"],
     [p.bonus.burden, "Burdened", "bad"], [food, food, "bad"], [p.recall, "Recall", "good"]].filter(c => c[0]);
   const xpNext = expNeeded(p, p.lvl + 1), xpPrev = p.lvl > 1 ? expNeeded(p, p.lvl) : 0;
   $("status").innerHTML = `<div class="who">${pic(heroImage(), "face")}<div><b>${esc(p.name)}</b><small>Level ${p.lvl} ${esc(titleOf(p))}</small></div></div>
@@ -108,7 +137,7 @@ function drawHud(){
   const tg = target && mons.includes(target) && sensed(target) ? target : null;
   $("target").hidden = !tg;
   if (tg) $("target").innerHTML = `<div class="ct">${pic(creatureImage(tg.K), "big")}<div><b>${esc(cap(tg.K.name))}</b><small>${healthWord(tg)}${tg.sleep > 0 ? ", asleep" : ""}${tg.afraid ? ", afraid" : ""} · ${dist(tg.x, tg.y, player.x, player.y)} away</small></div></div>
-    <div class="meter hp"><i><s style="width:${100 * Math.max(0, tg.hp) / tg.mhp}%"></s></i></div><div class="ln">${esc(tg.K.desc)}</div>`;
+    <div class="meter hp"><i><s style="width:${100 * Math.max(0, tg.hp) / tg.mhp}%"></s></i></div><div class="ln">${esc(tg.K.desc)}</div>${recall(tg.K).slice(1, 4).map(s => `<div class="ln dim">${esc(s)}</div>`).join("")}`;
   // messages: this turn's bright, older ones fading
   const fresh = msgs.length, last = log.slice(-6);
   $("log").innerHTML = last.map((s, k) => `<div class="${k >= last.length - fresh ? "new" : ""}" style="opacity:${k >= last.length - fresh ? 1 : 0.35 + 0.1 * k}">${esc(s)}</div>`).join("");
@@ -185,8 +214,8 @@ function drawPanel(){
     }
   } else if (tab === "journal"){
     h += `<h3>Messages</h3><div class="msgs">${log.slice(-80).reverse().map(s => `<div>${esc(s)}</div>`).join("")}</div>`;
-    const met = MONSTERS.filter(K => p.met.has(K.id));
-    h += `<h3>Creatures you have met (${met.length})</h3>${met.map(K => `<div class="beast">${pic(creatureImage(K))}<div><b>${esc(cap(K.name))}</b><small>${K.depth ? feet(K.depth) + " ft" : "the town"}${p.slain[K.id] ? " · slain " + p.slain[K.id] : ""}</small><div class="ln">${esc(K.desc)}</div></div></div>`).join("")}`;
+    const met = MONSTERS.filter(K => LORE[K.id] && LORE[K.id].seen).sort((a, b) => a.depth - b.depth);
+    h += `<h3>Creatures you know (${met.length} of ${MONSTERS.length})</h3>${met.map(K => `<div class="beast">${pic(creatureImage(K))}<div><b class="${K.unique ? "gold" : ""}">${esc(cap(K.name))}</b><div class="ln">${esc(K.desc)}</div>${recall(K).map(s => `<div class="ln dim">${esc(s)}</div>`).join("")}</div></div>`).join("")}`;
     const known = ITEMS.filter(K => K.flavoured && p.know.known[K.id]);
     h += `<h3>Kinds you have identified (${known.length})</h3><div class="ln">${known.map(K => esc(K.name)).join(", ") || "None yet."}</div>`;
   } else if (tab === "map"){

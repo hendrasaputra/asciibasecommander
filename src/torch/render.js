@@ -120,17 +120,19 @@ function label(x, y, s, col, size = 0.8, centre = false){
   ctx.font = "bold " + Math.round(Z * TS * size * 0.5) + "px ui-monospace, Menlo, monospace"; ctx.textAlign = centre ? "center" : "left";
   ctx.lineWidth = Math.max(2, Z * 0.9); ctx.strokeStyle = "#000"; ctx.strokeText(s, x, y); ctx.fillStyle = col; ctx.fillText(s, x, y); ctx.textAlign = "left";
 }
+const MIMICS = new Map();
+const mimicImage = K => memo(MIMICS, K.mimic, () => icon({ cat: K.mimic }, K.mimic === "potion" ? [0.5, 0.75, 1] : [1, 0.8, 0.3]));
 function figure(m, t, how){
-  const a = posOf(m), img = m === player ? heroImage() : creatureImage(m.K);
+  const a = posOf(m), K = m.K, S = (K && K.size) || 1, img = m === player ? heroImage() : K.mimic && !m.revealed ? mimicImage(K) : creatureImage(K);
   let ox = 0, oy = Math.round(Math.sin(t / 260 + (m === player ? 0 : m.x * 3)) * 0.6);
   if (a.lunge){ const k = Math.sin(Math.PI * (1 - a.lunge.t / 0.16)) * 5; ox = a.lunge.dx * k; oy += a.lunge.dy * k; }
-  const px = Math.round(a.x * TS + ox), py = Math.round(a.y * TS + oy);
+  const px = Math.round(a.x * TS + ox), py = Math.round(a.y * TS + oy), W = Math.round(TS * S), X = px - (W - TS) / 2, Y = py - (W - TS);   // big ones grow upward from their feet
   if (m === player){ if (m.x !== a.lastX){ if (m.x !== a.lastX && a.lastX !== undefined) a.face = m.x < a.lastX ? -1 : 1; a.lastX = m.x; } }
   const flip = m === player ? a.face < 0 : m.x > player.x;
-  if (!how){ ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.beginPath(); ctx.ellipse(px + 8, py + 14.5, 5, 1.6, 0, 0, 7); ctx.fill(); }
+  if (!how){ ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.beginPath(); ctx.ellipse(px + 8, py + 14.5, 5 * S, 1.6 * S, 0, 0, 7); ctx.fill(); }
   const pic = how === "heat" ? heatImage(img) : a.flash > 0 ? flashImage(img) : img;
-  ctx.globalAlpha = how === "ghost" ? 0.45 : 1;
-  if (flip){ ctx.save(); ctx.translate(px + TS, py); ctx.scale(-1, 1); ctx.drawImage(pic, 0, 0); ctx.restore(); } else ctx.drawImage(pic, px, py);
+  ctx.globalAlpha = how === "ghost" ? 0.45 : K && K.invis && m !== player ? 0.7 : 1;
+  if (flip){ ctx.save(); ctx.translate(X + W, Y); ctx.scale(-1, 1); ctx.drawImage(pic, 0, 0, W, W); ctx.restore(); } else ctx.drawImage(pic, X, Y, W, W);
   ctx.globalAlpha = 1;
 }
 const FLASH = new Map();

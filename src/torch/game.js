@@ -20,10 +20,13 @@ const dist = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 const race = () => RACE[player.race], cls = () => CLASS[player.cls];
 function say(s){ msgs.push(s); log.push(s); if (log.length > 200) log.shift(); refreshUI(); }
 // You see a monster if light shows it, or if it is warm-blooded, in your line of sight and within your infravision.
-const byHeat = m => !m.K.cold && infra() > 0 && inFov[idx(m.x, m.y)] === turnNo && dist(m.x, m.y, player.x, player.y) <= infra() && !visible(idx(m.x, m.y));
-const seesMon = m => visible(idx(m.x, m.y)) || byHeat(m);
+const seeInvis = () => player.t.seeInv > 0 || !!(player.bonus && player.bonus.seeInv);
+const hiddenMimic = m => m.K.mimic && !m.revealed;   // it looks like an item until it moves or you touch it
+const byHeat = m => !m.K.cold && !m.K.invis && infra() > 0 && inFov[idx(m.x, m.y)] === turnNo > 0 && inFov[idx(m.x, m.y)] === turnNo && dist(m.x, m.y, player.x, player.y) <= infra() && !visible(idx(m.x, m.y));
+const seesMon = m => !hiddenMimic(m) && ((visible(idx(m.x, m.y)) && (!m.K.invis || seeInvis())) || byHeat(m));
 const sensed = m => seesMon(m) || m.det === turnNo;   // seen, or found by detection this turn
-const theName = m => seesMon(m) ? "the " + m.K.name : "it";
+const monName = K => K.unique ? K.name : "the " + K.name, aName = K => K.unique ? K.name : (/^[aeiou]/i.test(K.name) ? "an " : "a ") + K.name;
+const theName = m => seesMon(m) ? monName(m.K) : "it";
 
 /* ---------- saved preferences and high scores ---------- */
 const store = prefs("torchlightDungeons.v1.", "Torchlight Dungeons"), scores = scoreTable(store);   // src/arcade.js
@@ -59,10 +62,11 @@ function recalc(){
     for (const f of ["stealth", "search", "infra", "regen", "light"]) b[f] += P[f] || 0;
     for (const [k, v] of Object.entries(P.stats)) b.stats[k] = (b.stats[k] || 0) + v;
     for (const r of P.res) b.res.add(r);
-    for (const f of ["freeAct", "slowDigest", "teleportCurse"]) if (P[f]) b[f] = true;
+    for (const f of ["freeAct", "slowDigest", "teleportCurse", "seeInv"]) if (P[f]) b[f] = true;
   }
   const t = p.t;
   if (t.fast) b.speed += 10;
+  if (t.slow) b.speed -= 10;
   if (t.bless){ b.hit += 10; b.ac += 5; }
   if (t.hero) b.hit += 12;
   if (t.berserk){ b.hit += 12; b.ac -= 10; }
@@ -104,7 +108,9 @@ function newLevel(d){
   // light from lit rooms is fixed for the whole level
   roomLight.fill(0);
   for (let i = 0; i < MW * MH; i++) if (L.lit[i]){ roomLight[3 * i] = ROOM_RGB[0]; roomLight[3 * i + 1] = ROOM_RGB[1]; roomLight[3 * i + 2] = ROOM_RGB[2]; }
-  for (let k = 0, n = 14 + d + rng.int(8); k < n; k++) spawnMonster(false);
+  for (let k = 0, n = 14 + Math.min(d, 30) + rng.int(8); k < n; k++) spawnMonster(false);
+  const boss = MON.morrowgloom;   // the Lantern-Eater waits at 2,500 ft, and sometimes deeper
+  if (d >= boss.depth && !uniqueGone(boss) && (d === boss.depth || rng.chance(0.3))) spawnMonster(false, boss, freeSpot(25));
   for (let k = 0, n = 8 + rng.int(6); k < n; k++) dropAt(freeSpot(0), rng.chance(0.35) ? { k: "gold", n: rng.range(8, 25) * d } : loot(d));
   updateSight();
   say(d === 1 && from === 0 ? "You enter the dungeon at 50 ft. Your torch hisses in the damp air." : "You are now at " + feet(d) + " ft.");
@@ -148,11 +154,18 @@ function freeSpot(minDist){
 function dropAt(i, it){ if (i >= 0) floor.push({ x: i % MW, y: Math.floor(i / MW), it }); }
 function pickMonster(d){
   const deep = rng.chance(0.1) ? 3 : 0;   // now and then, something from deeper down
-  const pool = d === 0 ? MONSTERS.filter(m => m.town) : MONSTERS.filter(m => !m.town && m.depth <= d + deep);
-  return rng.weighted(pool, m => 1 / m.rarity * (m.depth >= d - 4 ? 1.5 : 0.6));
+  const pool = d === 0 ? MONSTERS.filter(m => m.town) : MONSTERS.filter(m => !m.town && !m.boss && m.depth <= d + deep && !(m.unique && uniqueGone(m)));
+  return rng.weighted(pool, m => 1 / m.rarity * (m.depth >= d - 4 ? 1.5 : 0.6) * (m.unique ? 0.5 : 1));
 }
-function spawnMonster(awake){
-  const K = pickMonster(depth), at = freeSpot(10); if (at < 0) return;
+// A unique lives once a game: not again once slain, nor twice on one level.
+const uniqueGone = K => (player.slain && player.slain[K.id]) || mons.some(m => m.K === K);
+function newMon(K, x, y, sleep){
+  const hp = rng.dice(K.hp);
+  const m = { K, x, y, hp, mhp: hp, energy: rng.int(100), speed: K.speed, sleep, seen: false };
+  mons.push(m); return m;
+}
+function spawnMonster(awake, K = pickMonster(depth), at = freeSpot(10)){
+  if (at < 0) return;
   const n = K.pack ? rng.range(K.pack[0], K.pack[1]) : 1;
   let x = at % MW, y = Math.floor(at / MW);
   for (let k = 0; k < n; k++){
@@ -160,8 +173,7 @@ function spawnMonster(awake){
     let px = x, py = y;
     for (let t = 0; t < 12 && (k > 0) && (monAt(px, py) || !passable(L.tiles[idx(px, py)])); t++){ px = x + rng.range(-2, 2); py = y + rng.range(-2, 2); }
     if (monAt(px, py) || !passable(L.tiles[idx(px, py)])) continue;
-    const hp = rng.dice(K.hp);
-    mons.push({ K, x: px, y: py, hp, mhp: hp, energy: rng.int(100), speed: K.speed, sleep: awake || K.pack ? 0 : rng.range(0, 30), seen: false });
+    newMon(K, px, py, awake || K.pack ? 0 : rng.range(0, 30));
   }
 }
 
@@ -207,7 +219,6 @@ function tryMove(dx, dy){
   if (t === T.UP) say("There is a staircase up here.");
   return true;
 }
-const hitChance = (skill, ac, extra = 0) => Math.max(5, Math.min(95, skill + 20 - ac * 0.8 + extra));
 // A weapon that slays a sort of monster, or is branded with an element the monster does not resist, doubles its dice.
 function multiplier(P, K){
   if (P.slay && K[P.slay]) return 2;
@@ -215,6 +226,8 @@ function multiplier(P, K){
   return 1;
 }
 function attack(m){
+  if (hiddenMimic(m)){ m.revealed = true; msgs = []; say("It was " + aName(m.K) + "!"); return true; }
+  if (player.t.afraid){ say("You are too afraid to attack " + theName(m) + "!"); return false; }
   target = m; fxLunge(player, m);
   const K = m.K, name = theName(m), weak = player.food < 1000 ? -10 : 0, w = weapon(), P = w ? itemPowers(w) : { hit: 0, dam: 0 };
   if (rng.int(100) < hitChance(skillOf(player, "fight") + 3 * (P.hit + player.bonus.hit), K.ac, weak)){
@@ -240,13 +253,20 @@ function damage(m, dmg, msg, delay = 0){   // returns true if it died
 }
 function kill(m, name, delay = 0){
   say("You have slain " + name + ".");
-  mons.splice(mons.indexOf(m), 1); player.kills++; player.slain[m.K.id] = (player.slain[m.K.id] || 0) + 1;
+  mons.splice(mons.indexOf(m), 1); player.kills++; player.slain[m.K.id] = (player.slain[m.K.id] || 0) + 1; lore(m.K).kills++; saveLore();
   if (target === m) target = null;
   gainExp(m.K.exp * m.K.depth / player.lvl);
-  if (m.K.drop && rng.chance(m.K.drop)) dropAt(idx(m.x, m.y), rng.chance(0.6) ? { k: "gold", n: rng.range(5, 20) * depth } : loot(depth));
+  const at = idx(m.x, m.y), K = m.K;
+  if (K.drop && rng.chance(K.drop)) dropAt(at, rng.chance(0.6) ? { k: "gold", n: rng.range(5, 20) * Math.max(1, depth) } : loot(depth));
+  for (let k = 0; k < (K.dropGood || 0); k++) dropAt(at, goodLoot(depth + 5));
+  for (const it of m.carry || []) dropAt(at, it);
+  if (m.gold) dropAt(at, { k: "gold", n: m.gold });
+  if (K.boss){ player.won = true; say("The darkness shudders and comes apart. Morrowgloom is no more, and the deep grows a little lighter."); say("You have won! The dungeon goes on below, if you wish to keep delving."); }
   const { x, y } = m;
-  later.push({ t: delay, fn: () => burst(x, y, m.K.rgb, 7) });
+  later.push({ t: delay, fn: () => burst(x, y, m.K.rgb, K.size ? 16 : 7) });
 }
+// Something worth carrying home: the better of a few rolls (weapons and armour are good or better).
+function goodLoot(d){ let best = null; for (let k = 0; k < 3; k++){ const it = loot(d); if (!best || ITEM[it.k].cost * (it.ego || it.art ? 3 : 1) > ITEM[best.k].cost * (best.ego || best.art ? 3 : 1)) best = it; } return best; }
 function gainExp(e){
   player.exp += e;
   while (player.exp >= expNeeded(player, player.lvl + 1) && player.lvl < 40){
@@ -364,18 +384,20 @@ function useDevice(it, quick){
 
 /* ---------- effects: what potions, scrolls, mushrooms, wands, staffs and rods do ---------- */
 // Each returns true when the player can tell what happened, which teaches them the item's kind.
-const ELEM_RGB = { fire: [1.0, 0.45, 0.15], cold: [0.5, 0.75, 1.0], elec: [0.8, 0.8, 1.2], acid: [0.5, 1.0, 0.3], poison: [0.5, 0.9, 0.3], arcane: [0.8, 0.6, 1.0], drain: [0.6, 0.25, 0.8], light: [1.0, 1.0, 0.75] };
+const ELEM_RGB = { dark: [0.45, 0.25, 0.7], fire: [1.0, 0.45, 0.15], cold: [0.5, 0.75, 1.0], elec: [0.8, 0.8, 1.2], acid: [0.5, 1.0, 0.3], poison: [0.5, 0.9, 0.3], arcane: [0.8, 0.6, 1.0], drain: [0.6, 0.25, 0.8], light: [1.0, 1.0, 0.75] };
 const TIMERS = { fast: ["You feel yourself moving faster!", "You feel yourself slow down."], hero: ["You feel like a hero!", "The heroism wears off."],
   berserk: ["You feel a terrible rage!", "You feel less violent."], bless: ["You feel righteous!", "The prayer has expired."],
   resFire: ["You feel safe from heat.", "You feel less safe from heat."], resCold: ["You feel safe from cold.", "You feel less safe from cold."],
   infra: ["Your eyes begin to tingle.", "Your eyes stop tingling."], protEvil: ["You feel safe from evil!", "You no longer feel safe from evil."], poison: ["You are poisoned!", "You are no longer poisoned."],
-  confused: ["You are confused!", "You feel less confused now."], blind: ["You are blind!", "You can see again."], asleep: ["You fall asleep.", "You wake up."] };
+  confused: ["You are confused!", "You feel less confused now."], blind: ["You are blind!", "You can see again."], asleep: ["You fall asleep.", "You wake up."],
+  afraid: ["You are terrified!", "You feel bolder now."], paralyzed: ["You are paralysed!", "You can move again."], slow: ["You feel yourself moving slower!", "You feel yourself speed up."],
+  seeInv: ["Your eyes feel very sharp.", "Your eyes feel less sharp."] };
 function setTimer(k, n){ const was = player.t[k] > 0; player.t[k] = Math.max(player.t[k] || 0, n); if (!was) say(TIMERS[k][0]); recalc(); return true; }
 function clearTimer(k){ if (!(player.t[k] > 0)) return false; player.t[k] = 0; say(TIMERS[k][1]); recalc(); return true; }
 const resists = m => rng.int(100) < 10 + 3 * m.K.depth;   // monsters save against sleep, slowing, confusion and fear
 function hurtMon(m, dmg, elem, msg, delay){
   if (elem === "drain" && m.K.undead){ say(cap(theName(m)) + " is unaffected."); return false; }
-  if (elem && (m.K.res || []).includes(elem)){ dmg = Math.ceil(dmg / 3); msg += " It resists a lot."; }
+  if (elem && (m.K.res || []).includes(elem)){ dmg = Math.ceil(dmg / 3); msg += " It resists a lot."; if (seesMon(m)) learnRes(m.K, elem); }
   if (elem === "light" && m.K.undead){ dmg *= 2; msg += " It burns!"; }   // holy light is twice as hard on the undead
   return damage(m, dmg, msg, delay);
 }
@@ -409,7 +431,7 @@ function summonNear(pool, n){
     for (let tries = 0; tries < 20; tries++){
       const x = player.x + rng.range(-3, 3), y = player.y + rng.range(-3, 3);
       if (!passable(L.tiles[idx(x, y)]) || monAt(x, y)) continue;
-      const hp = rng.dice(K.hp); mons.push({ K, x, y, hp, mhp: hp, energy: 0, speed: K.speed, sleep: 0, seen: false }); made++; break;
+      newMon(K, x, y, 0).energy = 0; made++; break;
     }
   }
   return made;
@@ -441,8 +463,9 @@ const FX = {
   heal: c => { player.hp = Math.min(player.mhp, player.hp + rng.dice(c.K.dice) + (c.power || 0)); say(player.hp >= player.mhp ? "You feel very good." : "You feel better."); return true; },
   healFull: () => { player.hp = player.mhp; for (const k of ["poison", "confused", "blind"]) clearTimer(k); say("You feel wonderful!"); return true; },
   mana: c => { player.mana = Math.min(player.mmana, player.mana + c.K.amount); say("Your mind feels clearer."); return true; },
-  fast: () => setTimer("fast", 20 + rng.int(25)), hero: () => setTimer("hero", 25 + rng.int(25)),
-  berserk: () => { player.hp = Math.min(player.mhp, player.hp + Math.ceil(player.mhp * 0.3)); return setTimer("berserk", 25 + rng.int(25)); },
+  fast: () => setTimer("fast", 20 + rng.int(25)), hero: () => { clearTimer("afraid"); return setTimer("hero", 25 + rng.int(25)); },
+  seeInvis: () => setTimer("seeInv", 50 + rng.int(50)),
+  berserk: () => { clearTimer("afraid"); player.hp = Math.min(player.mhp, player.hp + Math.ceil(player.mhp * 0.3)); return setTimer("berserk", 25 + rng.int(25)); },
   resFire: () => setTimer("resFire", 20 + rng.int(20)), resCold: () => setTimer("resCold", 20 + rng.int(20)), infra: () => setTimer("infra", 100 + rng.int(100)),
   cure: () => { let any = false; for (const k of ["poison", "confused", "blind"]) any = clearTimer(k) || any; if (!any) say("You feel healthy."); return true; },
   curePoison: () => clearTimer("poison"),
@@ -706,7 +729,7 @@ function act(fn){
   const go = () => { if (pendingLevel === null || state !== "play") return false; const d = Math.max(0, pendingLevel); pendingLevel = null; newLevel(d); return true; };
   if (go()) return true;
   endTurn();
-  while (player.t.asleep > 0 && state === "play") endTurn();   // asleep: the monsters keep moving
+  while ((player.t.asleep > 0 || player.t.paralyzed > 0) && state === "play") endTurn();   // asleep or paralysed: the monsters keep moving
   go();   // Word of Recall takes effect at the end of a turn
   return true;
 }
@@ -721,7 +744,7 @@ function endTurn(){
   if (state !== "play") return;
   if (rng.int(300) === 0) spawnMonster(true);   // the dungeon is never quite empty
   updateSight();
-  for (const m of mons) if (m.K){ const v = seesMon(m); if (v && !m.seen) disturbed = true; if (v) player.met.add(m.K.id); m.seen = v; }
+  for (const m of mons) if (m.K){ const v = seesMon(m); if (v && !m.seen){ disturbed = true; lore(m.K).seen++; } m.seen = v; }
 }
 let disturbed = false, pendingLevel = null;
 function everyTurn(){
@@ -767,23 +790,29 @@ function hurt(n, by){
 }
 function die(){
   state = "dead"; stateT = 0; aiming = null; refreshUI();
-  const p = player, entry = { score: Math.floor(p.exp) + 100 * p.maxDepth, name: p.name, race: race().name, cls: cls().name, lvl: p.lvl, depth: feet(p.maxDepth), killer };
+  if (lastFoe && killer === aName(lastFoe)) lore(lastFoe).deaths++;
+  saveLore();
+  const p = player, entry = { score: Math.floor(p.exp) + 100 * p.maxDepth + (p.won ? 10000 : 0), name: p.name, race: race().name, cls: cls().name, lvl: p.lvl, depth: feet(p.maxDepth), killer: killer + (p.won ? " (a winner)" : "") };
   tomb = { ...entry, best: scores.add(entry).rank === 0, at: depthName(depth) };
   say("You die.");
 }
 function monsterTurn(m){
   const K = m.K, d = dist(m.x, m.y, player.x, player.y);
+  if (K.regen && m.hp < m.mhp && player.turns % 3 === 0) m.hp = Math.min(m.mhp, m.hp + Math.max(1, Math.round(m.mhp / 60)));
   if (m.sleep > 0){   // noise nearby wakes it; a stealthy character makes less of it
     const st = skillOf(player, "stealth");
     if (d < 16 - st) m.sleep -= rng.range(0, Math.max(1, 6 - st));
     return;
   }
-  m.speed = K.speed - (m.slow > 0 ? 10 : 0);
+  m.speed = K.speed - (m.slow > 0 ? 10 : 0) + (m.haste > 0 ? 10 : 0);
   if (m.slow > 0) m.slow--;
+  if (m.haste > 0) m.haste--;
+  if (K.breed && depth > 0 && rng.chance(K.breed * 0.3)) breed(m);
+  const seesYou = inFov[idx(m.x, m.y)] === turnNo && d < 20;   // sight is symmetric: if you could see it, it can see you
+  if (K.spells && seesYou && !m.conf && rng.int(K.spells.freq) === 0 && monsterCast(m)) return;
   if (K.still){ if (d <= 1) monsterAttack(m); return; }
   if (m.conf > 0){ m.conf--; const [dx, dy] = DIRS[rng.pick([1, 2, 3, 4, 6, 7, 8, 9])]; return step(m, m.x + dx, m.y + dy); }
   if (d <= 1 && !m.afraid) return monsterAttack(m);
-  const seesYou = inFov[idx(m.x, m.y)] === turnNo && d < 20;   // sight is symmetric: if you could see it, it can see you
   let tx = player.x, ty = player.y, away = false;
   if (m.afraid){ m.afraid--; away = true; }
   if ((K.erratic && rng.chance(K.erratic)) || (!seesYou && d > 6)){   // wander
@@ -794,40 +823,160 @@ function monsterTurn(m){
   let best = null, bestD = away ? -1 : 1e9;
   for (const k of [1, 2, 3, 4, 6, 7, 8, 9]){
     const [dx, dy] = DIRS[k], x = m.x + dx, y = m.y + dy, t = L.tiles[idx(x, y)];
-    if (!(passable(t) || t === T.DOOR) || (monAt(x, y) && !(x === player.x && y === player.y))) continue;
+    if (!(passable(t) || t === T.DOOR || (t === T.WALL && (K.passWall || K.killWall))) || (monAt(x, y) && !(x === player.x && y === player.y))) continue;
     const nd = Math.hypot(x - tx, y - ty);
     if (away ? nd > bestD : nd < bestD){ bestD = nd; best = [x, y]; }
   }
   if (best) step(m, best[0], best[1]);
 }
 function step(m, x, y){
-  const i = idx(x, y), t = L.tiles[i];
+  const i = idx(x, y), t = L.tiles[i], K = m.K;
   if (x === player.x && y === player.y) return m.afraid ? null : monsterAttack(m);
   if (t === T.DOOR){ L.tiles[i] = T.OPEN; if (visible(i)) say("A door opens."); return; }
-  if (!passable(t) || monAt(x, y)) return;
+  if (monAt(x, y)) return;
+  if (t === T.WALL && K.killWall && depth > 0){   // it tunnels: the rock breaks into rubble behind it
+    L.tiles[i] = T.FLOOR;
+    if (inFov[i] === turnNo){ burst(x, y, [0.55, 0.5, 0.45], 6); if (seesMon(m)) say(cap(monName(K)) + " tunnels through the rock."); else say("You hear grinding rock."); }
+  } else if (!passable(t) && !(t === T.WALL && K.passWall)) return;
   m.x = x; m.y = y;
+  if (hiddenMimic(m)) m.revealed = true;
 }
+// Breeders fill a level if you let them; a cap keeps it to a swarm, not a flood.
+function breed(m){
+  if (mons.filter(o => o.K && o.K.breed).length >= 40) return;
+  const [dx, dy] = DIRS[rng.pick([1, 2, 3, 4, 6, 7, 8, 9])], x = m.x + dx, y = m.y + dy;
+  if (!passable(L.tiles[idx(x, y)]) || monAt(x, y)) return;
+  newMon(m.K, x, y, 0);
+  if (visible(idx(x, y))) say(cap(monName(m.K)) + " multiplies.");
+}
+const saves = () => rng.int(100) < skillOf(player, "save");
+// The element damage a monster deals, after your resistances; some elements do more than hurt.
+function elemHurt(m, dmg, elem, by){
+  if (elem && player.bonus.res.has(elem)){ dmg = Math.ceil(dmg / 3); say("You resist the " + { fire: "heat", cold: "cold", elec: "shock", acid: "acid", poison: "poison", dark: "darkness", light: "light" }[elem] + "."); }
+  if (dmg > 0) hurt(dmg, by);
+  if (state !== "play") return;
+  if (elem === "poison" && !player.bonus.res.has("poison")) setTimer("poison", 4 + rng.int(4 + Math.floor(m.K.depth / 3)));
+  if ((elem === "dark" || elem === "light") && !player.bonus.res.has(elem) && !saves()) setTimer("blind", 3 + rng.int(4));
+}
+const ELEMS = new Set(["fire", "cold", "elec", "acid", "poison", "dark", "light"]);
 function monsterAttack(m){
-  const K = m.K, name = seesMon(m) ? "The " + K.name : "It";
+  const K = m.K, name = seesMon(m) ? cap(monName(K)) : "It", L_ = lore(K), by = aName(K);
+  if (hiddenMimic(m)){ m.revealed = true; say("The " + { gold: "pile of gold", potion: "potion", scroll: "scroll" }[K.mimic] + " was " + aName(K) + "!"); }
   fxLunge(m, player); if (!liveTarget() && seesMon(m)) target = m;
-  for (const [dice, verb, effect] of K.blows){
-    if (state !== "play") return;
-    if (player.t.protEvil && K.evil && rng.int(100) < 50 + player.lvl - K.depth){ say(name + " is repelled."); continue; }
-    if (rng.int(100) < Math.max(15, Math.min(95, 60 + 2 * K.depth - armour()))){
-      if (effect === "steal"){   // a thief takes some gold, then slips away
-        if (!player.gold){ say(name + " fumbles at your empty purse."); continue; }
-        const n = Math.max(1, Math.floor(player.gold * (0.1 + rng.next() * 0.15)));
-        player.gold -= n; say(name + " " + verb + " you. Your purse feels " + n + " gold lighter!");
-        if (seesMon(m)) say("The " + K.name + " vanishes into the crowd.");
-        mons.splice(mons.indexOf(m), 1); return;
-      }
-      let dmg = rng.dice(dice);
-      if (verb === "burns" && player.bonus.res.has("fire")){ dmg = Math.ceil(dmg / 3); say(name + " burns you, but you resist the heat."); }
-      else say(name + " " + verb + (dmg ? " you." : "."));
-      if (dmg) hurt(dmg, "a " + K.name);
-    } else say(name + " misses you.");
+  lastFoe = K;
+  K.blows.forEach(([dice, verb, effect], bi) => {
+    if (state !== "play" || !mons.includes(m)) return;
+    if (seesMon(m)) L_.blows[bi] = (L_.blows[bi] || 0) + 1;
+    if (player.t.protEvil && K.evil && rng.int(100) < 50 + player.lvl - K.depth){ say(name + " is repelled."); return; }
+    if (rng.int(100) >= blowChance(K.depth, armour())){ say(name + " misses you."); return; }
+    if (effect === "steal") return stealGold(m, name, verb);
+    if (effect === "stealItem") return stealItem(m, name, verb);
+    let dmg = rng.dice(dice);
+    say(name + " " + verb + (dmg || effect ? " you." : "."));
+    if (ELEMS.has(effect)) return elemHurt(m, dmg, effect, by);
+    if (dmg) hurt(dmg, by);
+    if (state === "play" && effect) blowEffect(m, effect, name);
+  });
+}
+function blowEffect(m, effect, name){
+  const K = m.K, p = player;
+  if (effect === "confuse"){ if (!saves()) setTimer("confused", 3 + rng.int(4)); }
+  else if (effect === "blind"){ if (!saves()) setTimer("blind", 4 + rng.int(6)); }
+  else if (effect === "terrify"){ if (saves() || p.t.hero || p.t.berserk) say("You stand your ground!"); else setTimer("afraid", 6 + rng.int(8)); }
+  else if (effect === "paralyze"){ if (p.bonus.freeAct) say("You are unaffected!"); else if (saves()) say("You resist the effects!"); else setTimer("paralyzed", 2 + rng.int(3)); }
+  else if (effect === "drainExp"){ if (p.exp > 0 && !saves()){ say("You feel your life draining away!"); loseExp(Math.max(5, Math.round(K.depth * 4 + p.exp * 0.02))); } }
+  else if (effect.startsWith("drain:")){ const k = effect.slice(6); if (!saves() && p.base[k] > 3){ p.base[k]--; recalc();
+    say("You feel " + { str: "weaker", int: "duller", wis: "more foolish", dex: "clumsier", con: "sickly", cha: "uglier" }[k] + "."); } }
+  else if (effect === "drainCharges"){ const wands = p.inv.filter(it => (ITEM[it.k].cat === "wand" || ITEM[it.k].cat === "staff") && it.charges > 0);
+    if (wands.length){ const it = rng.pick(wands); m.hp = Math.min(m.mhp, m.hp + it.charges * Math.max(1, K.depth >> 1)); it.charges = 0; say("Energy drains from your pack!"); } }
+  else if (effect === "eatFood"){ const f = p.inv.find(it => ITEM[it.k].cat === "food"); if (f){ takeOne(f); say("It eats some of your food!"); } }
+  else if (effect === "eatLight"){ const lt = p.eq.light; if (lt && lt.fuel > 0){ lt.fuel = Math.max(0, lt.fuel - (200 + K.depth * 15)); say(lt.fuel ? "Your light dims!" : "Your light goes out!"); } }
+}
+function stealGold(m, name, verb){   // a thief takes some gold, then slips away
+  if (!player.gold){ say(name + " fumbles at your empty purse."); return; }
+  if (rng.int(100) < 15 + statMod(player.stats.dex) * 4 + player.lvl){ say("You quickly protect your purse!"); return; }
+  const n = Math.max(1, Math.floor(player.gold * (0.1 + rng.next() * 0.15)));
+  player.gold -= n; say(name + " " + verb + " you. Your purse feels " + n + " gold lighter!");
+  if (depth === 0){ if (seesMon(m)) say(cap(monName(m.K)) + " vanishes into the crowd."); mons.splice(mons.indexOf(m), 1); return; }
+  m.gold = (m.gold || 0) + n; if (sendAway(m) && seesMon(m)) say(name + " vanishes!");
+}
+function stealItem(m, name, verb){
+  const can = player.inv.filter(it => !ITEM[it.k].cat.startsWith("book") || rng.chance(0.3));
+  if (!can.length || rng.int(100) < 15 + statMod(player.stats.dex) * 4 + player.lvl){ say(name + " " + verb + " you, but you grab hold of your pack."); return; }
+  const it = rng.pick(can), one = { ...it, n: ITEM[it.k].cat === "ammo" ? it.n : 1 };
+  if (one.n >= it.n) player.inv.splice(player.inv.indexOf(it), 1); else it.n -= one.n;
+  (m.carry = m.carry || []).push(one); recalc();
+  say(name + " " + verb + " you. Your " + nameOf(one) + (one.n > 1 ? " were" : " was") + " stolen!");
+  if (sendAway(m)) say(name + " vanishes!");
+}
+// Losing experience can cost levels, and the hit points and mana that came with them.
+function loseExp(n){
+  const p = player; p.exp = Math.max(0, p.exp - n);
+  while (p.lvl > 1 && p.exp < expNeeded(p, p.lvl)){
+    p.lvl--; p.mhp = Math.max(1, p.mhp - Math.ceil(hitDie(p) / 2) - 1); p.hp = Math.min(p.hp, p.mhp); p.mmana = maxMana(p); p.mana = Math.min(p.mana, p.mmana);
+    say("You feel less experienced: you are now level " + p.lvl + ".");
   }
 }
+
+/* ---------- monster spells and breath ---------- */
+// What it casts is picked from its list; anything aimed travels as a visible bolt, ball or cone of coloured light.
+function monsterCast(m){
+  const K = m.K, S = rng.pick(K.spells.list), [kind, arg] = S.split(":"), seen = seesMon(m), name = seen ? cap(monName(K)) : "Something", by = aName(K);
+  if (seen) learnSpell(K, S);
+  const path = () => { const out = []; for (const c of line(m.x, m.y, player.x, player.y, 40)){ if (blocks(c[0], c[1])) break; out.push(c); if (c[0] === player.x && c[1] === player.y) break; } return out; };
+  const clear = () => { const pa = path(); return pa.length && pa[pa.length - 1][0] === player.x && pa[pa.length - 1][1] === player.y; };
+  const resisted = () => { if (saves()){ say("You resist the effects!"); return true; } return false; };
+  lastFoe = K;
+  switch (kind){
+    case "blink": case "tport": { const ox = m.x, oy = m.y; if (!teleMon(m, kind === "blink" ? 6 : 40)) return false; if (seen) say(name + (kind === "blink" ? " blinks away." : " vanishes.")); burst(ox, oy, ELEM_RGB.arcane, 3); return true; }
+    case "teleTo": { if (dist(m.x, m.y, player.x, player.y) <= 1) return false; for (const k of [1, 2, 3, 4, 6, 7, 8, 9]){ const [dx, dy] = DIRS[k], x = m.x + dx, y = m.y + dy;
+        if (passable(L.tiles[idx(x, y)]) && !monAt(x, y)){ say(name + " commands you to return."); player.x = x; player.y = y; updateSight(); return true; } } return false; }
+    case "heal": if (m.hp >= m.mhp * 0.6) return false; m.hp = Math.min(m.mhp, m.hp + Math.ceil(m.mhp / 3)); if (seen) say(name + " looks healthier."); return true;
+    case "haste": if (m.haste > 0) return false; m.haste = 15; if (seen) say(name + " starts moving faster."); return true;
+    case "blind": say(name + " casts a spell, burning your eyes!"); if (!resisted()) setTimer("blind", 4 + rng.int(4)); return true;
+    case "confuse": say(name + " creates a mesmerising illusion."); if (!resisted()) setTimer("confused", 4 + rng.int(4)); return true;
+    case "scare": say(name + " casts a fearful illusion."); if (player.t.hero || player.t.berserk || resisted()) return true; setTimer("afraid", 6 + rng.int(6)); return true;
+    case "slow": say(name + " drains your power to move."); if (!resisted()) setTimer("slow", 4 + rng.int(4)); return true;
+    case "paralyze": say(name + " gazes deep into your eyes!"); if (player.bonus.freeAct) say("You are unaffected!"); else if (!resisted()) setTimer("paralyzed", 2 + rng.int(3)); return true;
+    case "darkness": { say(name + " gestures, and the light fails."); for (const i of roomCells()){ L.lit[i] = 0; roomLight[3 * i] = roomLight[3 * i + 1] = roomLight[3 * i + 2] = 0; }
+      flashes.push({ x: player.x, y: player.y, t: 0.3, t0: 0.3, rgb: [0.05, 0.03, 0.1] }); return true; }
+    case "drainMana": { if (!player.mana) return false; const n = Math.min(player.mana, 2 + (K.depth >> 2)); player.mana -= n; m.hp = Math.min(m.mhp, m.hp + n * 4); say(name + " draws psychic energy from you."); return true; }
+    case "summon": { if (mons.length > 90) return false;   // enough is enough
+      const pool = (arg === "kin" ? FAMILIES[K.kin] || [] : arg === "undead" ? MONSTERS.filter(o => o.undead) : MONSTERS.filter(o => !o.town)).filter(o => !o.unique && o.depth <= K.depth + 3 && o.depth >= Math.min(K.depth - 15, 1));
+      const n = summonNear(pool.length ? pool : [K], 1 + rng.int(2));
+      if (n) say(name + (arg === "undead" ? " calls up the dead!" : " calls for help!")); return n > 0; }
+    case "arrow": case "bolt": case "ball": { if (!clear()) return false;
+      const elem = kind === "arrow" ? null : arg, pa = path(), dmg = kind === "arrow" ? Math.ceil(rng.dice(boltDice(K.depth)) * 0.6) : kind === "ball" ? Math.ceil(rng.dice(boltDice(K.depth)) * 1.4) : rng.dice(boltDice(K.depth));
+      const delay = elem ? missile(pa, elem, 35) : (shots.push({ path: pa, t: 0, speed: 45, item: { k: "arrow", n: 1 } }), pa.length / 45);
+      say(kind === "arrow" ? name + " fires a missile." : name + " casts " + (kind === "ball" ? "a ball of " : "a bolt of ") + { fire: "fire", cold: "frost", elec: "lightning", acid: "acid", poison: "poison", dark: "darkness", light: "light", arcane: "force" }[elem] + ".");
+      if (kind === "ball") later.push({ t: delay, fn: () => { flashes.push({ x: player.x, y: player.y, t: 0.5, t0: 0.5, rgb: ELEM_RGB[elem].map(v => v * 1.6) }); shove(player.x, player.y, 4); } });
+      elemHurt(m, dmg, elem === "arcane" ? null : elem, by); return true; }
+    case "breath": { if (!clear()) return false;
+      // a cone of coloured light: five rays fanning out toward you, then the blast where you stand
+      const ang = Math.atan2(player.y - m.y, player.x - m.x), R = Math.max(4, dist(m.x, m.y, player.x, player.y) + 1);
+      for (const da of [-0.35, -0.17, 0, 0.17, 0.35]){ const tx = Math.round(m.x + Math.cos(ang + da) * R), ty = Math.round(m.y + Math.sin(ang + da) * R), ray = [];
+        for (const c of line(m.x, m.y, tx, ty, R)){ if (blocks(c[0], c[1])) break; ray.push(c); } if (ray.length) missile(ray, arg, 30); }
+      say(name + " breathes " + { fire: "fire", cold: "frost", elec: "lightning", acid: "acid", poison: "gas", dark: "darkness" }[arg] + ".");
+      elemHurt(m, breathDmg(m.hp, K.depth), arg, by); return true; }
+  }
+  return false;
+}
+function teleMon(m, r){
+  for (let tries = 0; tries < 100; tries++){
+    const x = m.x + rng.range(-r, r), y = m.y + rng.range(-r, r);
+    if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1 || !passable(L.tiles[idx(x, y)]) || monAt(x, y)) continue;
+    m.x = x; m.y = y; return true;
+  }
+  return false;
+}
+
+/* ---------- monster recall: what you have learned about each kind, kept across characters ---------- */
+const LORE = store.getJSON("lore", {});
+let lastFoe = null;
+const lore = K => LORE[K.id] || (LORE[K.id] = { seen: 0, kills: 0, deaths: 0, blows: [], spells: [], res: [] });
+const learnSpell = (K, S) => { const l = lore(K); if (!l.spells.includes(S)) l.spells.push(S); };
+const learnRes = (K, e) => { const l = lore(K); if (!l.res.includes(e)) l.res.push(e); };
+const saveLore = () => store.setJSON("lore", LORE);
 
 /* ---------- longer actions: running and resting stop when something happens ---------- */
 let resting = false;
@@ -938,7 +1087,7 @@ function look(){
   const seen = mons.filter(m => m.K && seesMon(m)), tg = liveTarget();
   msgs = [];
   if (!seen.length) say("You see no monsters.");
-  for (const m of tg ? [tg] : seen.slice(0, 4)) say("You see a " + m.K.name + (byHeat(m) ? " (by its body heat)" : "") + (m.sleep > 0 ? " (asleep)" : "") + ", " + healthWord(m) + ". " + m.K.desc);
+  for (const m of tg ? [tg] : seen.slice(0, 4)) say("You see " + aName(m.K) + (byHeat(m) ? " (by its body heat)" : "") + (m.sleep > 0 ? " (asleep)" : "") + ", " + healthWord(m) + ". " + m.K.desc);
 }
 
 /* ---------- a new character: race, class, stats and name ---------- */
@@ -979,7 +1128,7 @@ function begin(){
   if (C.bow) player.eq.bow = plainItem(C.bow);
   recalc();
   player.mhp = player.hp = firstHp(player); player.mmana = player.mana = maxMana(player);
-  player.hot = Array(10).fill(null); player.met = new Set(); player.slain = {}; player.ready = null;
+  player.hot = Array(10).fill(null); player.slain = {}; player.ready = null;
   log = []; msgs = []; killer = ""; tomb = null; cr = null;
   state = "play"; stateT = 0;
   shops = newShops(rng, player.know); lastTown = 0; depth = 0;
@@ -1040,7 +1189,7 @@ function verbsFor(it){
 }
 const EFFECT_TEXT = { heal: "heals wounds", healFull: "heals you completely", mana: "restores mana", fast: "makes you faster for a while", hero: "makes you heroic",
   berserk: "puts you in a fighting rage", resFire: "protects you from heat", resCold: "protects you from cold", infra: "lets you see heat further",
-  cure: "cures poison, confusion and blindness", curePoison: "cures poison", sleep: "puts you to sleep", poison: "poisons you", confuse: "confuses you", blind: "blinds you",
+  seeInvis: "lets you see invisible things for a while", cure: "cures poison, confusion and blindness", curePoison: "cures poison", sleep: "puts you to sleep", poison: "poisons you", confuse: "confuses you", blind: "blinds you",
   salt: "makes you sick", gainStat: "raises a stat for good", enlight: "shows you the whole level", exp: "gives experience", clairvoyance: "shows you the level and its objects",
   identify: "identifies an item", removeCurse: "removes curses from your equipment", lightArea: "lights up the area", darkness: "darkens the area and blinds you",
   map: "maps the area around you", detectObj: "shows objects nearby", detectMon: "shows monsters nearby", detection: "shows monsters and objects nearby",

@@ -1,8 +1,8 @@
 // Checks for Torchlight Dungeons' rules. Run: node tests/torch.js
 // Loads the game's logic files without a browser: random numbers, sight and light, turns, levels and data.
 const fs = require("fs"), vm = require("vm"), path = require("path");
-const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js", "items.js", "shops.js", "chars.js", "spells.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
-const G = vm.runInNewContext(files.join("\n") + "\n;({ RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS, ITEM, EGOS, ARTIFACTS, CAT, SLOTS, newKnowledge, makeItem, rollItem, itemName, itemPowers, kindKnown, SHOPS, newShops, restock, itemValue, buyPrice, sellPrice, shopBuys, generateTown, TW, TH, RACES, CLASSES, RACE, CLASS, STATS, SKILLS, rollStats, finalStats, skillOf, expNeeded, maxMana, firstHp, levelHp, titleOf, buySpent, BUY_POINTS, randomName, SPELLS, SPELL, spellLevel, spellFail, learnable, bookOf, firstSpell })", { Math, console });
+const files = ["rng.js", "fov.js", "turn.js", "gen.js", "data.js", "bestiary.js", "items.js", "shops.js", "chars.js", "spells.js", "sprites.js"].map(f => fs.readFileSync(path.join(__dirname, "..", "src", "torch", f), "utf8"));
+const G = vm.runInNewContext(files.join("\n") + "\n;({ FAMILIES, KIN, SHAPES, PLAN, RNG, fov, addLight, lum, nextActor, generateLevel, reachable, T, MW, MH, passable, opaque, MONSTERS, ITEMS, ITEM, EGOS, ARTIFACTS, CAT, SLOTS, newKnowledge, makeItem, rollItem, itemName, itemPowers, kindKnown, SHOPS, newShops, restock, itemValue, buyPrice, sellPrice, shopBuys, generateTown, TW, TH, RACES, CLASSES, RACE, CLASS, STATS, SKILLS, rollStats, finalStats, skillOf, expNeeded, maxMana, firstHp, levelHp, titleOf, buySpent, BUY_POINTS, randomName, SPELLS, SPELL, spellLevel, spellFail, learnable, bookOf, firstSpell })", { Math, console });
 
 let failed = 0;
 const check = (name, ok, detail) => { console.log((ok ? "ok    " : "FAIL  ") + name + (detail ? "  (" + detail + ")" : "")); if (!ok) failed++; };
@@ -175,6 +175,31 @@ const { MW, MH, T } = G;
   const f1 = G.spellFail(G.SPELL.spark, p), f20 = G.spellFail(G.SPELL.spark, { ...p, lvl: 20 });
   check("failure falls with level and stays between 5% and 95%", f1 > f20 && f20 >= 5 && f1 <= 95, f1 + "% at level 1, " + f20 + "% at 20");
   check("only spells whose book you carry can be studied", !G.learnable(p, new Set()).length && G.learnable(p, new Set(["abook1"])).some(S => S.id === "spark"));
+}
+
+{ // the bestiary (phase 7): enough kinds at every depth, every blow, spell and body plan known to the game
+  const M = G.MONSTERS.filter(K => !K.town), dice = s => /^\d+d\d+$/.test(s);
+  const EFFECTS = new Set(["poison", "confuse", "blind", "paralyze", "terrify", "fire", "cold", "elec", "acid", "dark", "light", "steal", "stealItem", "drainExp", "drainCharges", "eatFood", "eatLight",
+    "drain:str", "drain:int", "drain:wis", "drain:dex", "drain:con", "drain:cha"]);
+  const SPELLS = /^(blink|tport|teleTo|heal|haste|blind|confuse|scare|slow|paralyze|darkness|drainMana|arrow|(bolt|ball):(fire|cold|elec|acid|poison|dark|light|arcane)|breath:(fire|cold|elec|acid|poison|dark)|summon:(kin|undead|any))$/;
+  const bad = [];
+  for (const K of M){
+    const shape = K.shape || G.PLAN[K.glyph];
+    if (!G.SHAPES.includes(shape)) bad.push(K.id + ": body plan " + shape);
+    for (const [d, , fx] of K.blows) if (!dice(d) || (fx && !EFFECTS.has(fx))) bad.push(K.id + ": blow " + d + " " + fx);
+    if (K.blows.length > 4) bad.push(K.id + ": more than four blows");
+    if (K.spells && (!(K.spells.freq >= 1) || !K.spells.list.every(S => SPELLS.test(S)))) bad.push(K.id + ": spells " + K.spells.list.join(","));
+    if (K.spells && K.spells.list.includes("summon:kin") && !(G.FAMILIES[K.kin] || []).length) bad.push(K.id + ": no kin to summon");
+    for (const e of K.res || []) if (!["fire", "cold", "elec", "acid", "poison", "dark", "light"].includes(e)) bad.push(K.id + ": resists " + e);
+  }
+  check("every monster's blows, spells, resistances and body plan are known to the game", !bad.length, bad.slice(0, 5).join("; "));
+  check("about 280 kinds of monster in about 40 families", M.length >= 260 && Object.keys(G.FAMILIES).length >= 40, M.length + " kinds, " + Object.keys(G.FAMILIES).length + " families");
+  const thin = []; for (let d = 1; d <= 50; d++){ const n = M.filter(K => !K.unique && K.depth <= d && K.depth > d - 6).length; if (n < 5) thin.push(d + ":" + n); }
+  check("every depth to 2,500 ft has at least five kinds that belong there", !thin.length, thin.join(" "));
+  const U = M.filter(K => K.unique), boss = M.filter(K => K.boss);
+  check("about 25 named uniques and one final boss, deep down", U.length >= 25 && boss.length === 1 && boss[0].depth >= 50 && U.every(K => K.dropGood), U.length + " uniques");
+  const names = new Set(M.map(K => K.name.toLowerCase()));
+  check("every monster has its own name", names.size === M.length);
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");

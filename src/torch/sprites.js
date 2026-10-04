@@ -207,7 +207,10 @@ function weaponArt(R, k, dy, big){
 
 /* ---------- creatures: one drawing per body plan; colour and size come from the monster's data ---------- */
 // The plan is K.shape when the data gives one, otherwise it follows the monster's letter.
-const PLAN = { r: "rodent", C: "canine", w: "worm", I: "insect", m: "mould", S: "spider", K: "beetle", q: "bear", "*": "wisp", s: "skeleton", z: "ghoul", T: "giant", g: "goblin", p: "person", o: "goblin", k: "goblin" };
+const PLAN = { r: "rodent", C: "canine", w: "worm", I: "insect", m: "mould", S: "spider", K: "beetle", q: "bear", "*": "wisp", s: "skeleton", z: "ghoul", T: "giant", g: "goblin", p: "person", k: "goblin" };
+// every body plan creature() draws (the bestiary's checks make sure each monster has one)
+const SHAPES = ["rodent", "canine", "worm", "insect", "mould", "spider", "beetle", "bear", "wisp", "bat", "bird", "snake", "jelly", "eye", "ghost", "elemental", "vortex", "golem", "fiend",
+  "drake", "dragon", "hydra", "lizard", "feline", "scorpion", "centipede", "plant", "mimic", "horror", "mushroom", "skeleton", "ghoul", "mummy", "vampire", "lich", "hybrid", "scalekin", "giant", "goblin", "person"];
 const SPRITES = new Map();
 const creatureImage = K => memo(SPRITES, K.id, () => creature(K));
 function creature(K){
@@ -224,11 +227,52 @@ function creature(K){
     case "bear": p.rect(2, 6, 12, 7, base); p.rect(3, 6, 10, 1, light); p.disc(12, 6, 3, base); p.px(12, 3, base); p.px(14, 3, base); p.px(13, 6, eye); p.rect(14, 7, 2, 2, dark);
       for (const x of [3, 6, 9, 12]) p.rect(x, 13, 2, 3, dark); break;
     case "wisp": p.disc(8, 8, 4, hex(c, 0.9)); p.disc(8, 8, 2, light); p.px(8, 8, "#fff"); p.px(3, 3, light); p.px(13, 4, light); p.px(4, 13, light); break;
-    case "skeleton": return doll({ skin: [0.9, 0.88, 0.8], hair: [0.9, 0.88, 0.8], cloth: [0.85, 0.83, 0.75], race: "human", eq: { weapon: "shortsword" } });
-    case "ghoul": return doll({ skin: c, hair: c.map(v => v * 0.6), cloth: [0.3, 0.32, 0.28], race: "human", eq: {} });
-    case "giant": return doll({ skin: c, hair: c.map(v => v * 0.6), cloth: [0.4, 0.32, 0.22], race: "cragborn", tusks: true, eq: { weapon: "club" } });
-    case "goblin": return doll({ skin: c, hair: [0.15, 0.12, 0.1], race: "burrowfolk", tusks: true, eq: { weapon: "dagger", body: "leather" } });
-    case "person": return doll({ skin: SKIN.human, hair: c.map(v => v * 0.5), cloth: c, race: "human", eq: {} });
+    case "bat": for (const sx of [-1, 1]){ p.line(8, 7, 8 + sx * 7, 4, dark); p.line(8 + sx * 7, 4, 8 + sx * 6, 10, dark); p.line(8 + sx * 6, 10, 8 + sx * 3, 8, dark);
+        for (let y = 5; y < 9; y++) p.line(8 + sx * 2, y + 1, 8 + sx * (6 - (y - 5)), y, base); } p.disc(8, 8, 2, base); p.px(7, 7, eye); p.px(9, 7, eye); p.px(7, 5, base); p.px(9, 5, base); break;
+    case "bird": p.disc(7, 9, 3, base); p.disc(11, 6, 2, base); p.px(13, 6, hex([0.95, 0.75, 0.3])); p.px(14, 6, hex([0.95, 0.75, 0.3])); p.px(11, 5, eye);
+      p.line(2, 6, 6, 9, light); p.line(2, 7, 7, 10, dark); p.line(3, 11, 1, 13, dark); p.rect(7, 12, 1, 3, dark); p.rect(9, 12, 1, 3, dark); break;
+    case "snake": for (let i = 0; i < 12; i++){ const x = 2 + i, y = 11 + Math.round(Math.sin(i * 0.9) * 2); p.rect(x, y, 1, 2, i & 1 ? base : light); }
+      p.disc(13, 8, 2, base); p.px(14, 7, eye); p.px(15, 9, "#d33"); break;
+    case "jelly": p.disc(8, 10, 5, hex(c, 0.85)); p.rect(3, 10, 11, 5, hex(c, 0.85)); p.disc(6, 8, 1, light); p.px(9, 11, dark); p.px(5, 12, dark); p.px(11, 9, light); break;
+    case "eye": for (const [x, y] of [[2, 2], [14, 2], [1, 10], [15, 11], [8, 15]]) p.line(8, 8, x, y, dark);
+      p.disc(8, 8, 5, hex([0.95, 0.92, 0.85])); p.disc(8, 8, 3, base); p.disc(8, 8, 1, "#111"); p.px(7, 7, "#fff"); break;
+    case "ghost": p.disc(8, 6, 4, hex(c, 0.9)); p.rect(4, 6, 9, 6, hex(c, 0.9)); for (let x = 4; x < 13; x += 2) p.rect(x, 12, 1, 2, hex(c, 0.9));
+      p.rect(6, 5, 1, 2, "#111"); p.rect(10, 5, 1, 2, "#111"); p.rect(7, 9, 3, 1, "#111"); break;
+    case "elemental": for (let i = 0; i < 9; i++) p.disc(4 + (hash(i, 7) * 8 | 0), 4 + (hash(7, i) * 9 | 0), 2 + (hash(i, 9) * 2 | 0), i % 3 ? base : light); p.px(6, 6, "#fff"); p.px(10, 6, "#fff"); break;
+    case "vortex": for (let a = 0; a < 40; a++){ const r = a / 6; p.px(8 + Math.round(Math.cos(a * 0.6) * r), 8 + Math.round(Math.sin(a * 0.6) * r * 0.8), a & 1 ? base : light); } break;
+    case "golem": p.rect(4, 3, 8, 11, base); p.rect(4, 3, 8, 1, light); p.rect(2, 5, 2, 7, dark); p.rect(12, 5, 2, 7, dark); p.rect(5, 14, 2, 2, dark); p.rect(9, 14, 2, 2, dark);
+      p.rect(6, 5, 1, 1, eye); p.rect(9, 5, 1, 1, eye); p.line(5, 9, 10, 10, dark); break;
+    case "fiend": for (const sx of [-1, 1]) p.line(8 + sx * 2, 6, 8 + sx * 7, 2, dark); p.rect(5, 5, 6, 7, base); p.disc(8, 4, 2, base); p.px(6, 1, light); p.px(10, 1, light);
+      p.px(7, 4, "#ff4"); p.px(9, 4, "#ff4"); p.rect(5, 12, 2, 3, dark); p.rect(9, 12, 2, 3, dark); p.line(11, 11, 14, 14, dark); break;
+    case "drake": case "dragon": { const big = K.shape === "dragon";
+      p.rect(3, 7, 9, 5, base); p.rect(4, 7, 7, 1, light); p.disc(13, 6, 2, base); p.px(15, 6, base); p.px(13, 5, eye); p.line(0, 12, 3, 10, base);
+      for (const x of [4, 9]) p.rect(x, 12, 2, 3, dark); p.line(5, 7, 2, big ? 1 : 3, dark); p.line(6, 7, 9, big ? 0 : 2, dark); p.line(2, big ? 1 : 3, 9, big ? 0 : 2, light);
+      for (let x = 4; x < 11; x += 2) p.px(x, 6, light); break; }
+    case "hydra": p.rect(3, 9, 10, 5, base); for (let h = 0; h < 3; h++){ const x = 4 + h * 4; p.line(x, 9, x + (h - 1), 4, base); p.disc(x + (h - 1), 3, 1, light); p.px(x + (h - 1), 3, eye); }
+      p.rect(4, 14, 2, 2, dark); p.rect(10, 14, 2, 2, dark); break;
+    case "lizard": p.rect(4, 8, 8, 4, base); p.rect(5, 8, 6, 1, light); p.disc(13, 9, 2, base); p.px(14, 8, eye); p.line(0, 13, 4, 10, base); for (const x of [4, 10]){ p.px(x, 12, dark); p.px(x - 1, 13, dark); } break;
+    case "feline": p.rect(2, 8, 10, 4, base); p.rect(3, 8, 8, 1, light); p.disc(12, 7, 2, base); p.px(11, 4, base); p.px(13, 4, base); p.px(13, 7, eye); p.line(0, 5, 2, 9, base);
+      for (const x of [3, 5, 9, 11]) p.rect(x, 12, 1, 3, dark); break;
+    case "scorpion": p.disc(8, 10, 3, base); p.rect(5, 10, 6, 1, light); p.line(8, 7, 9, 3, base); p.line(9, 3, 12, 2, base); p.px(12, 3, "#e33");
+      for (const sx of [-1, 1]){ p.line(8 + sx * 3, 9, 8 + sx * 6, 7, dark); p.rect(8 + sx * 6 - 1, 5, 2, 2, base); for (let i = 0; i < 3; i++) p.line(8 + sx * 2, 11 + i, 8 + sx * 5, 13 + i, dark); } break;
+    case "centipede": for (let i = 0; i < 7; i++){ const x = 2 + i * 2, y = 9 + Math.round(Math.sin(i) * 1.5); p.disc(x, y, 1, i & 1 ? base : light); p.px(x, y + 2, dark); p.px(x, y - 2, dark); } p.px(15, 8, eye); break;
+    case "plant": p.rect(7, 6, 2, 9, hex([0.35, 0.5, 0.25])); for (let i = 0; i < 5; i++) p.line(8, 12 - i * 2, 8 + (i & 1 ? 5 : -5), 9 - i * 2, base); p.disc(8, 4, 2, light); p.px(8, 4, dark); break;
+    case "mimic": p.rect(2, 6, 12, 8, hex([0.55, 0.38, 0.22])); p.rect(2, 6, 12, 2, hex([0.65, 0.5, 0.3])); p.rect(2, 9, 12, 1, hex([0.85, 0.7, 0.3]));
+      for (let x = 3; x < 13; x += 2) p.px(x, 10, "#fff"); p.rect(3, 11, 10, 2, "#401010"); p.px(6, 7, eye); p.px(10, 7, eye); break;
+    case "horror": p.disc(8, 7, 4, base); for (let i = 0; i < 6; i++){ const x = 3 + i * 2; p.line(x, 10, x + (i & 1 ? 1 : -1), 15, dark); }
+      p.px(6, 6, eye); p.px(9, 5, eye); p.px(10, 8, eye); p.rect(6, 9, 4, 1, "#300"); break;
+    case "mushroom": p.disc(8, 6, 5, base); p.g.clearRect(2, 7, 13, 9); p.rect(3, 6, 11, 1, hex(c, 0.75)); p.rect(6, 7, 4, 7, hex([0.92, 0.88, 0.78])); p.px(7, 9, "#111"); p.px(9, 9, "#111");
+      p.rect(5, 14, 2, 2, hex([0.85, 0.8, 0.7])); p.rect(9, 14, 2, 2, hex([0.85, 0.8, 0.7])); p.px(5, 3, "#fff"); p.px(10, 4, "#fff"); break;
+    case "skeleton": return doll({ skin: [0.9, 0.88, 0.8], hair: [0.9, 0.88, 0.8], cloth: [0.85, 0.83, 0.75], race: "human", eq: K.kit || { weapon: "shortsword" } });
+    case "ghoul": return doll({ skin: c, hair: c.map(v => v * 0.6), cloth: [0.3, 0.32, 0.28], race: "human", eq: K.kit || {} });
+    case "mummy": return doll({ skin: c, hair: c, cloth: c.map(v => v * 0.9), race: "human", eq: K.kit || {} });
+    case "vampire": return doll({ skin: [0.9, 0.88, 0.9], hair: [0.12, 0.1, 0.12], cloth: c, race: "human", eq: { cloak: "furcloak", ...(K.kit || {}) } });
+    case "lich": return doll({ skin: [0.85, 0.82, 0.7], hair: [0.85, 0.82, 0.7], cloth: c, race: "human", eq: { body: "robe", head: "circlet", weapon: "staffw" } });
+    case "hybrid": return doll({ skin: c, hair: c.map(v => v * 0.6), cloth: [0.4, 0.32, 0.22], race: "stonekin", tusks: true, eq: K.kit || { weapon: "axe" } });
+    case "scalekin": return doll({ skin: c, hair: c.map(v => v * 0.7), cloth: [0.45, 0.35, 0.22], race: "human", tusks: true, eq: K.kit || {} });
+    case "giant": return doll({ skin: c, hair: c.map(v => v * 0.6), cloth: [0.4, 0.32, 0.22], race: "cragborn", tusks: true, eq: K.kit || { weapon: "club" } });
+    case "goblin": return doll({ skin: c, hair: [0.15, 0.12, 0.1], race: "burrowfolk", tusks: true, eq: K.kit || { weapon: "dagger", body: "leather" } });
+    case "person": return doll({ skin: SKIN.human, hair: c.map(v => v * 0.5), cloth: c, race: "human", eq: K.kit || {} });
     default: {   // no plan: a mirrored shape seeded by the monster's id, so every kind still looks like itself
       let seed = 0; for (const ch of K.id) seed = seed * 31 + ch.charCodeAt(0);
       for (let y = 2; y < 15; y++) for (let x = 2; x < 8; x++) if (hash(x, y, seed) < 0.5 - Math.abs(y - 8) * 0.03){ const col = hash(x, y, seed + 1) < 0.2 ? light : base; p.px(x, y, col); p.px(15 - x, y, col); }
