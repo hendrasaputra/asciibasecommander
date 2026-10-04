@@ -85,7 +85,7 @@ What each shipped game still lacks, and the tuning it needs. The "Done" list bel
 |---|---|---|
 | Base Commander | None planned | None open |
 | Rooftop Rumble | Done: difficulty levels (Easy, Normal, Hard) and a predicted aiming arc (all of it on Easy, its start on Normal, none on Hard) | Done: the computer works out its throw from the same prediction each turn and misses by its level's error, which shrinks as it gets its eye in. Measured with the computer alone: about 7 throws a hit on Easy, 4 on Normal, 3 on Hard. |
-| Crater Duel | A weapon shop between rounds; tanks that drive; more than two tanks | Weapon prices and damage, once the shop exists |
+| Crater Duel | Done: two to four tanks (each a person or the computer), winnings and a shop between rounds (big shots, MIRVs, dirt bombs, fuel, a shield), and driving on fuel (Shift+arrows, or the D-pad's up and down) | Done: weapon damage trimmed (missile 40, big shot 60, MIRV 30 a warhead), first to 3 rounds, prices and winnings set so a round's earnings buy one or two items, with a flat 50 for everyone so a beaten tank can still buy something. The computer now aims with an exact prediction of the shot, like Rooftop Rumble's. Not yet: the computer does not drive or buy fuel. |
 | Stack Smash | T-spin and combo scoring; a two-player garbage mode; Columns and Puyo variants | None open |
 | Rover Patrol | Ground tanks; rolling boulders; alien fighters that dive; a choice of starting point | The jump now grows with how long you hold the button (done, see below). Slow jumps are still short: at the lowest speed a big rock has to be shot, not jumped. Check that the rock pairs from point G on can be jumped or shot in turn. |
 | Physics Sandbox | None planned | None open |
@@ -125,8 +125,8 @@ debris.
 - Rooftop Rumble, first playable version: skyline generation, aiming, wind, carving blasts with rubble, falling apes,
   a computer opponent, first to 3, sound; difficulty levels and a predicted aiming arc.
 - Crater Duel (after Scorched Earth), first playable version: rolling hills, dirt that falls after blasts, tanks that
-  fall and take damage, four weapons, health, wind, a computer opponent, synthesised sound. Not yet: more than two
-  tanks, a weapon shop between rounds, moving tanks.
+  fall and take damage, four weapons, health, wind, a computer opponent, synthesised sound; two to four tanks, a shop
+  between rounds, and driving on fuel.
 - Stack Smash (after Tetris), first playable version: 7-bag, SRS turning and wall kicks, hold, ghost, preview,
   lock delay, levels, high scores, touch gamepad, synthesised effects and music. Cleared lines and the topped-out
   stack break into engine boxes. Not yet: T-spin and combo scoring, a two-player garbage mode, Columns and Puyo.
