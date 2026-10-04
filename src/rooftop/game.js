@@ -35,7 +35,7 @@ let city = null, apes = [], turn = 0, score = [0, 0], wind = 0, fruit = null, tr
 let blasts = [], moonShock = 0, roundStarter = 0, msg = "", msgT = 0, cpu = null, plan = null;
 // Power comes from holding the throw button: the meter runs 0 -> 100 -> 0 while held, and letting go throws.
 const CHARGE_SECS = 1.1;   // time for the meter to fill once
-let charge = null, lastPower = [null, null];   // charge: seconds held, or null when not charging
+let charge = null, lastPower = [null, null], arc = null;   // charge: seconds held, or null when not charging; arc: the cached prediction
 const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const isCpu = i => mode === "cpu" && i === 1;
@@ -103,16 +103,54 @@ function startTurn(){
 }
 function say(text, secs){ msg = text; msgT = secs; }
 
-/* ---------- computer opponent: a ballistic first guess, then corrects power from where the last shot landed ---------- */
-function planShot(i){
-  const me = apes[i], foe = apes[1 - i], dist = Math.abs(cx(foe.x) - cx(me.x));
-  if (!cpu){
-    const angle = 40 + Math.random() * 25, th = angle * Math.PI / 180, v = Math.sqrt(dist * world.g.y / Math.sin(2 * th));
-    cpu = { angle, power: clamp(v / vmax() * 100 * (0.85 + Math.random() * 0.3), 10, 100), err: null };
-  } else if (cpu.err !== null){
-    cpu.power = clamp(cpu.power * (1 - clamp(cpu.err, -0.6, 0.6) * 0.5) + (Math.random() - 0.5) * 4, 5, 100);
+/* ---------- difficulty ---------- */
+// Easy shows the whole predicted arc and the computer aims loosely; Normal shows the start of the arc; Hard shows
+// only the aim pointer, and the computer reads the wind and judges its throws well.
+const LEVELS = ["easy", "normal", "hard"];
+let level = LEVELS.includes(store.get("difficulty")) ? store.get("difficulty") : "normal";
+const ARC_SHARE = { easy: 1, normal: 0.2, hard: 0 };   // how much of the predicted arc is drawn
+// The computer's error on its first throw of a round, how much of it is left after each throw, and the least it
+// keeps. Measured over many rounds (computer alone), a hit takes about 7 throws on Easy, 4 on Normal and 3 on Hard.
+const CPU = { easy: { noise: 0.5, decay: 0.9, floor: 0.14 }, normal: { noise: 0.3, decay: 0.8, floor: 0.06 }, hard: { noise: 0.2, decay: 0.65, floor: 0.03 } };
+
+/* ---------- predicting a throw: the same physics as the engine's step, without touching the world ---------- */
+let probe = null;   // the fruit's radius and inverse mass, measured once from a real body
+function predict(i, angle, power){
+  if (!probe){ const b = world.add(0, 0, screen.ch * 0.35, "steel"); probe = { r: b.r, im: b.im }; world.bodies.splice(world.bodies.indexOf(b), 1); }
+  const A = apes[i], dir = i === 0 ? 1 : -1, ang = angle * Math.PI / 180, v = power / 100 * vmax(), h = 1 / 60 / world.substeps;
+  let x = cx(A.x + (dir > 0 ? AW - 1 : 0)), y = cy(A.y) - screen.ch, vx = Math.cos(ang) * v * dir, vy = -Math.sin(ang) * v;
+  const path = [];
+  for (let n = 0; n < 60 * 12 * world.substeps; n++){
+    const sp = Math.hypot(vx, vy), k = world.drag * probe.r * sp * probe.im;
+    vx += (world.g.x - vx * k) * h; vy += (world.g.y - vy * k) * h;
+    const s2 = Math.hypot(vx, vy); if (s2 > 4000){ vx *= 4000 / s2; vy *= 4000 / s2; }
+    x += vx * h; y += vy * h;
+    if (n % world.substeps === 0) path.push({ x, y });
+    const gx = Math.floor(x / screen.cw), gy = Math.floor(y / screen.ch), age = n * h;
+    if (x <= probe.r + 1 || x >= world.w - probe.r - 1) return { path, x, y, ape: -1 };
+    for (let j = 0; j < 2; j++) if (!apes[j].dead && (j !== i || age > 0.25) && inSprite(APE[apes[j].pose], apes[j].x, apes[j].y, gx, gy)) return { path, x, y, ape: j };
+    if (gy >= GH - 1 || (gy >= 0 && gx >= 0 && gx < GW && city.solid[gy * GW + gx])) return { path, x, y, ape: -1 };
   }
-  return { angle: Math.round(cpu.angle), power: Math.round(cpu.power) };
+  return { path, x, y, ape: -1 };
+}
+
+/* ---------- computer opponent: works out the best throw for the city as it is now, then misses by its error ---------- */
+// The error shrinks with every throw in a round, faster on Hard: the computer gets its eye in, as people do.
+function planShot(i){
+  const foe = apes[1 - i], C = CPU[level];
+  if (!cpu) cpu = { tries: 0 };
+  // Angles every 5 degrees and every power: the throw that comes nearest the middle of the target. A hit counts as
+  // much nearer, so a solid hit beats a near miss, and one that only grazes the sprite's edge is the last choice.
+  let best = null;
+  const tx = cx(foe.x + 3), ty = cy(foe.y + 1);
+  for (let angle = 15; angle <= 85; angle += 5) for (let power = 5; power <= 100; power++){
+    if (cpu.last && cpu.last.angle === angle && cpu.last.power === power) continue;   // never the same throw that just missed
+    const r = predict(i, angle, power), miss = r.ape === i ? 1e9 : Math.hypot(r.x - tx, r.y - ty) + (r.ape === 1 - i ? 0 : 1000);
+    if (!best || miss < best.miss) best = { angle, power, miss };
+  }
+  const e = Math.max(C.floor, C.noise * Math.pow(C.decay, cpu.tries++)), wobble = () => Math.random() * 2 - 1;
+  cpu.last = { angle: Math.round(clamp(best.angle + wobble() * e * 25, 5, 85)), power: Math.round(clamp(best.power * (1 + wobble() * e), 5, 100)) };
+  return cpu.last;
 }
 
 /* ---------- throwing ---------- */
@@ -130,19 +168,14 @@ function inSprite(art, x, y, gx, gy){ const dx = gx - x, dy = gy - y; return dy 
 function checkFruit(){
   const b = fruit; if (!b || state !== "flight") return;
   const gx = Math.floor(b.x / screen.cw), gy = Math.floor(b.y / screen.ch);
-  if (b.x <= b.r + 1 || b.x >= world.w - b.r - 1) return endShot(b.x);   // off the side: a miss
+  if (b.x <= b.r + 1 || b.x >= world.w - b.r - 1) return endShot();   // off the side: a miss
   for (let i = 0; i < 2; i++) if (!apes[i].dead && (i !== b.thrower || b.age > 0.25) && inSprite(APE[apes[i].pose], apes[i].x, apes[i].y, gx, gy)) return apeHit(i, b.thrower);
-  if (gy >= GH - 1 || (gy >= 0 && gx >= 0 && gx < GW && city.solid[gy * GW + gx])){ explode(b.x, b.y, 2.0); return endShot(b.x); }
+  if (gy >= GH - 1 || (gy >= 0 && gx >= 0 && gx < GW && city.solid[gy * GW + gx])){ explode(b.x, b.y, 2.0); return endShot(); }
   if (inSprite(MOON.calm, MOON_X, MOON_Y, gx, gy)){ if (moonShock <= 0) sfx("hit"); moonShock = 1.5; }   // the moon flinches; the throw carries on
 }
 function removeFruit(){ if (fruit){ world.bodies.splice(world.bodies.indexOf(fruit), 1); fruit = null; } }
-function endShot(landX){
-  const i = turn, me = apes[i], foe = apes[1 - i];
-  if (isCpu(i) && cpu){   // how far past (or short of) the target it went, as a share of the distance
-    const dist = Math.abs(cx(foe.x) - cx(me.x)), went = (i === 0 ? landX - cx(me.x) : cx(me.x) - landX);
-    cpu.err = (went - dist) / dist;
-    if (landX <= fruit.r + 1 || landX >= world.w - fruit.r - 1) cpu.err = Math.max(cpu.err, 0.4);   // off the screen edge: it went further than the edge shows
-  }
+function endShot(){
+  const i = turn;
   lastTrail[i] = trail; removeFruit();
   state = "settle"; stateT = 0;
 }
@@ -203,7 +236,7 @@ function update(dt){
   } else if (state === "flight"){
     if (!fruit.falling && fruit.vy > 0){ fruit.falling = true; sfx("bomb"); }   // the whistle starts as it begins to drop
     fruit.age += dt; trail.push({ x: fruit.x, y: fruit.y }); if (trail.length > 400) trail.shift();
-    if (stateT > 12) endShot(fruit.x);   // safety net: a throw that never lands
+    if (stateT > 12) endShot();   // safety net: a throw that never lands
   } else if (state === "settle" && stateT > 0.7){ turn ^= 1; startTurn(); }
   else if (state === "hit"){
     const w = apes.findIndex(A => !A.dead); if (w >= 0){ apes[w].pose = (stateT * 3.5 | 0) % 2 ? "cheer" : "idle"; }
@@ -256,7 +289,7 @@ function drawTitle(){
     center(27, "1  ONE PLAYER (VS COMPUTER)     2  TWO PLAYERS", blink ? WHITE : DIM);
     center(29, "UP/DOWN ANGLE   HOLD SPACE FOR POWER, LET GO TO THROW   ESC MENU", DIM);
   }
-  center(31, "FIRST TO " + WIN_SCORE + " HITS WINS. MIND THE WIND.", DIM);
+  center(31, "FIRST TO " + WIN_SCORE + " HITS WINS. MIND THE WIND.   DIFFICULTY: " + level.toUpperCase() + " (MENU)", DIM);
 }
 function draw(t){
   screen.clear();
@@ -271,6 +304,15 @@ function draw(t){
     for (const p of lastTrail[turn]) put(Math.floor(p.x / screen.cw), Math.floor(p.y / screen.ch), PLAYER_RGB[turn], 0.18, 0, 46);   // your last throw, faintly
     const hx = A.x + (dir > 0 ? AW - 1 : 0) + 0.5, hy = A.y - 0.5, n = 2 + Math.round(A.power / 14);
     for (let k = 1; k <= n; k++) put(Math.floor(hx + Math.cos(ang) * dir * k * 1.6), Math.floor(hy - Math.sin(ang) * k * 0.8), PLAYER_RGB[turn], k === n ? 1.3 : 0.6, 3, k === n ? 43 : 46);
+    // the predicted arc, as dots: all of it on Easy, its start on Normal (only for people, not the computer)
+    const share = ARC_SHARE[level];
+    if (share && state === "aim"){
+      const key = turn + "," + Math.round(A.angle) + "," + Math.round(A.power) + "," + wind;
+      if (!arc || arc.key !== key) arc = { key, ...predict(turn, Math.round(A.angle), Math.round(A.power)) };
+      const pts = arc.path, m = Math.ceil(pts.length * share);
+      for (let k = 6; k < m; k += 3){ const p = pts[k], gy = Math.floor(p.y / screen.ch); if (gy >= 1) put(Math.floor(p.x / screen.cw), gy, PLAYER_RGB[turn], 0.5 * (1 - k / (m + 6)) + 0.25, 3, 46); }
+      if (share === 1 && arc.ape === 1 - turn){ const p = pts[pts.length - 1]; put(Math.floor(p.x / screen.cw), Math.floor(p.y / screen.ch), WHITE, 1.4, 3, 88); }   // it would hit: an X marks it
+    }
   }
   for (const p of trail) put(Math.floor(p.x / screen.cw), Math.floor(p.y / screen.ch), FRUIT_RGB, 0.25, 0, 46);
   if (fruit){
@@ -330,6 +372,7 @@ const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
   { label: "NEW MATCH", select: () => { menu.hide(); audio.unlock(); start(nextMode); } },
   { label: "MODE", value: () => nextMode === "cpu" ? "VS COMPUTER" : "TWO PLAYERS", change: () => { nextMode = nextMode === "cpu" ? "two" : "cpu"; } },
+  { label: "DIFFICULTY", value: () => level.toUpperCase(), change: d => { level = LEVELS[(LEVELS.indexOf(level) + (d || 1) + 3) % 3]; store.set("difficulty", level); arc = null; } },
   { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
   { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },

@@ -84,7 +84,7 @@ What each shipped game still lacks, and the tuning it needs. The "Done" list bel
 | Game | Features to add | Tuning |
 |---|---|---|
 | Base Commander | None planned | None open |
-| Rooftop Rumble | An aiming arc preview; difficulty levels | The computer's aim, once difficulty levels exist |
+| Rooftop Rumble | Done: difficulty levels (Easy, Normal, Hard) and a predicted aiming arc (all of it on Easy, its start on Normal, none on Hard) | Done: the computer works out its throw from the same prediction each turn and misses by its level's error, which shrinks as it gets its eye in. Measured with the computer alone: about 7 throws a hit on Easy, 4 on Normal, 3 on Hard. |
 | Crater Duel | A weapon shop between rounds; tanks that drive; more than two tanks | Weapon prices and damage, once the shop exists |
 | Stack Smash | T-spin and combo scoring; a two-player garbage mode; Columns and Puyo variants | None open |
 | Rover Patrol | Ground tanks; rolling boulders; alien fighters that dive; a choice of starting point | The jump now grows with how long you hold the button (done, see below). Slow jumps are still short: at the lowest speed a big rock has to be shot, not jumped. Check that the rock pairs from point G on can be jumped or shot in turn. |
@@ -123,7 +123,7 @@ debris.
 
 - Base Commander (fixed shooter): generated levels, enemy types, gun upgrades, airdrops, audio, touch gamepad.
 - Rooftop Rumble, first playable version: skyline generation, aiming, wind, carving blasts with rubble, falling apes,
-  a computer opponent, first to 3, sound. Not yet: an aiming arc preview, difficulty levels.
+  a computer opponent, first to 3, sound; difficulty levels and a predicted aiming arc.
 - Crater Duel (after Scorched Earth), first playable version: rolling hills, dirt that falls after blasts, tanks that
   fall and take damage, four weapons, health, wind, a computer opponent, synthesised sound. Not yet: more than two
   tanks, a weapon shop between rounds, moving tanks.
