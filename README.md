@@ -1,7 +1,7 @@
 # ASCII Physics Engine and Arcade
 
 A small physics engine that draws with characters: lit balls and boxes, 24-bit colour, and soft glow, all made of
-text. Seven games are built on it so far.
+text. Five games are built on it so far, plus a sandbox for the engine itself.
 
 **Play online:** https://games.hendrasaputra.com/
 
@@ -16,10 +16,10 @@ ASCII label instead.
 | Game | After | What the engine adds |
 |---|---|---|
 | [Base Commander](base-commander.html) | Space Invaders / ASCII Alien Attack | Generated waves, 7 enemy types, 6 gun upgrades from airdrops, sun-lit shields, tumbling debris |
-| [Rooftop Rumble](rooftop-rumble.html) | QBasic Gorillas | Lobbed fruit with wind; blasts carve buildings into rubble; apes fall when their roof goes |
-| [Crater Duel](crater-duel.html) | Scorched Earth | Hills that collapse after each blast, falling tanks, four weapons |
-| [Stack Smash](stack-smash.html) | Tetris | Blocks as lit slabs; cleared lines burst into boxes that land on the stack |
-| [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble |
+| [Rooftop Rumble](rooftop-rumble.html) | QBasic Gorillas | Lobbed fruit with wind; blasts carve buildings into rubble; apes fall when their roof goes. Easy, Normal and Hard, with a predicted aiming arc (all of it on Easy, its start on Normal) and a computer that judges its throws like you do |
+| [Crater Duel](crater-duel.html) | Scorched Earth | Hills that collapse after each blast, falling tanks, four weapons. Two to four tanks (people or the computer), money and a shop between rounds (big shots, MIRVs, dirt bombs, fuel, shields), and tanks that drive on fuel |
+| [Stack Smash](stack-smash.html) | Tetris, Columns, Puyo Puyo | Blocks as lit slabs; cleared lines burst into boxes that land on the stack. T-spins, back-to-back and combos; Versus, where clears send garbage to the other well (against the computer or a second player); and Columns and Puyo games in the same well, with chains |
+| [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble. Hold jump to jump further; ground tanks, rolling boulders and diving fighters further along; start at any checkpoint you have reached |
 | [Physics Sandbox](ascii-physics.html) | | The engine itself: throw balls and boxes under a lamp |
 
 All games are original code and art. Rover Patrol takes its idea from msokalski's
@@ -32,8 +32,9 @@ Torchlight Dungeons, a Moria adaptation, began here and has moved to its own pro
   off, and R restarts.
 - **Touch:** a handheld-style gamepad with a D-pad, A/B, SELECT and START. On a phone it shows up by itself; choose
   between touch and keyboard in the pause menu. On a phone held sideways, the D-pad and buttons move to the sides.
-- **Pause menu:** drawn on the game screen. It has resume, restart, game options (difficulty, mode or starting
-  level), sound, controls, display settings, and the way back to the shelf.
+- **Pause menu:** drawn on the game screen. It has resume, restart, the game's own options (Rooftop Rumble's mode and
+  difficulty, Crater Duel's mode and number of tanks, Stack Smash's game, opponent and starting level, Rover Patrol's
+  starting point), sound, controls, display settings, and the way back to the shelf.
 - **Display settings** (`settings.html`, shared by every game): draw with ASCII characters or solid pixels (text
   stays readable either way), pick the character set, choose the detail, and turn on a tube TV filter. Detail (Fine
   2x, Finest 3x) draws the engine's lit balls, boxes, blocks, rubble and light with smaller characters or pixels, while
@@ -97,7 +98,10 @@ Everything is saved in the browser's localStorage. Nothing is sent anywhere.
 |---|---|
 | `arcade.v1.display` | Display settings shared by the games |
 | `asciiPhysics.v3.display` | The sandbox's own display settings |
-| `<game>.v1.scores` | High scores (Base Commander, Stack Smash, Rover Patrol) |
+| `<game>.v1.scores` | High scores (Base Commander, Stack Smash's Classic game, Rover Patrol) |
+| `stackSmash.v1.scores.columns`, `stackSmash.v1.scores.puyo` | Stack Smash's Columns and Puyo high scores |
+| `rooftopRumble.v1.difficulty` | Rooftop Rumble's difficulty |
+| `roverPatrol.v1.furthest` | The furthest checkpoint reached in Rover Patrol, for choosing where to start |
 | `<game>.v1.muted`, `<game>.v1.controls` | Sound on or off, touch or keyboard, per game |
 
 ## Notes
