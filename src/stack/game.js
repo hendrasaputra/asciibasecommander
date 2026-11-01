@@ -1,14 +1,17 @@
 (() => {
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
-// Rules run on a small board per player. Each board cell is drawn as a lit slab 4 characters wide and 2 rows tall,
-// which is about square. Cleared cells break into engine bodies that tumble down the well; the locked stack is an
-// engine terrain grid, so the pieces land on it. Four games share the well:
+// Rules run on a small board per player, laid out on a grid of columns and rows (GW x GH, which depends on the game);
+// a board cell is 4 columns by 2 rows, 16 x 16 pixels. Cleared cells break into engine bodies that tumble down the
+// well; the locked stack is an engine terrain grid, so the pieces land on it. Everything is drawn as pixel art
+// (src/pixel.js): bevelled tiles, cut jewels, and round blobs with eyes. Text and the menu use a coarser grid over it,
+// so they can be read on a phone. Four games share the well:
 //   CLASSIC  falling blocks after Tetris: 7-bag, SRS turns, hold, T-spins, back-to-back and combos;
 //   VERSUS   the same on two wells, where clears send garbage rows across (against the computer or a second player);
 //   COLUMNS  after Columns: three jewels fall as a column; three or more in a row (any direction) clear;
 //   PUYO     after Puyo Puyo: round pairs fall; four or more touching of one colour clear. Clears chain.
-const CW = 4, CH = 2;                              // characters per board cell
+const CW = 4, CH = 2;                              // layout columns and rows per board cell
+const COL = 8, ROW = 16, PU = 2;                   // world units per layout column and row, and per pixel
 const PIECES = {   // spawn shapes in their n x n rotation box (SRS); O does not turn
   I: { n: 4, cells: [[0, 1], [1, 1], [2, 1], [3, 1]], rgb: [0.1, 0.8, 0.95] },
   J: { n: 3, cells: [[0, 0], [0, 1], [1, 1], [2, 1]], rgb: [0.15, 0.3, 1.0] },
@@ -21,6 +24,10 @@ const PIECES = {   // spawn shapes in their n x n rotation box (SRS); O does not
 const KINDS = Object.keys(PIECES);
 for (const k of KINDS) PIECES[k].rgb = PIECES[k].rgb.map(v => v * 0.3);   // these are albedos: the lamp is bright
 const GARBAGE_RGB = [0.16, 0.16, 0.18];
+// the same colours as pixels, for the pixel art
+const PIX = { I: [64, 200, 232], J: [64, 100, 236], L: [244, 146, 44], O: [244, 212, 56], S: [84, 206, 84], T: [176, 84, 224], Z: [232, 64, 64], G: [112, 112, 124] };
+const GEM_PIX = [null, [232, 60, 60], [70, 200, 80], [70, 110, 240], [244, 212, 56], [184, 80, 232], [244, 140, 44]];
+const pixOf = kind => typeof kind === "number" ? GEM_PIX[kind] : PIX[kind];
 // Jewels (Columns) and blobs (Puyo): colour numbers 1..6, as albedos.
 const GEM_RGB = [null, [0.95, 0.15, 0.15], [0.15, 0.85, 0.2], [0.2, 0.35, 1.0], [1.0, 0.85, 0.1], [0.75, 0.2, 0.95], [1.0, 0.5, 0.1]].map(c => c && c.map(v => v * 0.3));
 // SRS wall kicks for a clockwise turn from each rotation state, as [dx, dy] with y down.
@@ -52,12 +59,11 @@ const FOES = ["easy", "normal", "hard", "player"];
 const FOE_NAME = { easy: "COMPUTER, EASY", normal: "COMPUTER, NORMAL", hard: "COMPUTER, HARD", player: "PLAYER 2" };
 const CPU_STEP = { easy: 0.28, normal: 0.14, hard: 0.06 };   // seconds between the computer's moves
 
-const D = defaultDisplay(); D.room = 0.3; D.glow = 0.3; D.lampRGB = [1.0, 0.92, 0.8];   // a warm lamp over the well
-applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
-const world = new World(), lamp = { x: 0, y: 0, z: 0, on: true };
-let screen = null, state = "title", stateT = 0, GW = 78, GH = 43;
+applyArcadeSettings(defaultDisplay());   // the tube TV filter from the shared Settings page
+const world = new World();
+let pix = null, state = "title", stateT = 0, GW = 78, GH = 43;
 let mode = "classic", nextMode = "classic", foe = "normal", nextFoe = "normal", players = [], startLevel = 1, nextStartLevel = 1, best = false, winner = -1;
-const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
+const cx = gx => (gx + 0.5) * COL, cy = gy => (gy + 0.5) * ROW;
 const rule = () => mode === "columns" || mode === "puyo" ? mode : "blocks";
 
 /* ---------- saved settings, high scores and sound (src/arcade.js) ---------- */
@@ -77,15 +83,17 @@ function sizes(){   // board size and screen grid for the mode
   if (mode === "versus") return { bw, bh, GW: 2 * (17 + w + 2) + 3, GH: bh * CH + 3, bx: [18, 17 + w + 2 + 3 + 2] };
   return { bw, bh, GW: 78, GH: 43, bx: [(78 - w) >> 1] };
 }
+// A new picture when the game's grid changes size; the text grid is about 6 x 12 pixels a letter.
 function layout(force){
   const S = sizes(); if (state === "title"){ S.GW = 78; S.GH = 43; }
-  const old = screen; GW = S.GW; GH = S.GH;
-  screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old && !force) return;
-  const W = GW * screen.cw, H = GH * screen.ch;
-  world.w = W; world.h = H; world.unit = screen.cw; world.drag = 2e-4 * (600 / H) ** 2; world.g = { x: 0, y: H * 1.4 };
-  lamp.x = W / 2; lamp.y = cy(5); lamp.z = screen.ch * 34;
-  if (old && old !== screen) rescaleBodies(world, old, screen);
-  if (players.length) rebuildTerrain();
+  if (!pix || S.GW !== GW || S.GH !== GH || force){
+    GW = S.GW; GH = S.GH;
+    const W = GW * COL / PU, H = GH * ROW / PU;
+    pix = createPixels(W, H, Math.round(W / 6), Math.round(H / 12.3), PU); back.key = "";
+    world.w = GW * COL; world.h = GH * ROW; world.unit = COL; world.drag = 2e-4 * (600 / world.h) ** 2; world.g = { x: 0, y: world.h * 1.4 };
+    if (players.length) rebuildTerrain();
+  }
+  pix.fit(stage, cv, ctx);
 }
 
 /* ---------- a player: one board and everything about it ---------- */
@@ -107,7 +115,7 @@ function rebuildTerrain(withStack = true){   // walls, floor and every locked ce
     if (withStack) for (let y = 0; y < p.bh; y++) for (let x = 0; x < p.bw; x++) if (at(p, x, y))
       for (let r = 0; r < CH; r++) for (let c = 0; c < CW; c++) solid[(p.by + y * CH + r) * GW + p.bx + x * CW + c] = 1;
   }
-  world.terrain = { cw: screen.cw, ch: screen.ch, cols: GW, rows: GH, solid, mat: WALL };
+  world.terrain = { cw: COL, ch: ROW, cols: GW, rows: GH, solid, mat: WALL };
 }
 function say(p, text, secs){ p.msg = text; p.msgT = secs; }
 const gravity = p => Math.pow(0.8 - (p.level - 1) * 0.007, p.level - 1);   // seconds per row, as in the modern guideline
@@ -165,7 +173,7 @@ function hardDrop(p){
   c.y = y; p.score += 2 * n;
   // the slam shoves any loose debris in the well away from where it lands
   const cells = shape(c.kind, c.rot), mx = cells.reduce((s, [x]) => s + x, 0) / 4, my = cells.reduce((s, [, yy]) => s + yy, 0) / 4;
-  world.forces.push({ x: cx(p.bx + (c.x + mx) * CW + 1.5), y: cy(p.by + (c.y + my) * CH + 1), radius: screen.ch * 8, strength: world.h * 15, t: 0.06 });
+  world.forces.push({ x: cx(p.bx + (c.x + mx) * CW + 1.5), y: cy(p.by + (c.y + my) * CH + 1), radius: ROW * 8, strength: world.h * 15, t: 0.06 });
   sfx("drop"); feel.shake(1.5, 0.12); lock(p, 0.5);
 }
 function holdPiece(p){
@@ -351,11 +359,12 @@ function resolve(p){
 // A cleared cell becomes a tumbling engine body of its colour: a box for blocks and jewels, a ball for a blob.
 function shatter(p, x, y, kind, k){
   const rgb = kind === "G" ? GARBAGE_RGB : typeof kind === "number" ? GEM_RGB[kind] : PIECES[kind].rgb, gx = cx(p.bx + x * CW + 1.5), gy = cy(p.by + y * CH + 0.5);
-  const b = mode === "puyo" ? world.add(gx, gy, screen.ch * CH * 0.45, "blob", rgb, BLOB) : world.addBox(gx, gy, screen.cw * CW * 0.42, screen.ch * CH * 0.42, "block", rgb, BLOCK);
+  const b = mode === "puyo" ? world.add(gx, gy, ROW * CH * 0.45, "blob", rgb, BLOB) : world.addBox(gx, gy, COL * CW * 0.42, ROW * CH * 0.42, "block", rgb, BLOCK);
+  b.kind = kind;
   const sp = (200 + Math.random() * 300) * k;
   b.vx = (x - (p.bw - 1) / 2) * 50 * k + (Math.random() - 0.5) * sp; b.vy = -sp - Math.random() * 200; b.w = (Math.random() - 0.5) * 24;
   b.flash = 1; b.life = 1.8 + Math.random() * 0.8; b.hw0 = b.hw; b.hh0 = b.hh; b.r0 = b.r;
-  vfx.burst(gx, gy, { n: 2, speed: screen.ch * 14 * k, life: 0.45 });
+  vfx.burst(gx, gy, { n: 2, speed: ROW * 14 * k, life: 0.45 });
   return b;
 }
 function topOut(p){
@@ -414,132 +423,167 @@ function update(dt){
   }
 }
 
-/* ---------- drawing ---------- */
-const { put, text, center } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
-const slab = { box: true, a: 0, mat: BLOCK, flash: 0 }, ball = { a: 0, mat: BLOB, flash: 0 };
-function block(gx, gy, w, h, rgb, fl, layer = 2){   // a lit raised slab covering w x h characters from (gx, gy)
-  slab.x = gx * screen.cw + w * screen.cw / 2; slab.y = gy * screen.ch + h * screen.ch / 2;
-  slab.hw = w * screen.cw * 0.48; slab.hh = h * screen.ch * 0.48; slab.r = Math.hypot(slab.hw, slab.hh);
-  slab.alb = rgb; slab.flash = fl;
-  if (layer === 2) return screen.box(slab, lamp);
-  // the falling piece and the title sit above the debris: shade, then lift the cells to layer 3. Drawn before the
-  // debris, so the debris can't take these cells.
-  screen.box(slab, lamp);
-  screen.raise(gx, gy, w, h, layer);
-}
-function blob(gx, gy, rgb, fl, layer = 2){   // a lit ball filling one board cell (PUYO)
-  ball.x = (gx + CW / 2) * screen.cw; ball.y = (gy + CH / 2) * screen.ch; ball.r = Math.min(CW * screen.cw, CH * screen.ch) * 0.5; ball.alb = rgb; ball.flash = fl;
-  screen.sphere(ball, lamp, { stripe: false });
-  if (layer !== 2) screen.raise(gx, gy, CW, CH, layer);
-}
-function cellAt(p, x, y, kind, fl, layer){
-  if (y < 0) return;
-  const gx = p.bx + x * CW, gy = p.by + y * CH;
-  if (typeof kind === "number"){ if (mode === "puyo") return blob(gx, gy, GEM_RGB[kind], fl, layer); return block(gx, gy, CW, CH, GEM_RGB[kind], fl + 0.08, layer); }
-  block(gx, gy, CW, CH, kind === "G" ? GARBAGE_RGB : PIECES[kind].rgb, fl, layer);
-}
-function mini(kind, gx, gy){   // a piece in a side panel, centred in a 16 x 4 area
-  if (Array.isArray(kind)){   // jewels or blobs: a small column or pair
-    kind.forEach((g, k) => mode === "puyo" ? blob(gx + 6, gy + (1 - k) * CH, GEM_RGB[g], 0) : block(gx + 6, gy + k * CH, CW, CH, GEM_RGB[g], 0.08));
-    return;
+/* ---------- drawing: pixel art (src/pixel.js) ---------- */
+// After Balote: each colour as a ramp of five shades, light from the upper left, outlines from the edge pass. A layout
+// column is 4 pixels and a row 8, so a board cell is a 16 x 16 tile.
+const PX = COL / PU, PY = ROW / PU;
+const back = { d: null, lay: null, key: "" };
+const tcol = gx => Math.round(gx * pix.cols / GW), trow = gy => Math.floor(gy * pix.rows / GH);   // layout to text grid
+const lit = (c, fl) => fl > 0 ? c.map(v => v + (255 - v) * Math.min(1, fl)) : c;                 // a flash towards white
+// A bevelled tile w x h pixels at (x, y): lit top and left, shaded bottom and right, a dark seam so tiles stay apart,
+// a dithered face and a glint.
+function tile(x, y, c, fl = 0, layer = 2, w = 16, h = 16){
+  const R = pix.ramp(lit(c, fl));
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++){
+    let lv;
+    if (i === w - 1 || j === h - 1) lv = 0;
+    else if (i === 0 || j === 0) lv = 4;
+    else if (i === w - 2 || j === h - 2) lv = 1;
+    else lv = (i + j) / (w + h) + pix.bayer(x + i, y + j) * 0.35 > 0.7 ? 2 : 3;
+    pix.px(x + i, y + j, R[lv], layer);
   }
+  if (w > 6){ pix.px(x + 2, y + 2, R[4], layer); pix.px(x + 3, y + 2, R[4], layer); pix.px(x + 2, y + 3, R[4], layer); }
+}
+// A cut jewel (COLUMNS): a diamond of four facets, lit from the upper left, with a sparkle.
+function jewel(x, y, c, fl, layer){
+  const R = pix.ramp(lit(c, fl));
+  for (let j = 0; j < 16; j++) for (let i = 0; i < 16; i++){
+    const dx = i - 7.5, dy = j - 7.5; if (Math.abs(dx) + Math.abs(dy) > 8) continue;
+    const edge = Math.abs(dx) + Math.abs(dy) > 7, inner = Math.abs(dx) + Math.abs(dy) < 3;
+    pix.px(x + i, y + j, R[edge ? 1 : inner ? 4 : dx < 0 ? (dy < 0 ? 4 : 2) : (dy < 0 ? 3 : 1)], layer);
+  }
+  pix.px(x + 5, y + 4, [255, 255, 255], layer);
+}
+// A round blob (PUYO) with two eyes.
+function blob(x, y, c, fl, layer){
+  pix.ball(x + 7.5, y + 8, 7.6, lit(c, fl), layer);
+  for (const ex of [4, 9]){ pix.rect(x + ex, y + 5, 3, 4, [250, 250, 250], layer); pix.rect(x + ex + 1, y + 6, 2, 3, [30, 26, 40], layer); }
+}
+function cellPix(gx, gy, kind, fl, layer){   // one board cell at layout (gx, gy)
+  const x = gx * PX, y = gy * PY;
+  if (typeof kind === "number") return mode === "puyo" ? blob(x, y, GEM_PIX[kind], fl, layer) : jewel(x, y, GEM_PIX[kind], fl, layer);
+  tile(x, y, PIX[kind], fl, layer);
+}
+function cellAt(p, x, y, kind, fl, layer = 2){ if (y >= 0) cellPix(p.bx + x * CW, p.by + y * CH, kind, fl, layer); }
+function mini(kind, gx, gy){   // a piece in a side panel, centred in a 16 x 4 area
+  if (Array.isArray(kind)){ kind.forEach((g, k) => cellPix(gx + 6, gy + (mode === "puyo" ? 1 - k : k) * CH, g, 0, 2)); return; }
   const cells = shape(kind, 0), xs = cells.map(c => c[0]), ys = cells.map(c => c[1]);
   const w = Math.max(...xs) - Math.min(...xs) + 1, h = Math.max(...ys) - Math.min(...ys) + 1;
   const ox = gx + ((16 - w * CW) >> 1) - Math.min(...xs) * CW, oy = gy + ((4 - h * CH) >> 1) - Math.min(...ys) * CH;
-  for (const [x, y] of cells) block(ox + x * CW, oy + y * CH, CW, CH, PIECES[kind].rgb, 0);
+  for (const [x, y] of cells) cellPix(ox + x * CW, oy + y * CH, kind, 0, 2);
 }
-function drawWell(p){
-  const wall = [0.35, 0.38, 0.5], x1 = p.bx + p.bw * CW, yf = p.by + p.bh * CH;
-  for (let gy = p.by; gy < yf; gy++){ put(p.bx - 1, gy, wall, 1, 1, 124); put(x1, gy, wall, 1, 1, 124); }
-  for (let gx = p.bx - 1; gx <= x1; gx++) put(gx, yf, wall, 1, 1, 61);
-  for (let y = 0; y < p.bh; y++) for (let x = 0; x < p.bw; x++) put(p.bx + x * CW + 1, p.by + y * CH + 1, DIM, 0.35, 0, 46);   // a faint dot in each cell
-  if (mode === "versus") for (let k = 0; k < Math.min(p.pending, p.bh); k++)   // garbage on its way: a red bar by the well
-    put(p.i === 0 ? x1 + 1 : p.bx - 2, yf - 1 - k * CH, RED, 1.2, 1, 35), put(p.i === 0 ? x1 + 1 : p.bx - 2, yf - 2 - k * CH, RED, 1.2, 1, 35);
+// The room and the wells, drawn again only when the layout changes: a dark wall lit by a warm lamp above, and each
+// well as a dark shaft between metal pillars, with a faint dot in each cell.
+function bakeBack(){
+  pix.clear();
+  for (let y = 0; y < pix.H; y++) for (let x = 0; x < pix.W; x++){
+    const v = y / pix.H + (pix.bayer(x, y) - 0.5) * 0.12;
+    pix.px(x, y, v < 0.33 ? [26, 22, 40] : v < 0.66 ? [20, 18, 32] : [14, 14, 24], -1);
+  }
+  pix.glow(world.w / 2, ROW * 2, ROW * 26, [0.16, 0.13, 0.08]);
+  const M = pix.ramp([120, 128, 150]);
+  for (const p of players){
+    const x0 = p.bx * PX, x1 = (p.bx + p.bw * CW) * PX, y0 = p.by * PY, yf = (p.by + p.bh * CH) * PY;
+    pix.rect(x0, y0, x1 - x0, yf - y0, [16, 18, 28], 1);
+    for (let y = 0; y < p.bh; y++) for (let x = 0; x < p.bw; x++) pix.px(x0 + x * 16 + 7, y0 + y * 16 + 7, [44, 48, 66], 1);
+    for (const px0 of [x0 - PX, x1]) for (let y = 0; y < yf; y++) for (let i = 0; i < PX; i++) pix.px(px0 + i, y, M[i === 0 ? 4 : i === PX - 1 ? 1 : 3], 2);
+    for (let y = yf; y < yf + PY && y < pix.H; y++) for (let x = x0 - PX; x < x1 + PX; x++) pix.px(x, y, M[y === yf ? 4 : y === yf + PY - 1 ? 1 : 2], 2);
+  }
+  if (!back.d || back.d.length !== pix.d.length){ back.d = new Uint8ClampedArray(pix.d.length); back.lay = new Int8Array(pix.lay.length); }
+  back.d.set(pix.d); back.lay.set(pix.lay);
 }
 function drawTitle(t){
   [["STACK", 6], ["SMASH", 13]].forEach(([word, y0], wi) => {
     const x0 = Math.floor((GW - word.length * 12 + 2) / 2);
     [...word].forEach((ch, li) => {
-      const rgb = PIECES[KINDS[(li + wi * 5) % 7]].rgb;
-      FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#") block(x0 + li * 12 + dx * 2, y0 + dy, 2, 1, rgb, 0.15 + 0.15 * Math.sin(t * 0.004 - li), 3); });
+      const c = PIX[KINDS[(li + wi * 5) % 7]], fl = 0.08 + 0.08 * Math.sin(t * 0.004 - li);
+      FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#") tile((x0 + li * 12 + dx * 2) * PX, (y0 + dy) * PY, c, fl, 3, 2 * PX, PY); });
     });
   });
-  const blink = (performance.now() / 500 | 0) % 2;
-  center(20, INPUT.touch ? "TAP TO START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
-  center(22, "GAME " + MODE_NAME[nextMode] + (nextMode === "versus" ? " AGAINST " + FOE_NAME[nextFoe] : "") + "   LEVEL " + nextStartLevel + "   (MENU TO CHANGE)", DIM);
-  const tips = { classic: "CLEAR LINES. T-SPINS, BACK-TO-BACK AND COMBOS SCORE MORE.", versus: "CLEARS SEND GARBAGE TO THE OTHER WELL. LAST ONE STANDING WINS.",
-    columns: "THREE JEWELS IN A ROW, ANY DIRECTION, CLEAR. CHAINS SCORE MORE.", puyo: "FOUR BLOBS OF ONE COLOUR TOUCHING CLEAR. CHAINS SCORE MORE." };
-  center(23, tips[nextMode], DIM);
-  if (INPUT.touch){
-    center(26, "SLIDE TO MOVE   TAP TO TURN   DRAG DOWN TO SOFT DROP", DIM);
-    center(27, "FLICK DOWN TO DROP   SWIPE UP TO HOLD", DIM);
-  } else if (nextMode === "versus" && nextFoe === "player"){
-    center(26, "PLAYER 1: A/D MOVE  W TURN  Q TURN BACK  S SOFT DROP  SPACE DROP  E HOLD", DIM);
-    center(27, "PLAYER 2: ARROWS MOVE  UP TURN  / TURN BACK  DOWN SOFT DROP  ENTER DROP  . HOLD", DIM);
-  } else {
-    center(26, "LEFT/RIGHT MOVE   UP OR X TURN   Z TURN BACK", DIM);
-    center(27, "DOWN SOFT DROP   SPACE DROP   C HOLD   ESC MENU", DIM);
-  }
+  const blink = (performance.now() / 500 | 0) % 2, C = pix.center;
+  C(13, INPUT.touch ? "TAP TO START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
+  C(15, nextMode === "versus" ? "VERSUS AGAINST " + FOE_NAME[nextFoe] : MODE_NAME[nextMode], WHITE);
+  C(16, "LEVEL " + nextStartLevel + "   (CHANGE THESE IN THE MENU)", DIM);
+  const tips = { classic: ["CLEAR LINES. T-SPINS, BACK-TO-BACK AND", "COMBOS SCORE MORE."], versus: ["CLEARS SEND GARBAGE TO THE OTHER WELL.", "LAST ONE STANDING WINS."],
+    columns: ["THREE JEWELS IN A ROW, ANY DIRECTION, CLEAR.", "CHAINS SCORE MORE."], puyo: ["FOUR BLOBS OF ONE COLOUR TOUCHING CLEAR.", "CHAINS SCORE MORE."] };
+  tips[nextMode].forEach((s, i) => C(18 + i, s, DIM));
+  const keys = INPUT.touch ? ["SLIDE TO MOVE   TAP TO TURN   SWIPE UP TO HOLD", "DRAG DOWN TO SOFT DROP   FLICK DOWN TO DROP"]
+    : nextMode === "versus" && nextFoe === "player" ? ["P1  A/D MOVE  W/Q TURN  S DOWN  SPACE DROP  E HOLD", "P2  ARROWS MOVE  UP / TURN  DOWN  ENTER DROP  . HOLD"]
+    : ["LEFT/RIGHT MOVE   UP OR X TURN   Z TURN BACK", "DOWN SOFT DROP   SPACE DROP   C HOLD   ESC MENU"];
+  keys.forEach((s, i) => C(21 + i, s, DIM));
   const T = tables[nextMode];
-  if (T && T.list.length){
-    center(30, "HIGH SCORES, " + MODE_NAME[nextMode], ACCENT);
-    T.list.forEach((s, i) => center(32 + i, `${i + 1}. ${String(s.score).padStart(7)}   LV ${String(s.level).padStart(2)}   ${String(s.lines).padStart(3)} ${nextMode === "classic" ? "LINES" : "CLEARED"}`, i ? DIM : WHITE));
+  if (T && T.list.length){   // the best three
+    C(24, "HIGH SCORES, " + MODE_NAME[nextMode], ACCENT);
+    T.list.slice(0, 3).forEach((s, i) => C(25 + i, `${i + 1}. ${String(s.score).padStart(7)}   LV ${String(s.level).padStart(2)}   ${String(s.lines).padStart(3)} ${nextMode === "classic" ? "LINES" : "CLEARED"}`, i ? DIM : WHITE));
   }
 }
+// The side panels, in text rows: who it is, HOLD, the scores, and NEXT.
 function drawPanels(p){
   const blocks = rule() === "blocks", outer = mode === "versus" && p.i === 1 ? p.bx + p.bw * CW + 3 : 1, nextX = mode === "versus" ? outer : p.bx + p.bw * CW + 2;
+  const L = (gx, r, s, rgb) => pix.text(tcol(gx), r, s, rgb);
   const who = mode === "versus" ? (p.i === 0 ? "PLAYER 1" : foe === "player" ? "PLAYER 2" : "COMPUTER") : "";
-  if (who) text(outer, 0, who, p.i ? [0.6, 1.1, 1.5] : ACCENT);
-  if (blocks){ text(outer, p.by + 1, "HOLD", p.canHold ? WHITE : DIM); if (p.held) mini(p.held, outer, p.by + 3); }
+  if (who) L(outer, 0, who, p.i ? [0.6, 1.1, 1.5] : ACCENT);
+  if (blocks) L(outer, 1, "HOLD", p.canHold ? WHITE : DIM);
   const T = tables[mode], stats = mode === "versus" ? [["SCORE", p.score], ["LINES", p.lines], ["SENT", p.sent]] :
     [["SCORE", p.score], ["LEVEL", p.level], [blocks ? "LINES" : "CLEARED", p.lines], ["BEST", Math.max(p.score, T && T.list[0] ? T.list[0].score : 0)]];
-  stats.forEach(([k, v], i) => { text(outer, p.by + 9 + i * 4, k, DIM); text(outer, p.by + 10 + i * 4, String(v), i ? WHITE : ACCENT); });
-  const ny = mode === "versus" ? p.by + 23 : p.by + 1;
-  text(nextX, ny, "NEXT", WHITE);
-  (blocks ? p.queue.slice(0, mode === "versus" ? 2 : 3) : p.queue.slice(0, 2)).forEach((k, i) => mini(k, nextX, ny + 2 + i * (blocks ? 6 : 8)));
+  stats.forEach(([k, v], i) => { L(outer, 6 + i * 3, k, DIM); L(outer, 7 + i * 3, String(v), i ? WHITE : ACCENT); });
+  L(nextX, mode === "versus" ? 15 : 1, "NEXT", WHITE);
 }
-function drawPlayer(p){
-  drawWell(p);
+function drawPieces(p){   // the panels' pieces, the stack, the ghost and the falling piece
+  const blocks = rule() === "blocks", outer = mode === "versus" && p.i === 1 ? p.bx + p.bw * CW + 3 : 1, nextX = mode === "versus" ? outer : p.bx + p.bw * CW + 2;
+  if (blocks && p.held) mini(p.held, outer, p.by + 3);
+  const ny = mode === "versus" ? p.by + 23 : p.by + 1;
+  (blocks ? p.queue.slice(0, mode === "versus" ? 2 : 3) : p.queue.slice(0, 2)).forEach((k, i) => mini(k, nextX, ny + 2 + i * (blocks ? 6 : 8)));
+  const yf = p.by + p.bh * CH, x1 = p.bx + p.bw * CW;
+  if (mode === "versus") for (let k = 0; k < Math.min(p.pending, p.bh); k++)   // garbage on its way: a red bar by the well
+    pix.rect((p.i === 0 ? x1 + 1 : p.bx - 2) * PX, (yf - 2 - k * CH) * PY, 3, 15, [230, 70, 60], 2);
   for (let y = 0; y < p.bh; y++) for (let x = 0; x < p.bw; x++){ const k = at(p, x, y); if (k) cellAt(p, x, y, k, p.flash[y * p.bw + x]); }
   const c = p.cur;
-  if (c && rule() === "blocks"){
-    const cells = shape(c.kind, c.rot), gy = ghostY(p), rgb = PIECES[c.kind].rgb;
-    for (const [x, y] of cells) if (gy + y >= 0) for (let r = 0; r < CH; r++) for (let q = 0; q < CW; q++)   // the ghost: where it will land
-      put(p.bx + (c.x + x) * CW + q, p.by + (gy + y) * CH + r, rgb, 0.3, 1, q === 0 || q === CW - 1 ? 58 : 46);
+  if (c && blocks){
+    const cells = shape(c.kind, c.rot), gy = ghostY(p), R = pix.ramp(PIX[c.kind]);
+    for (const [x, y] of cells) if (gy + y >= 0){   // the ghost: a dotted outline where it will land
+      const X = (p.bx + (c.x + x) * CW) * PX, Y = (p.by + (gy + y) * CH) * PY;
+      for (let k = 1; k < 15; k += 2){ pix.px(X + k, Y + 1, R[2], 1); pix.px(X + k, Y + 14, R[2], 1); pix.px(X + 1, Y + k, R[2], 1); pix.px(X + 14, Y + k, R[2], 1); }
+    }
     for (const [x, y] of cells) cellAt(p, c.x + x, c.y + y, c.kind, p.lockT / LOCK_SECS * 0.3, 3);
   } else if (c) for (const [x, y, g] of gemCells(c)) cellAt(p, x, y, g, p.lockT / LOCK_SECS * 0.3, 3);
 }
-function draw(t){
-  screen.clear();
-  if (state === "title"){
-    drawTitle(t);
-    for (const b of world.bodies) screen.sphere(b, lamp, { stripe: false });
-    vfx.draw(screen);
-    drawMenu(); screen.render(ctx); return;
+function drawBodies(){
+  for (const b of world.bodies){
+    const c = lit(pixOf(b.kind) || PIX.G, b.flash * 0.6);
+    if (b.box) pix.body(b, c); else pix.ball(b.x / PU, b.y / PU, Math.max(1, b.r / PU), c, 3, true);
   }
-  for (const p of players) drawPlayer(p);
-  for (const b of world.bodies) screen.sphere(b, lamp, { stripe: false });
-  vfx.draw(screen);
+  vfx.draw(pix);
+}
+function draw(t){
+  const key = GW + "x" + GH + ":" + players.map(p => p.bx).join(",");
+  if (back.key !== key){ back.key = key; bakeBack(); }
+  pix.clear(); pix.d.set(back.d); pix.lay.set(back.lay);
+  if (state === "title"){ drawTitle(t); drawBodies(); return finish(); }
+  for (const p of players) drawPieces(p);
+  drawBodies();
+  pix.edges();
   for (const p of players){
     drawPanels(p);
-    const midX = p.bx + (p.bw * CW >> 1), mid = p.by + p.bh;
-    const line = s => text(midX - (s.length >> 1), mid, s, WHITE);
-    if (p.msgT > 0){ const s = "  " + p.msg + "  "; text(midX - (s.length >> 1), mid - 6, s, p.msg === "WINS!" ? ACCENT : WHITE); }
-    if (mode === "versus" && state === "over" && winner >= 0 && p.i !== winner) line("  TOPPED OUT  ");
+    const mid = tcol(p.bx + (p.bw * CW >> 1)), row = trow(p.by + p.bh) - 3;
+    const line = (r, s, rgb) => pix.text(mid - (s.length >> 1), r, s, rgb);
+    if (p.msgT > 0) p.msg.split("  ").forEach((s, i) => line(row + i, " " + s + " ", p.msg === "WINS!" ? ACCENT : WHITE));
+    if (mode === "versus" && state === "over" && winner >= 0 && p.i !== winner) line(row + 3, "  TOPPED OUT  ", WHITE);
   }
-  const midY = (GH >> 1);
+  const midY = pix.rows >> 1;
   if (state === "over" && stateT > 1){
-    if (mode === "versus"){ center(midY + 4, "  " + (winner === 0 ? "PLAYER 1" : foe === "player" ? "PLAYER 2" : "COMPUTER") + " WINS  ", ACCENT); }
-    else { center(midY - 2, "  GAME OVER  ", WHITE); center(midY, `  ${players[0].score} POINTS  `, ACCENT); if (best) center(midY + 2, "  NEW HIGH SCORE!  ", ACCENT); }
-    center(midY + 6, INPUT.touch ? "  TAP TO GO ON  " : "  PRESS SPACE  ", DIM);
+    if (mode === "versus") pix.center(midY + 3, "  " + (winner === 0 ? "PLAYER 1" : foe === "player" ? "PLAYER 2" : "COMPUTER") + " WINS  ", ACCENT);
+    else { pix.center(midY - 2, "  GAME OVER  ", WHITE); pix.center(midY, `  ${players[0].score} POINTS  `, ACCENT); if (best) pix.center(midY + 1, "  NEW HIGH SCORE!  ", ACCENT); }
+    pix.center(midY + 5, INPUT.touch ? "  TAP TO GO ON  " : "  PRESS SPACE  ", DIM);
   }
-  if (!INPUT.touch) text(GW - 11, GH - 1, " ESC MENU ", DIM);
-  drawMenu();
-  screen.render(ctx);
+  if (!INPUT.touch) pix.text(pix.cols - 11, pix.rows - 1, " ESC MENU ", DIM);
+  finish();
 }
-function drawMenu(){
+function finish(){
+  if (state === "title") pix.edges();
   // the menu writes on its own layer, above the game's text, so nothing shows through its box
-  if (menu.open) menu.draw(screen, { accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "GAME, OPPONENT AND LEVEL APPLY TO THE NEXT GAME" });
+  if (menu.open) menu.draw(pix, { accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "CHANGES APPLY TO THE NEXT GAME" });
+  pix.present(ctx);
 }
 
 /* ---------- title: pieces of every colour tumble down the screen ---------- */
@@ -548,7 +592,7 @@ function rain(dt){
   if ((rainT -= dt) > 0 || world.bodies.length > 40) return;
   rainT = 0.35;
   const k = KINDS[Math.floor(Math.random() * 7)], x = world.w * (0.05 + Math.random() * 0.9);
-  const b = world.addBox(x, -screen.ch * 4, screen.cw * CW * 0.42, screen.ch * CH * 0.42, "block", PIECES[k].rgb, BLOCK);
+  const b = world.addBox(x, -ROW * 4, COL * CW * 0.42, ROW * CH * 0.42, "block", PIECES[k].rgb, BLOCK); b.kind = k;
   b.vx = (Math.random() - 0.5) * 200; b.w = (Math.random() - 0.5) * 6; b.life = 7; b.hw0 = b.hw; b.hh0 = b.hh;
 }
 
@@ -631,7 +675,7 @@ createTouch(cv, {
   up: t => {
     const p = players[0];
     if (p) p.keys.down = false;
-    if (menu.open){ if (t.tap) menu.tap(Math.floor(t.x * GW), Math.floor(t.y * GH)); return; }
+    if (menu.open){ if (t.tap) menu.tap(Math.floor(t.x * pix.cols), Math.floor(t.y * pix.rows)); return; }
     if (state !== "play"){ if (t.tap) action(); return; }
     if (!p) return;
     const dx = (t.x - t.x0) * GW / CW, dy = (t.y - t.y0) * GH / CH, quick = performance.now() - t.t0 < 300;
@@ -644,7 +688,7 @@ headerButtons(menu, audio);
 
 /* ---------- loop ---------- */
 function tick(dt, t){
-  if (screen && !menu.open && (dt = feel.step(dt))){   // the open menu pauses everything, and so does a hit-stop
+  if (pix && !menu.open && (dt = feel.step(dt))){   // the open menu pauses everything, and so does a hit-stop
     vfx.update(dt);
     if (state === "title") rain(dt); else update(dt);
     for (const f of world.forces) f.t -= dt;
@@ -656,7 +700,7 @@ function tick(dt, t){
     }
     world.bodies = world.bodies.filter(b => !(b.life < 0));
   }
-  if (screen){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); }
+  if (pix){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); }
 }
 layout(true);
 onResize(stage, () => layout());

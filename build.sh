@@ -18,7 +18,7 @@ page ascii-physics.html src/engine/head.html src/core.js src/engine/ui.js
 game base-commander.html game src/audio/sfx-data.js src/audio/music-data.js src/game/game.js
 game rooftop-rumble.html rooftop src/audio/sfx-data.js src/pixel.js src/rooftop/game.js
 game crater-duel.html crater src/audio/crater-sfx-data.js src/pixel.js src/crater/game.js
-game stack-smash.html stack src/audio/stack-sfx-data.js src/stack/game.js
+game stack-smash.html stack src/audio/stack-sfx-data.js src/pixel.js src/stack/game.js
 game rover-patrol.html rover src/audio/rover-sfx-data.js src/pixel.js src/rover/game.js
 page settings.html src/settings/head.html src/core.js src/settings/page.js
 echo "Built ascii-physics.html, ascii-engine-tutorial.html, base-commander.html, rooftop-rumble.html, crater-duel.html, stack-smash.html, rover-patrol.html and settings.html"
