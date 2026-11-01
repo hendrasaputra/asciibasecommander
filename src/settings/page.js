@@ -14,7 +14,7 @@ function syncForm(){
   for (const r of document.querySelectorAll("input[name=ramp]")){ r.checked = r.value === s.ramp; r.disabled = s.mode === "pixels"; }
   $("custom").hidden = s.ramp !== "custom"; $("custom").value = s.custom; $("custom").disabled = s.mode === "pixels";
   $("charsetHint").textContent = s.mode === "pixels"
-    ? "Not used in pixel mode: lit objects become solid pixels. Switch to ASCII characters to choose a set."
+    ? "Not used in pixel mode: everything but the text is drawn as shaded pixels. Switch to ASCII characters to choose a set."
     : "Used for shading lit objects such as debris, rubble and the physics balls. Sprites and text keep their own characters.";
   $("crt").checked = !!s.crt;
   for (const r of document.querySelectorAll("input[name=detail]")) r.checked = +r.value === (s.detail || 1);

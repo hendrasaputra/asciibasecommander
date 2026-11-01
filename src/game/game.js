@@ -80,6 +80,7 @@ const VOL = { shoot: 0.35, laser: 0.3, bomb: 0.5, hit: 0.5, explode: 0.6, shield
 // the Sonic Pi effects and music (audio/base-commander.rb, processed by audio/process.py); a volley from many
 // enemies at once still makes one sound
 const audio = createAudio({ label: "Base Commander", store, sounds: SFX_DATA, music: MUSIC_DATA, vol: VOL, minGap: 0.05 });
+const feel = createFeel(), vfx = createFx();
 const sfx = (name, pan) => audio.play(name, pan), playSong = name => audio.music(name);
 playSong("title");   // starts once the first key or tap turns the sound on
 const scores = scoreTable(store, 5, "scores", (a, b) => b.s - a.s);
@@ -179,7 +180,7 @@ function eachCell(sprite, x, y, fn){ sprite.forEach((row, dy) => { for (let dx =
 
 /* ---------- rules ---------- */
 function damage(s){
-  s.hp--; s.body.flash = 1; sfx("shield"); s.body.alb = SHIELD_RGB.map(v => v * (0.25 + 0.75 * s.hp / 3));
+  s.hp--; s.body.flash = 1; sfx("shield"); vfx.burst(s.body.x, s.body.y, { n: 8, speed: screen.ch * 10, pal: PAL.ice, life: 0.35 }); s.body.alb = SHIELD_RGB.map(v => v * (0.25 + 0.75 * s.hp / 3));
   if (s.hp > 0) return;
   world.bodies.splice(world.bodies.indexOf(s.body), 1); shields.splice(shields.indexOf(s), 1);
   burst(s.body.x, s.body.y, SHIELD_RGB, 2);
@@ -192,7 +193,7 @@ function hitAlien(x, y, shot){
     if (dx < 0 || dx >= AW || dy < 0 || dy >= AH || art[dy][dx] === " ") continue;
     shot.hits.add(a); a.flash = 0.12;
     if (--a.hp > 0){ sfx("hit"); score += 1; burst(cx(x), cy(y), T.rgb, 2, -150); return true; }
-    a.alive = false; sfx("explode"); score += T.pts + Math.floor((GH - a.y) / 4) + level;
+    a.alive = false; sfx("explode"); vfx.explode(cx(a.x + AW / 2), cy(a.y + AH / 2), screen.ch * 1.2); feel.shake(1.5, 0.15); score += T.pts + Math.floor((GH - a.y) / 4) + level;
     eachCell(art, a.x, a.y, (gx, gy) => burst(cx(gx), cy(gy), T.rgb, 1, -250));
     if (a.maxHp >= 3 && Math.random() < 0.35) dropCrate(cx(a.x + 3), cy(a.y + 2));   // armoured enemies may drop parts
     return true;
@@ -203,6 +204,7 @@ function inCannon(x, y){ const art = cannonArt(), dx = x - Math.round(px), dy = 
 function loseLife(){
   eachCell(cannonArt(), Math.round(px), PY, (gx, gy) => burst(cx(gx), cy(gy), CANNON_RGB, 2, -300));
   lives--; shots = []; bombs = []; sfx("death");
+  vfx.explode(cx(Math.round(px) + 3), cy(PY + 1), screen.ch * 2.5); feel.shake(8, 0.45); feel.freeze(0.15); feel.flash(0.45);
   if (lives <= 0){ state = "over"; recordScore(); playSong(null); setTimeout(() => sfx("game_over"), 900); return; }
   const lost = gun > 0; gun = Math.max(0, gun - 1);
   px = (GW - CW) / 2; state = "dead"; deadT = 1.2; flash(lost ? "SHIP LOST - GUN DOWN TO " + GUNS[gun].name : "SHIP LOST");
@@ -345,6 +347,7 @@ function draw(t){
   for (const s of stars){ const v = 0.07 + 0.05 * Math.sin(t * 0.002 + s.ph); screen.put(s.i, v, v, v * 1.2, 0, 46); }
   const bodies = world.bodies.filter(b => !b.hidden);
   for (const b of bodies) if (!b.crate) screen.sphere(b, sun, { stripe: false });
+  vfx.draw(screen);
   if (state === "title") for (const b of bodies) if (b.life) screen.streak(b, world.unit);   // in play, streaks would look like enemy lasers
   if (state === "title"){ drawTitle(t); drawBorder(); drawMenu(); screen.render(ctx); return; }
   const pulse = 0.85 + 0.15 * frame;
@@ -454,7 +457,8 @@ cv.addEventListener("pointerdown", e => {
 /* ---------- loop ---------- */
 let pausedDrawn = false;
 function tick(dt, t){
-  if (screen && !paused){
+  if (screen && !paused && (dt = feel.step(dt))){   // a hit-stop holds everything still for a moment
+    vfx.update(dt);
     if (state === "play") update(dt);
     else if (state === "dead" && (deadT -= dt) <= 0) state = "play";
     else if (state === "title"){
@@ -478,7 +482,7 @@ function tick(dt, t){
     }
     world.bodies = world.bodies.filter(b => !(b.life <= 0) && !(b.ttl <= 0));
   }
-  if (screen && !(paused && pausedDrawn)){ draw(t); pausedDrawn = paused; }   // a paused screen is drawn once
+  if (screen && !(paused && pausedDrawn)){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); pausedDrawn = paused; }   // a paused screen is drawn once
 }
 layout();
 onResize(stage, () => { layout(); pausedDrawn = false; for (const s of shields){ s.body.x = cx(s.x); s.body.y = cy(s.y); } });

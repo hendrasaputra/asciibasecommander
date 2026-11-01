@@ -35,10 +35,14 @@ Torchlight Dungeons, a Moria adaptation, began here and has moved to its own pro
 - **Pause menu:** drawn on the game screen. It has resume, restart, the game's own options (Rooftop Rumble's mode and
   difficulty, Crater Duel's mode and number of tanks, Stack Smash's game, opponent and starting level, Rover Patrol's
   starting point), sound, controls, display settings, and the way back to the shelf.
-- **Display settings** (`settings.html`, shared by every game): draw with ASCII characters or solid pixels (text
-  stays readable either way), pick the character set, choose the detail, and turn on a tube TV filter. Detail (Fine
-  2x, Finest 3x) draws the engine's lit balls, boxes, blocks, rubble and light with smaller characters or pixels, while
-  game text and sprites keep their size.
+- **Display settings** (`settings.html`, shared by every game): draw with ASCII characters or pixels (text stays
+  readable either way), pick the character set, choose the detail, and turn on a tube TV filter. Detail (Fine 2x,
+  Finest 3x) draws the engine's lit balls, boxes, blocks, rubble and light with smaller characters, while game text
+  and sprites keep their size. Pixel mode is pixel art four times finer than the characters, in the style of Pixel
+  Plays' Balote: shaded colour ramps, dithered lit surfaces, outlines, a sand grain, and the games' character art
+  smoothed with Scale2x.
+- **Game feel**, in every game: screen shake, a short freeze on heavy hits, a flash, and sparks, embers, smoke and
+  debris.
 
 ### Other pages
 
@@ -60,7 +64,9 @@ physics.
   A change to physics or rendering goes here, so every page stays in step.
 - `src/menu.js`: the pause menu, used by every game.
 - `src/arcade.js`: everything else the cartridges share: saved settings and high scores, sound (effects and looped
-  music), the touch gamepad, fitting the canvas to a fixed grid, resizing, and the frame loop.
+  music), the touch gamepad, fitting the canvas to a fixed grid, resizing, the frame loop, and shake, freeze and
+  flash (`createFeel`).
+- `src/fx.js`: the cartridges' particle effects (`createFx`): sparks, embers, smoke, debris and light.
 - `src/arcade/pad.css`: the styles every cartridge page shares (layout, gamepad, phone on its side); `build.sh` puts
   it into each page.
 - `src/game/`, `src/rooftop/`, `src/crater/`, `src/stack/`, `src/rover/`: each game's page markup (`head.html`) and rules

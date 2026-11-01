@@ -40,6 +40,7 @@ const FONT = {   // 5x5 block letters for the title, drawn two cells wide per do
 const store = prefs("craterDuel.v1.", "Crater Duel");
 const audio = createAudio({ label: "Crater Duel", store, sounds: CRATER_SFX, volume: 1 });
 const sfx = name => audio.play(name);
+const feel = createFeel(), vfx = createFx();
 
 const D = defaultDisplay(); D.room = 0.28; D.glow = 0.25; D.lampRGB = [1.0, 0.72, 0.45];   // the low sun is the lamp: warm light
 applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
@@ -269,7 +270,12 @@ function explode(x, y, W, owner){
     }
     ground.solid[i] = 0;
   }
-  if (!W.dirt) world.forces.push({ x, y, radius: R * 2.2, strength: world.h * 60, t: 0.08 });
+  if (W.dirt) vfx.puff(x, y, R, 6);
+  else {
+    world.forces.push({ x, y, radius: R * 2.2, strength: world.h * 60, t: 0.08 });
+    vfx.explode(x, y, R * 0.6); vfx.debris(x, y, R * 0.5);
+    feel.shake(W.r > 3 ? 6 : 3, 0.3); feel.freeze(W.r > 3 ? 0.08 : 0.04);
+  }
   tanks.forEach((T, k) => {   // full damage near the centre, none beyond 1.6 radii
     if (T.dead || !W.dmg) return;
     const d = Math.hypot(cx(T.x + 2) - x, (cy(T.y) + screen.ch / 2 - y)) / R;
@@ -279,12 +285,13 @@ function explode(x, y, W, owner){
 function hurt(k, amount, by){
   const T = tanks[k];
   if (T.dead || amount <= 0) return;
-  if (T.shield > 0){ const s = Math.min(T.shield, amount); T.shield -= s; amount -= s; T.flash = 0.3; sfx("clang"); if (!amount) return; }
+  if (T.shield > 0){ const s = Math.min(T.shield, amount); T.shield -= s; amount -= s; T.flash = 0.3; sfx("clang"); vfx.burst(cx(T.x + 2), cy(T.y), { n: 12, speed: screen.ch * 12, pal: PAL.ice, life: 0.4 }); if (!amount) return; }
   const dealt = Math.min(T.hp, amount);
   if (by !== undefined && by !== k){ tanks[by].money += dealt * PAY.damage; tanks[by].earned += dealt * PAY.damage; }   // paid for damage to others
   T.hp -= dealt; T.flash = 0.3;
-  if (T.hp > 0){ sfx("clang"); return; }
+  if (T.hp > 0){ sfx("clang"); vfx.burst(cx(T.x + 2), cy(T.y), { n: 10, speed: screen.ch * 10, life: 0.35 }); feel.shake(2, 0.15); return; }
   T.dead = true; sfx("destroyed");
+  vfx.explode(cx(T.x + 2), cy(T.y), screen.ch * 2.2); feel.shake(9, 0.5); feel.freeze(0.15); feel.flash(0.45);
   if (by !== undefined && by !== k){ tanks[by].money += PAY.kill; tanks[by].earned += PAY.kill; }
   const tx = cx(T.x + 2), ty = cy(T.y);
   for (let n = 0; n < 18; n++){
@@ -418,6 +425,7 @@ function draw(t){
   sprite(SUN, SUN_X, SUN_Y, [1.8, 0.85, 0.35], 1, 2);
   if (ground) drawGround();
   for (const b of world.bodies) if (!b.sensor) screen.sphere(b, sunLight, { stripe: false });
+  vfx.draw(screen);
   if (state === "title"){ drawTitle(); drawMenu(); screen.render(ctx); return; }
   if (state === "shop"){ drawShop(); drawMenu(); screen.render(ctx); return; }
   tanks.forEach((T, k) => { if (!T.dead) drawTank(T, k); });
@@ -548,7 +556,8 @@ cv.addEventListener("pointerdown", e => {
 /* ---------- loop ---------- */
 world.onSub = checkShells;
 function tick(dt, t){
-  if (screen && !menu.open){   // the open menu pauses everything
+  if (screen && !menu.open && (dt = feel.step(dt))){   // the open menu pauses everything, and so does a hit-stop
+    vfx.update(dt);
     if (state !== "title" && state !== "over") update(dt);
     for (const B of blasts) B.t -= dt;
     blasts = blasts.filter(B => B.t > 0);
@@ -558,7 +567,7 @@ function tick(dt, t){
     for (const b of world.bodies) if (b.life){ b.life -= dt; if (b.life < 1 && b.r0) b.r = b.r0 * Math.max(0.3, b.life); }
     world.bodies = world.bodies.filter(b => !(b.life <= 0));
   }
-  if (screen) draw(t);
+  if (screen){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); }
 }
 layout();
 ground = makeGround();   // hills behind the title screen

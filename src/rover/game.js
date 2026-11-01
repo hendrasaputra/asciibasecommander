@@ -56,6 +56,7 @@ function saveScore(){ best = score > 0 && scores.add({ score, point: letter(reac
 // effects and an original music loop, made by audio/rover-sfx.py
 const audio = createAudio({ label: "Rover Patrol", store, sounds: ROVER_SFX, music: { music: ROVER_MUSIC }, volume: 1, musicGain: 0.27 });
 const sfx = name => audio.play(name), playMusic = on => audio.music(on ? "music" : null);
+const feel = createFeel(), vfx = createFx();
 
 function layout(){
   const old = screen; screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old) return;
@@ -129,7 +130,7 @@ function ensureCourse(){
 function say(text, secs){ msg = text; msgT = secs; }
 function die(){
   if (state !== "play") return;
-  state = "dead"; stateT = 0; sfx("crash");
+  state = "dead"; stateT = 0; sfx("crash"); feel.shake(10, 0.5); feel.freeze(0.18); feel.flash(0.5);
   // the rover comes apart: chassis plates and the three wheels fly, then bounce on the ground
   const x0 = bxs(), top = Math.min(...wy) - 2;
   boom(cx(x0 + 4), cy(top + 1), 1.4);
@@ -145,6 +146,8 @@ function die(){
 function boom(px, py, size, rgb = FLASH, n = 0){   // a flash that lights the ground, a shove, and optional rubble
   flashes.push({ x: px, y: py, t: 0.5, size });
   world.forces.push({ x: px, y: py, radius: screen.ch * 6 * size, strength: world.h * 10, t: 0.06 });
+  vfx.explode(px, py, screen.ch * 1.2 * size); if (n) vfx.debris(px, py, screen.ch * size, PAL.dirt, n);
+  feel.shake(2 + size * 3, 0.25); if (size >= 1) feel.freeze(0.06);
   for (let k = 0; k < n; k++){
     const a = Math.random() * Math.PI, sp = 150 + Math.random() * 350;
     const b = world.add(px, py, screen.ch * (0.25 + Math.random() * 0.25), "rock", rgb, ROCK);
@@ -184,7 +187,7 @@ function update(dt){
     const land = Math.min(...WHEELS.map(w => groundAt(x + w) - 1));
     if (vy > 0 && by >= land){
       grounded = true; for (let i = 0; i < 3; i++) wy[i] = Math.max(by, groundAt(x + WHEELS[i]) - 1);
-      sfx("land");
+      sfx("land"); vfx.puff(cx(bxs() + 4), cy(land), screen.ch, 3);
       for (let k = 0; k < 3; k++){ const b = world.add(cx(bxs() + 1 + k * 3), cy(land), screen.ch * 0.2, "foam", [0.3, 0.28, 0.25]); b.vx = (Math.random() - 0.5) * 200; b.vy = -100 - Math.random() * 120; b.life = 0.6; }
     } else for (let i = 0; i < 3; i++) wy[i] = by;
   }
@@ -201,6 +204,7 @@ function update(dt){
   if ((fireT -= dt) <= 0 && fireHeld && fShots.length < 1 + (uShots.length < 3 ? 1 : 0)){
     fireT = 0.28; sfx("fire");
     const row1 = Math.round(Math.min(...wy)) - 1;
+    vfx.burst(cx(bxs() + RW), cy(row1), { n: 4, speed: screen.ch * 8, life: 0.15, dir: 0, spread: 1, g: 0 });
     if (!fShots.length) fShots.push({ x: x + RW, y: row1, d: 0 });
     if (uShots.length < 3) uShots.push({ x: x + 4, y: row1 - 2 });
   }
@@ -249,6 +253,7 @@ function scrollBy(cols){
     for (const b of world.bodies) b.x -= dx;   // the rubble stays where it fell on the ground
     world.bodies = world.bodies.filter(b => b.x > -b.r * 2);
     for (const f of flashes) f.x -= dx;
+    for (const p of vfx.parts) p.x -= dx;
     if (state !== "title") ensureCourse();   // the title drives along an empty course
   }
   computeGround();
@@ -403,6 +408,7 @@ function draw(t){
   screen.clear();
   drawLand(t);
   for (const b of world.bodies) screen.sphere(b, sun, { stripe: false });
+  vfx.draw(screen);
   if (state === "title"){ drawRover(t); drawTitle(); drawMenu(); screen.render(ctx); return; }
   drawCourse(t);
   if (state === "play") drawRover(t);
@@ -493,7 +499,8 @@ cv.addEventListener("pointerdown", e => {
 
 /* ---------- loop ---------- */
 function tick(dt, t){
-  if (screen && !menu.open){   // the open menu pauses everything
+  if (screen && !menu.open && (dt = feel.step(dt))){   // the open menu pauses everything, and so does a hit-stop
+    vfx.update(dt);
     if (state === "title"){   // the rover drives along an empty course behind the title
       scrollBy(10 * dt); for (let i = 0; i < 3; i++) wy[i] += (groundAt(bx() + WHEELS[i]) - 1 - wy[i]) * Math.min(1, dt * 30);
     } else update(dt);
@@ -503,7 +510,7 @@ function tick(dt, t){
     for (const b of world.bodies) if (b.life) b.life -= dt;
     world.bodies = world.bodies.filter(b => !(b.life < 0));
   }
-  if (screen) draw(t);
+  if (screen){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); }
 }
 layout();
 computeGround(); for (let i = 0; i < 3; i++) wy[i] = groundAt(bx() + WHEELS[i]) - 1;

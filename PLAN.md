@@ -77,6 +77,24 @@ Build each once, in `core.js`, so every page gets it.
 | Scrolling camera | Moon Patrol, longer Lunar Lander maps | Draw the world offset from the screen; physics unchanged. |
 | Compound bodies | Physics Tetris, Katamari (`katamascii`) | Several shapes rigidly joined into one body. Not planned yet. |
 
+## Look and feel: pixels, effects, impact
+
+Ideas taken from two MIT projects, rewritten here rather than copied: pixelfx (github.com/patch-gg/pixelfx, pixel
+effects) and Pixel Plays (github.com/amirmushichge/pixel-plays, an isometric pixel renderer). Their isometric
+camera does not suit our side-view 2D physics, so only the drawing ideas come over. The physics does not change:
+`World` never touches `Screen`. ASCII stays the default; pixels are the other choice in Settings.
+
+| Step | What | From |
+|---|---|---|
+| 1. Impact | Shared screen shake, hit-stop (the game freezes for a few hundredths of a second on a heavy hit) and a flash, in `arcade.js`; no shake when the system asks for reduced motion | pixelfx's acts: `stop`, `shake`, `amp` on each hit |
+| 2. Effects | `src/fx.js`: sparks, embers, smoke and debris particles stepped at 120 Hz with drag, each with a dark-to-bright palette; colour pixels plus an additive light pool, so hot things glow | pixelfx's colour and light buffers, palette ramps, "fast attack, slow release" |
+| 3. Pixel renderer | Pixel mode draws on a grid four times finer than the characters. The games' character-grid art is enlarged into it with Scale2x twice, so steps become slopes and corners round; a lone character takes its glyph's shape. Then Balote's look: each colour's five-shade ramp (darker shades towards violet, the brightest towards warm yellow), lit balls and boxes shaded from that ramp with a 4x4 Bayer dither and a one-pixel bevel, flat areas given Balote's sand grain (four close tones and pebbles), dark edges against the background and a warm rim over other shapes. Light on the background is dimmed and dithered out. Text stays characters | Pixel Plays' `engine.js` (`rampOf`, `sphere`, `shadeEdges`) and Balote's `groundColor` |
+| 4. Games | Each game calls shake, hit-stop and the effects on its impacts | |
+| 5. Native pixel art (next) | Each game draws its ground, buildings and sprites per pixel in pixel mode, instead of per character cell enlarged: terrain from its height, sprites as pixel art. Scale2x is as far as the shared renderer can go on its own | |
+
+Steps 1 to 4 are built. Not taken from Balote: its white paper background (our games are night and space scenes with
+bright text) and its long cast shadows (they need a ground plane; ours are side views).
+
 ## Each game: features and tuning still to do
 
 What each shipped game still lacks, and the tuning it needs. The "Done" list below says what each one has.
@@ -138,3 +156,4 @@ debris.
 - Torchlight Dungeons, phases 0 and 1 (since moved to its own project): a torch-lit dungeon crawl after
   Moria, with symmetric field of view, a light field with shadows, glowing monsters, lit rooms, and a speed scheduler.
 - Engine: box shapes, destructible terrain grid, sensors, open top; checks in `tests/physics.js`.
+- Look and feel, steps 1 to 4: shake, hit-stop and flash; particle effects; Balote-style pixel mode, in every game.

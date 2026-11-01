@@ -67,6 +67,7 @@ const tables = { classic: scores, columns: scoreTable(store, 5, "scores.columns"
 function saveScore(p){ const T = tables[mode]; if (T) best = p.score > 0 && T.add({ score: p.score, lines: p.lines, level: p.level }).rank === 0; }
 // effects and Korobeiniki, made by audio/stack-sfx.py
 const audio = createAudio({ label: "Stack Smash", store, sounds: STACK_SFX, music: { music: STACK_MUSIC }, volume: 1, musicGain: 0.32 });
+const feel = createFeel(), vfx = createFx();
 const sfx = name => audio.play(name), playMusic = on => audio.music(on ? "music" : null);
 
 /* ---------- the screen: one well, or two side by side ---------- */
@@ -165,7 +166,7 @@ function hardDrop(p){
   // the slam shoves any loose debris in the well away from where it lands
   const cells = shape(c.kind, c.rot), mx = cells.reduce((s, [x]) => s + x, 0) / 4, my = cells.reduce((s, [, yy]) => s + yy, 0) / 4;
   world.forces.push({ x: cx(p.bx + (c.x + mx) * CW + 1.5), y: cy(p.by + (c.y + my) * CH + 1), radius: screen.ch * 8, strength: world.h * 15, t: 0.06 });
-  sfx("drop"); lock(p, 0.5);
+  sfx("drop"); feel.shake(1.5, 0.12); lock(p, 0.5);
 }
 function holdPiece(p){
   if (!p.canHold) return;
@@ -216,6 +217,7 @@ function lock(p, flashK = 0.25){
   p.lines += n; if (mode !== "versus") p.level = startLevel + Math.floor(p.lines / 10);
   for (const y of p.clearing) for (let x = 0; x < p.bw; x++){ shatter(p, x, y, at(p, x, y), n === 4 ? 1.6 : 1); p.board[y * p.bw + x] = null; }
   sfx(n === 4 || ts ? "smash" : "clear");
+  if (n === 4 || ts){ feel.shake(6, 0.35); feel.freeze(0.09); feel.flash(0.3); } else feel.shake(1 + n, 0.2);
   if (p.level > before){ sfx("level"); say(p, "LEVEL " + p.level, 1.5); }
   rebuildTerrain();   // the cleared rows are open now, so the debris flies out of them
   p.mode = "clear"; p.modeT = 0;
@@ -339,6 +341,7 @@ function resolve(p){
   p.lines += n; const before = p.level; p.level = startLevel + Math.floor(p.lines / (mode === "columns" ? 45 : 40));
   for (const j of hit){ shatter(p, j % p.bw, Math.floor(j / p.bw), p.board[j], p.chain > 1 ? 1.4 : 1); p.board[j] = null; }
   sfx(p.chain > 1 ? "smash" : "clear");
+  feel.shake(Math.min(8, 1 + p.chain * 1.5), 0.25); if (p.chain > 1) feel.freeze(0.04 + p.chain * 0.02);
   if (p.chain > 1) say(p, p.chain + " CHAIN!", 1.2);
   if (p.level > before){ sfx("level"); say(p, "LEVEL " + p.level, 1.5); }
   rebuildTerrain(); p.mode = "clear"; p.modeT = 0;
@@ -352,6 +355,7 @@ function shatter(p, x, y, kind, k){
   const sp = (200 + Math.random() * 300) * k;
   b.vx = (x - (p.bw - 1) / 2) * 50 * k + (Math.random() - 0.5) * sp; b.vy = -sp - Math.random() * 200; b.w = (Math.random() - 0.5) * 24;
   b.flash = 1; b.life = 1.8 + Math.random() * 0.8; b.hw0 = b.hw; b.hh0 = b.hh; b.r0 = b.r;
+  vfx.burst(gx, gy, { n: 2, speed: screen.ch * 14 * k, life: 0.45 });
   return b;
 }
 function topOut(p){
@@ -510,10 +514,12 @@ function draw(t){
   if (state === "title"){
     drawTitle(t);
     for (const b of world.bodies) screen.sphere(b, lamp, { stripe: false });
+    vfx.draw(screen);
     drawMenu(); screen.render(ctx); return;
   }
   for (const p of players) drawPlayer(p);
   for (const b of world.bodies) screen.sphere(b, lamp, { stripe: false });
+  vfx.draw(screen);
   for (const p of players){
     drawPanels(p);
     const midX = p.bx + (p.bw * CW >> 1), mid = p.by + p.bh;
@@ -629,7 +635,8 @@ cv.addEventListener("pointerdown", e => {
 
 /* ---------- loop ---------- */
 function tick(dt, t){
-  if (screen && !menu.open){   // the open menu pauses everything
+  if (screen && !menu.open && (dt = feel.step(dt))){   // the open menu pauses everything, and so does a hit-stop
+    vfx.update(dt);
     if (state === "title") rain(dt); else update(dt);
     for (const f of world.forces) f.t -= dt;
     world.forces = world.forces.filter(f => f.t > 0);
@@ -640,7 +647,7 @@ function tick(dt, t){
     }
     world.bodies = world.bodies.filter(b => !(b.life < 0));
   }
-  if (screen) draw(t);
+  if (screen){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); }
 }
 layout(true);
 onResize(stage, () => layout());

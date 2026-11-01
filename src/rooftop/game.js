@@ -48,6 +48,7 @@ const store = prefs("rooftopRumble.v1.", "Rooftop Rumble");
 const VOL = { shoot: 0.45, bomb: 0.35, explode: 0.7, death: 1, hit: 0.5, level_start: 0.6, wave_clear: 0.8, game_over: 0.9 };
 const audio = createAudio({ label: "Rooftop Rumble", store, sounds: SFX_DATA, vol: VOL });
 const sfx = name => audio.play(name);
+const feel = createFeel(), vfx = createFx();
 
 function layout(){
   const old = screen; screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old) return;
@@ -171,7 +172,7 @@ function checkFruit(){
   if (b.x <= b.r + 1 || b.x >= world.w - b.r - 1) return endShot();   // off the side: a miss
   for (let i = 0; i < 2; i++) if (!apes[i].dead && (i !== b.thrower || b.age > 0.25) && inSprite(APE[apes[i].pose], apes[i].x, apes[i].y, gx, gy)) return apeHit(i, b.thrower);
   if (gy >= GH - 1 || (gy >= 0 && gx >= 0 && gx < GW && city.solid[gy * GW + gx])){ explode(b.x, b.y, 2.0); return endShot(); }
-  if (inSprite(MOON.calm, MOON_X, MOON_Y, gx, gy)){ if (moonShock <= 0) sfx("hit"); moonShock = 1.5; }   // the moon flinches; the throw carries on
+  if (inSprite(MOON.calm, MOON_X, MOON_Y, gx, gy)){ if (moonShock <= 0){ sfx("hit"); vfx.burst(b.x, b.y, { n: 10, speed: screen.ch * 10, life: 0.4 }); } moonShock = 1.5; }   // the moon flinches; the throw carries on
 }
 function removeFruit(){ if (fruit){ world.bodies.splice(world.bodies.indexOf(fruit), 1); fruit = null; } }
 function endShot(){
@@ -198,6 +199,7 @@ function explode(x, y, rRows){
     city.solid[i] = 0; city.kind[i] = 0;
   }
   world.forces.push({ x, y, radius: R * 2.2, strength: world.h * 60, t: 0.08 });
+  vfx.explode(x, y, R * 0.6); vfx.debris(x, y, R * 0.5, PAL.spark); feel.shake(4, 0.3); feel.freeze(0.05);
 }
 function apeHit(i, thrower){
   const A = apes[i], ax = cx(A.x + 3), ay = cy(A.y + 1);
@@ -207,7 +209,7 @@ function apeHit(i, thrower){
     const a = Math.random() * 6.283, sp = 150 + Math.random() * 400, b = world.add(ax, ay, screen.cw * (0.5 + Math.random() * 0.3), "debris", PLAYER_RGB[i].map(v => v * 0.6), DEBRIS);
     b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp - 200; b.flash = 1; b.life = 3 + Math.random() * 2; b.r0 = b.r;
   }
-  A.dead = true; sfx("death");
+  A.dead = true; sfx("death"); feel.shake(9, 0.5); feel.freeze(0.15); feel.flash(0.45);
   const winner = i === thrower ? 1 - i : thrower;
   score[winner]++;
   say(i === thrower ? "OOPS! " + name(i) + " HIT THEMSELF" : "DIRECT HIT!", 2.4);
@@ -297,6 +299,7 @@ function draw(t){
   sprite(moonShock > 0 ? MOON.shock : MOON.calm, MOON_X, MOON_Y, [1.5, 1.5, 1.2], 1, 2);
   if (city) drawCity(t);
   for (const b of world.bodies) if (!b.sensor) screen.sphere(b, moonLight, { stripe: false });
+  vfx.draw(screen);
   if (state === "title"){ drawTitle(); drawMenu(); screen.render(ctx); return; }
   apes.forEach((A, i) => { if (!A.dead) sprite(APE[A.pose], A.x, A.y, PLAYER_RGB[i], i === turn && state !== "hit" ? 1.15 : 0.8, 3); });
   if (state === "aim" || state === "cpu"){
@@ -415,7 +418,8 @@ cv.addEventListener("pointerdown", e => {
 /* ---------- loop ---------- */
 world.onSub = checkFruit;
 function tick(dt, t){
-  if (screen && !menu.open){   // the open menu pauses everything
+  if (screen && !menu.open && (dt = feel.step(dt))){   // the open menu pauses everything, and so does a hit-stop
+    vfx.update(dt);
     if (state !== "title" && state !== "over") update(dt);
     for (const B of blasts) B.t -= dt;
     blasts = blasts.filter(B => B.t > 0);
@@ -425,7 +429,7 @@ function tick(dt, t){
     for (const b of world.bodies) if (b.life){ b.life -= dt; if (b.life < 1 && b.r0) b.r = b.r0 * Math.max(0.3, b.life); }
     world.bodies = world.bodies.filter(b => !(b.life <= 0));
   }
-  if (screen) draw(t);
+  if (screen){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); }
 }
 layout();
 city = makeCity();   // a skyline behind the title screen

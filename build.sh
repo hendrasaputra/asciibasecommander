@@ -11,7 +11,7 @@ page(){
     echo "<script>"; cat "$@"; echo "</script>"; echo "</body></html>"; } > "$out"
 }
 # game OUT DIR SCRIPT...: a cartridge, built on the engine, the pause menu and the shared arcade code
-game(){ out=$1; dir=$2; shift 2; page "$out" "src/$dir/head.html" src/core.js src/menu.js src/arcade.js "$@"; }
+game(){ out=$1; dir=$2; shift 2; page "$out" "src/$dir/head.html" src/core.js src/menu.js src/arcade.js src/fx.js "$@"; }
 
 page ascii-physics.html src/engine/head.html src/core.js src/engine/ui.js
 { cat src/tutorial/head.html src/tutorial/body.html; echo "<script>"; cat src/tutorial/code.js src/core.js src/tutorial/util.js src/tutorial/demos.js; echo "</script>"; echo "</body></html>"; } > ascii-engine-tutorial.html

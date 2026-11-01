@@ -182,3 +182,30 @@ function startLoop(step){
   }
   requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
 }
+// Impact, after pixelfx's hits (stop, shake, amp): shake(px, s) jolts the picture, freeze(s) holds the game still
+// for a moment on a heavy hit, flash(v) brightens the whole screen briefly. Each frame: dt = feel.step(dt) (0 while
+// frozen), then feel.begin(ctx, cv) before drawing and feel.end(ctx, cv) after. No shake under reduced motion.
+function createFeel(){
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let amp = 0, left = 0, dur = 1, frozen = 0, glare = 0;
+  return {
+    shake(a, s = 0.25){ if (!still && a >= amp * left / dur){ amp = a; left = dur = s; } },
+    freeze(s){ frozen = Math.max(frozen, s); },
+    flash(v = 0.4){ glare = Math.max(glare, v); },
+    get frozen(){ return frozen > 0; },
+    step(dt){ left = Math.max(0, left - dt); glare *= Math.pow(0.001, dt); if (frozen > 0){ frozen -= dt; return 0; } return dt; },
+    begin(ctx, cv){
+      ctx.save();
+      if (!left) return;
+      const k = amp * left / dur;
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = SCREEN.bg; ctx.fillRect(0, 0, cv.width, cv.height); ctx.restore();
+      ctx.translate(Math.round((Math.random() * 2 - 1) * k), Math.round((Math.random() * 2 - 1) * k));
+    },
+    end(ctx, cv){
+      ctx.restore();
+      if (glare < 0.02) return;
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = "rgba(255,226,180," + Math.min(0.6, glare) + ")"; ctx.fillRect(0, 0, cv.width, cv.height); ctx.restore();
+    }
+  };
+}

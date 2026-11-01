@@ -67,7 +67,7 @@ button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
     <legend>Drawing</legend>
     <div class="choices" role="radiogroup">
       <label class="choice"><input type="radio" name="mode" value="ascii"><span>ASCII characters<small>shapes drawn with letters and symbols</small></span></label>
-      <label class="choice"><input type="radio" name="mode" value="pixels"><span>Pixels<small>solid colour blocks; text stays readable</small></span></label>
+      <label class="choice"><input type="radio" name="mode" value="pixels"><span>Pixels<small>shaded pixel art, four times finer; text stays readable</small></span></label>
     </div>
   </fieldset>
 
@@ -90,7 +90,7 @@ button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
       <label class="choice"><input type="radio" name="detail" value="2"><span>Fine<small>2 x 2 smaller per cell</small></span></label>
       <label class="choice"><input type="radio" name="detail" value="3"><span>Finest<small>3 x 3 smaller per cell</small></span></label>
     </div>
-    <p class="hint">Lit balls, boxes, blocks, rubble and light are drawn with smaller characters or pixels. Game text and sprites keep their size, so they stay readable. Higher detail uses more of your device's power.</p>
+    <p class="hint">Lit balls, boxes, blocks, rubble and light are drawn with smaller characters or pixels. Game text and sprites keep their size, so they stay readable. Higher detail uses more of your device's power. Pixel mode always draws at least four times finer.</p>
   </fieldset>
 
   <fieldset>
@@ -492,6 +492,112 @@ function shadowAt(fx, fy, B, L){
   return sh;
 }
 
+/* ---------- pixel-art pass (pixel mode, fine grid) ---------- */
+// After Pixel Plays' engine and its Balote court (MIT, github.com/amirmushichge/pixel-plays), rewritten for a side
+// view. A colour's ramp is five shades of itself (rampOf there): darker ones mixed towards violet, the brightest
+// towards warm yellow. Lit bodies pick a shade by light with a 4x4 Bayer dither (see pixShade). Flat colour from the
+// character grid keeps its own shade, and inside large areas gets Balote's sand grain: four close tones from smooth
+// noise, and one pixel in forty a bright pebble with a dark one beside it. Edges, from the layers as a depth buffer:
+// a shape darkens where it meets the background, gets a warm rim where it sits in front of another shape (above or
+// left), and darkens a little where another sits in front of it (below or right).
+const PIX_COOL = [46, 38, 84], PIX_WARM = [255, 232, 180], PIX_BG = 0.55;
+const RAMP_M = [0.4, 0.62, 0.84, 1, 1.1], RAMP_K = [0.34, 0.18, 0.05, 0, 0.22], GRAIN_TONE = [0.9, 0.94, 0.98, 1.02];
+function pixHash(x, y){ const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
+function pixNoise(x, y){
+  const ix = Math.floor(x), iy = Math.floor(y), e = t => t * t * (3 - 2 * t), fx = e(x - ix), fy = e(y - iy), l = (a, b, t) => a + (b - a) * t;
+  return l(l(pixHash(ix, iy), pixHash(ix + 1, iy), fx), l(pixHash(ix, iy + 1), pixHash(ix + 1, iy + 1), fx), fy);
+}
+// shade lv (0 to 4) of colour c (0 to 255 each), written into d at p
+function pixRamp(d, p, c0, c1, c2, lv){
+  const m = RAMP_M[lv], k = RAMP_K[lv], t = lv < 3 ? PIX_COOL : PIX_WARM;
+  d[p] = Math.min(255, c0 * m + (t[0] - c0 * m) * k); d[p + 1] = Math.min(255, c1 * m + (t[1] - c1 * m) * k); d[p + 2] = Math.min(255, c2 * m + (t[2] - c2 * m) * k);
+}
+// A lit body's shade at screen pixel (c, r) for light l (0 to 1), returned as the light that paint() turns back into
+// exactly that ramp colour, so the body can go through put() like everything else.
+const shadeCache = new WeakMap();
+function pixShade(alb, l, c, r, D){
+  let lin = shadeCache.get(alb);
+  if (!lin || lin.D !== D){
+    const base = alb.map(v => Math.min(255, Math.pow(Math.max(0, v), 1 / 2.2) * 255)), o = [0, 0, 0, 0];
+    lin = [0, 1, 2, 3, 4].map(lv => { pixRamp(o, 0, base[0], base[1], base[2], lv);
+      return o.slice(0, 3).map(v => -Math.log(1 - Math.min(0.995, Math.pow(v / 255, D.gamma))) / D.exposure); });
+    lin.D = D; shadeCache.set(alb, lin);
+  }
+  return lin[Math.max(0, Math.min(4, Math.floor(l * 4.4 + 0.2 + ((BAYER[(r & 3) * 4 + (c & 3)] + 0.5) / 16 - 0.5) * 0.7)))];
+}
+let pixLay = new Int8Array(0), grain = new Int8Array(0), grainCols = 0;
+function pixTint(d, p, r, g, b){ d[p] *= r; d[p + 1] *= g; d[p + 2] *= b; }
+function pixelArt(d, lay, over, cols, rows){
+  const n = cols * rows;
+  if (pixLay.length < n) pixLay = new Int8Array(n);
+  if (grain.length !== n || grainCols !== cols){   // the grain is fixed to the screen, so work it out once
+    grain = new Int8Array(n); grainCols = cols;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++){
+      const v = 0.5 + (pixNoise(c * 0.12, r * 0.12) - 0.5) * 0.7;
+      grain[r * cols + c] = pixHash(c, r) > 0.975 ? 4 : pixHash(c - 1, r - 1) > 0.975 ? 5
+        : Math.max(0, Math.min(3, Math.floor(v * 4 + ((BAYER[(r & 3) * 4 + (c & 3)] + 0.5) / 16 - 0.5) * 0.6)));
+    }
+  }
+  const L = pixLay;
+  for (let i = 0; i < n; i++){
+    const p = 4 * i, l = lay[i];
+    if (!d[p + 3] || l < 0){ L[i] = -1; continue; }
+    if (!l){   // light on the background (floor light, glows): solid pixels read far brighter than sparse characters,
+      // so it is dimmed, then cut to eighths with a dither that fades it out
+      const Y = (0.2126 * d[p] + 0.7152 * d[p + 1] + 0.0722 * d[p + 2]) / 255;
+      const lv = Math.min(8, Math.floor(Y * PIX_BG * 8 + (BAYER[((i / cols | 0) & 3) * 4 + (i % cols & 3)] + 0.5) / 16 - 0.5));
+      if (lv <= 0){ d[p + 3] = 0; L[i] = -1; continue; }
+      const q = lv / 8 / Math.max(Y, 0.02);
+      d[p] = Math.min(255, d[p] * q); d[p + 1] = Math.min(255, d[p + 1] * q); d[p + 2] = Math.min(255, d[p + 2] * q);
+    }
+    L[i] = l;
+  }
+  const at = j => j >= 0 && j < n ? L[j] : -1;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++){
+    const i = r * cols + c, l = L[i]; if (l <= 0) continue;
+    const p = 4 * i, up = r ? L[i - cols] : -1, lf = c ? L[i - 1] : -1, dn = r < rows - 1 ? L[i + cols] : -1, rt = c < cols - 1 ? L[i + 1] : -1;
+    if (up <= 0 || lf <= 0 || dn <= 0 || rt <= 0) pixTint(d, p, 0.68, 0.66, 0.76);
+    else if (up < l || lf < l){ d[p] += (PIX_WARM[0] - d[p]) * 0.3; d[p + 1] += (PIX_WARM[1] - d[p + 1]) * 0.3; d[p + 2] += (PIX_WARM[2] - d[p + 2]) * 0.22; }
+    else if (dn > l || rt > l) pixTint(d, p, 0.74, 0.72, 0.82);
+    else if (over[i] === FLAT && c > 1 && c < cols - 2 && at(i - 2) === l && at(i + 2) === l && at(i - 2 * cols) === l && at(i + 2 * cols) === l){
+      const g = grain[i];
+      if (g === 4) pixRamp(d, p, d[p], d[p + 1], d[p + 2], 4); else if (g === 5) pixRamp(d, p, d[p], d[p + 1], d[p + 2], 1);
+      else { const t = GRAIN_TONE[g]; pixTint(d, p, t, t, t); }
+    }
+  }
+}
+
+// A character cell laid into the fine grid in pixel mode: which of its k x k pixels the glyph's ink covers (at least
+// one, so a "." is a dot). Cached per character and size.
+// FLAT marks pixels that came from the character grid (flat colour); RAMPED, lit bodies already in ramp shades.
+const FLAT = 1, RAMPED = 2, maskCache = new Map();
+let sinkSrc = new Int32Array(0);
+// Scale2x (EPX), on cell numbers (-1 empty): each cell becomes 2x2, and a corner takes a neighbour's cell where the
+// two neighbours beside it match each other but not the other two. same(a, b) says whether two cells match.
+function scale2x(src, w, h, same){
+  const out = new Int32Array(4 * w * h), W = 2 * w;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+    const i = y * w + x, P = src[i], A = y ? src[i - w] : P, B = x < w - 1 ? src[i + 1] : P, C = x ? src[i - 1] : P, D = y < h - 1 ? src[i + w] : P;
+    let e1 = P, e2 = P, e3 = P, e4 = P;
+    if (same(C, A) && !same(C, D) && !same(A, B) && !same(P, A)) e1 = A;
+    if (same(A, B) && !same(A, C) && !same(B, D) && !same(P, B)) e2 = B;
+    if (same(D, C) && !same(D, B) && !same(C, A) && !same(P, C)) e3 = C;
+    if (same(B, D) && !same(B, A) && !same(D, C) && !same(P, D)) e4 = D;
+    const o = 2 * y * W + 2 * x; out[o] = e1; out[o + 1] = e2; out[o + W] = e3; out[o + W + 1] = e4;
+  }
+  return out;
+}
+function glyphMask(code, k, fontPx, cw, ch){
+  const key = code + "|" + k + "|" + fontPx; let m = maskCache.get(key); if (m) return m;
+  const W = Math.ceil(cw), H = Math.ceil(ch), cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const x = cv.getContext("2d", { willReadFrequently: true });
+  x.font = fontPx + "px " + MONO; x.textBaseline = "top"; x.fillStyle = "#fff"; x.fillText(String.fromCharCode(code), 0, (ch - fontPx) / 2);
+  const d = x.getImageData(0, 0, W, H).data, cov = new Float32Array(k * k);
+  for (let y = 0; y < H; y++) for (let X = 0; X < W; X++) cov[Math.min(k - 1, (y * k / ch) | 0) * k + Math.min(k - 1, (X * k / cw) | 0)] += d[(y * W + X) * 4 + 3];
+  m = new Uint8Array(k * k); let best = 0; const full = 255 * cw * ch / (k * k);
+  for (let i = 0; i < k * k; i++){ m[i] = cov[i] > full * 0.22 ? 1 : 0; if (cov[i] > cov[best]) best = i; }
+  m[best] = 1; maskCache.set(key, m); return m;
+}
 /* ---------- 24-bit character screen ---------- */
 // Layers decide who wins a cell: 0 floor light, 1 trails and rings, 2 balls, 3 lamp bulb, 4 text, 5 menus over text.
 // Text and menus (layer 4 and up) always stay characters, even when D.pixels draws everything else as solid pixels.
@@ -508,7 +614,8 @@ class Screen {
     const probe = this.glyphC.getContext("2d"); probe.font = this.fontPx + "px " + MONO;
     this.cw = probe.measureText("M").width; this.ch = Math.round(this.fontPx * 1.15);
     this.alloc(Math.max(1, Math.floor(W / this.cw)), Math.max(1, Math.floor(H / this.ch)), W, H, dpr);
-    const k = this.D.detail | 0;
+    // pixel mode always draws on a grid at least four times finer, so lit bodies look like pixel art, not blocks
+    const k = this.D.pixels ? Math.max(4, this.D.detail | 0) : this.D.detail | 0;
     this.fine = null; this.k = 1;
     if (k > 1 && !this.gscale){
       const F = new Screen(this.fontPx, this.D); F.gscale = 1 / k; F.cw = this.cw / k; F.ch = this.ch / k;
@@ -565,7 +672,18 @@ class Screen {
     const c0 = Math.max(0, Math.floor((b.x - b.r) / cw)), c1 = Math.min(cols - 1, Math.floor((b.x + b.r) / cw));
     const r0 = Math.max(0, Math.floor((b.y - b.r) / ch)), r1 = Math.min(rows - 1, Math.floor((b.y + b.r) / ch));
     const inv = 1 / b.r, ca = Math.cos(b.a), sa = Math.sin(b.a), fl = b.flash * 0.8;
+    const pix = this.D.pixels && this.gscale;
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+      if (pix){   // pixel mode: one ramp shade per pixel by light, as Balote's sphere(); a stripe is two shades darker
+        const dx = ((c + 0.5) * cw - b.x) * inv, dy = ((r + 0.5) * ch - b.y) * inv, d2 = dx * dx + dy * dy;
+        if (d2 >= 1) continue;
+        lightTerms(b, dx, dy, Math.sqrt(1 - d2), L, t);
+        let l = 0.1 + 0.8 * (dOn ? t.d : 0) + 0.6 * (sOn ? t.s : 0) + fl;
+        if (dy > 0.35) l = Math.max(l, 0.12 + dy * 0.24);   // warm light bouncing back from below
+        if (stripe && Math.abs(-dx * sa + dy * ca) < 0.13) l -= 0.45;
+        const v = pixShade(A, Math.min(1, l), c, r, this.D); this.put(r * cols + c, v[0], v[1], v[2], 2, RAMPED);
+        continue;
+      }
       let R = 0, G = 0, Bv = 0, cov = 0;
       for (const sy of SUB) for (const sx of SUB){
         const dx = ((c + sx) * cw - b.x) * inv, dy = ((r + sy) * ch - b.y) * inv, d2 = dx * dx + dy * dy;
@@ -585,12 +703,14 @@ class Screen {
     if (this.fine) return this.fine.box(b, L, opt);
     const { cols, rows, cw, ch } = this, t = this.t, A = b.alb, LC = this.light(L), room = this.D.room;
     const dOn = opt.diffuse !== false, sOn = opt.spec !== false, fl = b.flash * 0.8;
-    const c = Math.cos(b.a), s = Math.sin(b.a), bev = Math.min(b.hw, b.hh) * 0.35, top = Math.min(b.hw, b.hh) * 2;
+    const pix = this.D.pixels && this.gscale;
+    const c = Math.cos(b.a), s = Math.sin(b.a), top = Math.min(b.hw, b.hh) * 2;
+    const bev = pix ? Math.max(Math.min(b.hw, b.hh) * 0.35, Math.min(cw, ch) * 1.5) : Math.min(b.hw, b.hh) * 0.35;   // pixels: a bevel at least a pixel wide
     const c0 = Math.max(0, Math.floor((b.x - b.r) / cw)), c1 = Math.min(cols - 1, Math.floor((b.x + b.r) / cw));
     const r0 = Math.max(0, Math.floor((b.y - b.r) / ch)), r1 = Math.min(rows - 1, Math.floor((b.y + b.r) / ch));
     for (let r = r0; r <= r1; r++) for (let col = c0; col <= c1; col++){
       let R = 0, G = 0, Bv = 0, cov = 0;
-      for (const sy of SUB) for (const sx of SUB){
+      for (const sy of pix ? [0.5] : SUB) for (const sx of pix ? [0.5] : SUB){
         const wx = (col + sx) * cw, wy = (r + sy) * ch, dx = wx - b.x, dy = wy - b.y;
         const lx = dx * c + dy * s, ly = -dx * s + dy * c;
         if (Math.abs(lx) > b.hw || Math.abs(ly) > b.hh) continue;
@@ -599,6 +719,8 @@ class Screen {
         const k = 1 / Math.hypot(ex, ey, 1);
         lightAt(b.mat, wx, wy, top, (ex * c - ey * s) * k, (ex * s + ey * c) * k, k, L, t);
         const d = dOn ? t.d : 0, sp = sOn ? t.s : 0;
+        if (pix){   // the bevel lit from the upper left and shaded at the lower right, like a pixel-art block
+          const v = pixShade(A, Math.max(0, Math.min(1, 0.1 + 0.8 * d + 0.6 * sp + fl - 0.35 * ((ex * c - ey * s) + (ex * s + ey * c)))), col, r, this.D); this.put(r * cols + col, v[0], v[1], v[2], 2, RAMPED); continue; }
         R += A[0] * (AMB_RGB[0] * room + LC[0] * d) + LC[0] * sp + FLASH_RGB[0] * fl;
         G += A[1] * (AMB_RGB[1] * room + LC[1] * d) + LC[1] * sp + FLASH_RGB[1] * fl;
         Bv += A[2] * (AMB_RGB[2] * room + LC[2] * d) + LC[2] * sp + FLASH_RGB[2] * fl;
@@ -651,6 +773,23 @@ class Screen {
       this.put(r * cols + c, A[0] * v, A[1] * v, A[2] * v, 1, glyph);
     }
   }
+  // Effects (src/fx.js) draw with these, in the same units as the bodies: one dot of colour, and a soft pool of light
+  // that adds to whatever is behind it (it fades as 1 - d/R).
+  dot(x, y, rgb, layer = 1){
+    if (this.fine) return this.fine.dot(x, y, rgb, layer);
+    const c = Math.floor(x / this.cw), r = Math.floor(y / this.ch);
+    if (c >= 0 && r >= 0 && c < this.cols && r < this.rows) this.put(r * this.cols + c, rgb[0], rgb[1], rgb[2], layer);
+  }
+  glow(x, y, R, rgb){
+    if (this.fine) return this.fine.glow(x, y, R, rgb);
+    const { cols, rows, cw, ch } = this;
+    const c0 = Math.max(0, Math.floor((x - R) / cw)), c1 = Math.min(cols - 1, Math.floor((x + R) / cw));
+    const r0 = Math.max(0, Math.floor((y - R) / ch)), r1 = Math.min(rows - 1, Math.floor((y + R) / ch));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++){
+      const d = Math.hypot((c + 0.5) * cw - x, (r + 0.5) * ch - y); if (d >= R) continue;
+      const v = 1 - d / R; this.add(r * cols + c, rgb[0] * v, rgb[1] * v, rgb[2] * v);
+    }
+  }
   ring(x, y, radius, rgb){
     if (this.fine) return this.fine.ring(x, y, radius, rgb);
     const { cols, rows, cw, ch } = this, steps = Math.ceil(radius * 0.5);
@@ -699,6 +838,7 @@ class Screen {
   // part of a cell, the rest of that cell is filled from this one, so a ball in front of a wall leaves no hole.
   mergeFine(){
     const F = this.fine, k = this.k, { cols, rows, lay, lum, rad, over } = this;
+    if (this.D.pixels) this.sinkPixels();
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++){
       const i = r * cols + c;
       let top = -1, bright = 0;
@@ -714,6 +854,31 @@ class Screen {
       }
       lay[i] = -1;
     }
+  }
+  // Pixel mode: every cell below the text goes into the fine grid, so the pixel-art pass sees one picture. The cell
+  // picture is enlarged with Scale2x twice (4x, the fine grid's size), which turns stair-steps into diagonals and
+  // rounds corners, comparing cells by layer and brightness. A lone cell takes its character's shape instead, so a "." is a dot.
+  sinkPixels(){
+    const F = this.fine, k = this.k, { cols, rows, lay, lum, rad, over } = this, n = cols * rows;
+    if (sinkSrc.length < n) sinkSrc = new Int32Array(n);
+    for (let i = 0; i < n; i++) sinkSrc[i] = lay[i] >= 0 && lay[i] < TEXT_LAYER ? i : -1;
+    const same = (a, b) => a < 0 ? b < 0 : b >= 0 && lay[a] === lay[b] && Math.abs(lum[a] - lum[b]) <= 0.08 * Math.max(lum[a], lum[b]);   // near colours match
+    let up = sinkSrc, w = cols, h = rows;
+    if (k === 4){ up = scale2x(up, w, h, same); w *= 2; h *= 2; up = scale2x(up, w, h, same); w *= 2; h *= 2; }
+    const filled = (c, r) => c >= 0 && r >= 0 && c < cols && r < rows && sinkSrc[r * cols + c] >= 0;
+    for (let Y = 0; Y < rows * k; Y++) for (let X = 0; X < cols * k; X++){
+      const i = k === 4 ? up[Y * w + X] : sinkSrc[(Y / k | 0) * cols + (X / k | 0)];
+      if (i < 0) continue;
+      const c = i % cols, r = i / cols | 0;
+      if (over[i] && !filled(c - 1, r) && !filled(c + 1, r) && !filled(c, r - 1) && !filled(c, r + 1)){
+        const m = glyphMask(over[i], k, this.fontPx, this.cw, this.ch);
+        if (X < c * k || X >= c * k + k || Y < r * k || Y >= r * k + k || !m[(Y - r * k) * k + X - c * k]) continue;
+      }
+      const j = Y * F.cols + X;
+      if (F.lay[j] > lay[i] || (F.lay[j] === lay[i] && F.lum[j] >= lum[i])) continue;
+      F.rad[3 * j] = rad[3 * i]; F.rad[3 * j + 1] = rad[3 * i + 1]; F.rad[3 * j + 2] = rad[3 * i + 2]; F.lum[j] = lum[i]; F.lay[j] = lay[i]; F.over[j] = FLAT;
+    }
+    for (let i = 0; i < n; i++) if (sinkSrc[i] >= 0) lay[i] = -1;
   }
   // Tone-maps every cell and draws its character (or pixel) into this screen's own canvases; render() composes them.
   paint(){
@@ -751,7 +916,7 @@ class Screen {
       cd[p] = dr * 255; cd[p + 1] = dg * 255; cd[p + 2] = db * 255; cd[p + 3] = 255;
     }
     this.colX.putImageData(this.colImg, 0, 0); this.glowX.putImageData(this.glowImg, 0, 0);
-    if (pix) this.pixX.putImageData(this.pixImg, 0, 0);
+    if (pix){ if (this.gscale) pixelArt(pd, lay, over, cols, rows); this.pixX.putImageData(this.pixImg, 0, 0); }
     // 3. draw every character in white on its own layer... (the fine grid draws full-size characters, scaled down,
     // so their spacing matches its cells exactly)
     const g = this.gx, dpr = this.dpr, s = this.gscale || 1, gcw = cw / s, gch = ch / s, yOff = (gch - this.fontPx) / 2;
@@ -788,7 +953,7 @@ function syncForm(){
   for (const r of document.querySelectorAll("input[name=ramp]")){ r.checked = r.value === s.ramp; r.disabled = s.mode === "pixels"; }
   $("custom").hidden = s.ramp !== "custom"; $("custom").value = s.custom; $("custom").disabled = s.mode === "pixels";
   $("charsetHint").textContent = s.mode === "pixels"
-    ? "Not used in pixel mode: lit objects become solid pixels. Switch to ASCII characters to choose a set."
+    ? "Not used in pixel mode: everything but the text is drawn as shaded pixels. Switch to ASCII characters to choose a set."
     : "Used for shading lit objects such as debris, rubble and the physics balls. Sprites and text keep their own characters.";
   $("crt").checked = !!s.crt;
   for (const r of document.querySelectorAll("input[name=detail]")) r.checked = +r.value === (s.detail || 1);
