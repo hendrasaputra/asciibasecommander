@@ -86,8 +86,7 @@ function createPixels(W, H, cols, rows, unit){
       const r = stage.getBoundingClientRect(); if (!r.width) return false;
       const dpr = Math.min(window.devicePixelRatio || 1, 3), fit = Math.min(r.width / W, r.height / H);
       scale = Math.floor(fit * dpr) / dpr;
-      if (scale * W < r.width * 0.75 && scale * H < r.height * 0.75) scale = fit;   // whole pixels would waste too much
-      if (scale <= 0) scale = fit;
+      if (scale < fit * 0.9) scale = fit;   // whole pixels would waste too much of the stage (and shrink the text)
       sizeCanvas(cv, ctx, W * scale, H * scale, dpr, 1);
       return true;
     },
