@@ -54,7 +54,8 @@ header p a{color:var(--ink)}
 .slot{width:200px;align-self:stretch;display:grid;place-content:center;text-align:center;padding:16px;min-height:300px;
   border:2px dashed var(--muted);border-radius:0 0 12px 12px;color:var(--muted);font:600 12px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.06em}
 footer{margin-top:40px;color:var(--muted);font-size:13px;text-align:center}
-footer a{color:inherit}
+footer a{color:inherit;display:inline-block;padding:12px 6px}   /* tall enough to tap */
+header p a{display:inline-block;padding:12px 0}
 @media (prefers-reduced-motion: reduce){ .cart,.cart.inserting{transition:none} .cart:hover{transform:none} }
 </style>
 </head>

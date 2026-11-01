@@ -465,14 +465,14 @@ function drawTitle(t){
     });
   });
   const blink = (performance.now() / 500 | 0) % 2;
-  center(20, pad.touch ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
+  center(20, INPUT.touch ? "TAP TO START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
   center(22, "GAME " + MODE_NAME[nextMode] + (nextMode === "versus" ? " AGAINST " + FOE_NAME[nextFoe] : "") + "   LEVEL " + nextStartLevel + "   (MENU TO CHANGE)", DIM);
   const tips = { classic: "CLEAR LINES. T-SPINS, BACK-TO-BACK AND COMBOS SCORE MORE.", versus: "CLEARS SEND GARBAGE TO THE OTHER WELL. LAST ONE STANDING WINS.",
     columns: "THREE JEWELS IN A ROW, ANY DIRECTION, CLEAR. CHAINS SCORE MORE.", puyo: "FOUR BLOBS OF ONE COLOUR TOUCHING CLEAR. CHAINS SCORE MORE." };
   center(23, tips[nextMode], DIM);
-  if (pad.touch){
-    center(26, "D-PAD MOVE   DOWN SOFT DROP   UP DROP", DIM);
-    center(27, "A TURN   B TURN BACK   START HOLD   SELECT MENU", DIM);
+  if (INPUT.touch){
+    center(26, "SLIDE TO MOVE   TAP TO TURN   DRAG DOWN TO SOFT DROP", DIM);
+    center(27, "FLICK DOWN TO DROP   SWIPE UP TO HOLD", DIM);
   } else if (nextMode === "versus" && nextFoe === "player"){
     center(26, "PLAYER 1: A/D MOVE  W TURN  Q TURN BACK  S SOFT DROP  SPACE DROP  E HOLD", DIM);
     center(27, "PLAYER 2: ARROWS MOVE  UP TURN  / TURN BACK  DOWN SOFT DROP  ENTER DROP  . HOLD", DIM);
@@ -531,10 +531,9 @@ function draw(t){
   if (state === "over" && stateT > 1){
     if (mode === "versus"){ center(midY + 4, "  " + (winner === 0 ? "PLAYER 1" : foe === "player" ? "PLAYER 2" : "COMPUTER") + " WINS  ", ACCENT); }
     else { center(midY - 2, "  GAME OVER  ", WHITE); center(midY, `  ${players[0].score} POINTS  `, ACCENT); if (best) center(midY + 2, "  NEW HIGH SCORE!  ", ACCENT); }
-    center(midY + 6, pad.touch ? "  PRESS START  " : "  PRESS SPACE  ", DIM);
+    center(midY + 6, INPUT.touch ? "  TAP TO GO ON  " : "  PRESS SPACE  ", DIM);
   }
-  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
-  text(GW - 1 - hint.length, GH - 1, hint, DIM);
+  if (!INPUT.touch) text(GW - 11, GH - 1, " ESC MENU ", DIM);
   drawMenu();
   screen.render(ctx);
 }
@@ -585,7 +584,6 @@ const menu = createMenu(() => [
   { label: "OPPONENT", value: () => FOE_NAME[nextFoe], change: d => { nextFoe = FOES[(FOES.indexOf(nextFoe) + (d || 1) + 4) % 4]; } },
   { label: "STARTING LEVEL", value: () => String(nextStartLevel), change: d => { nextStartLevel = (nextStartLevel + d + 14) % 15 + 1; } },
   { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
-  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
@@ -618,20 +616,31 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { const own = players.length && keyOwner(e); if (own) own[0].keys[own[1]] = false; });
 addEventListener("blur", () => { for (const p of players) for (const k in p.keys) p.keys[k] = false; });
 
-const pad = createPad({ store, menu: () => menu.open && menu, onAny: () => audio.unlock(),
-  onDir: d => { const p = players[0]; if (!p) return; if (d === "up") doMove(p, "drop"); for (const k in p.keys) p.keys[k] = k === d; },
-  onPress: id => {
-    if (id === "select") return menu.show();
-    if (state !== "play"){ if (id === "a" || id === "start") action(); return; }
+// Touch and mouse, for player 1: slide to move the piece a column for each board cell the finger travels, tap to
+// turn it, drag down to drop it faster, flick down to drop it at once, and swipe up to hold it. Taps also start a
+// game, go on from game over, and pick rows in the menu.
+createTouch(cv, {
+  down: t => { audio.unlock(); t.cols = 0; },
+  move: t => {
+    const p = players[0]; if (menu.open || state !== "play" || !p || !live(p)) return;
+    const dx = (t.x - t.x0) * GW / CW, dy = (t.y - t.y0) * GH / CH;
+    if (dy > 1.2 && dy > Math.abs(dx)){ p.keys.down = true; return; }   // a downward drag: soft drop
+    const want = Math.trunc(dx);
+    while (t.cols !== want){ const d = Math.sign(want - t.cols); if (!(rule() === "blocks" ? tryMove(p, d, 0) : matchMove(p, d, 0))) break; t.cols += d; sfx("move"); }
+  },
+  up: t => {
     const p = players[0];
-    if (id === "a") doMove(p, "turn"); else if (id === "b") doMove(p, "back"); else doMove(p, "hold");
-  } });
-cv.addEventListener("pointerdown", e => {
-  audio.unlock();
-  if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
-  if (state === "title" || state === "over") action();
-  else if (!pad.touch) menu.show();   // a mouse click during play opens the menu
+    if (p) p.keys.down = false;
+    if (menu.open){ if (t.tap) menu.tap(Math.floor(t.x * GW), Math.floor(t.y * GH)); return; }
+    if (state !== "play"){ if (t.tap) action(); return; }
+    if (!p) return;
+    const dx = (t.x - t.x0) * GW / CW, dy = (t.y - t.y0) * GH / CH, quick = performance.now() - t.t0 < 300;
+    if (t.tap) doMove(p, "turn");
+    else if (quick && dy > 2 && dy > Math.abs(dx) * 1.5) doMove(p, "drop");    // a flick down
+    else if (dy < -2 && -dy > Math.abs(dx) * 1.5) doMove(p, "hold");           // a swipe up
+  }
 });
+headerButtons(menu, audio);
 
 /* ---------- loop ---------- */
 function tick(dt, t){

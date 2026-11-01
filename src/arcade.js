@@ -1,4 +1,4 @@
-/* ---------- shared by the game pages: saved settings, sound, the touch gamepad, fitting the canvas, the loop ---------- */
+/* ---------- shared by the game pages: saved settings, sound, touch, fitting the canvas, the loop ---------- */
 // Built into every cartridge after core.js and menu.js. Each game keeps only its own rules and drawing.
 
 // Saved settings for one game, under "<prefix><key>" in localStorage. Values are strings; *JSON for anything else.
@@ -21,9 +21,13 @@ function scoreTable(store, n = 5, key = "scores", better = (a, b) => b.score - a
 // recording so MP3 padding never lands inside the loop. vol: per-sound gain (volume for the rest). minGap: seconds within which a
 // sound plays only once (a volley from many enemies still makes one sound). The mute choice is saved.
 function createAudio({ label, store, sounds, music = {}, vol = {}, volume = 0.6, sfxGain = 0.9, musicGain = 0.5, minGap = 0 }){
-  let ctx = null, master = null, sfxBus = null, musicBus = null, unlocked = false, waiting = null, song = null, songNode = null;
+  let ctx = null, master = null, sfxBus = null, musicBus = null, unlocked = false, waiting = null, song = null, songNode = null, paused = false;
   let muted = store.get("muted") === "1";
   const buffers = {}, lastPlayed = {};
+  // A touch's pointerdown does not count as a gesture that allows sound, so the context made then starts suspended;
+  // the end of the touch (or a key) wakes it.
+  const wake = () => { if (ctx && ctx.state === "suspended" && !paused) ctx.resume(); };
+  for (const ev of ["pointerup", "touchend", "keydown"]) addEventListener(ev, wake, true);
   function startSong(){
     const b = song && buffers["music:" + song]; if (!ctx || !b || songNode) return;
     const M = music[song], src = ctx.createBufferSource(), g = ctx.createGain();
@@ -71,59 +75,51 @@ function createAudio({ label, store, sounds, music = {}, vol = {}, volume = 0.6,
       if (master) master.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.02);
       store.set("muted", muted ? "1" : "0");
     },
-    pause(){ if (ctx) ctx.suspend(); }, resume(){ if (ctx) ctx.resume(); }
+    pause(){ paused = true; if (ctx) ctx.suspend(); }, resume(){ paused = false; if (ctx) ctx.resume(); }
   };
   return A;
 }
 
-// The handheld-style touch gamepad (#gamepad, #dpad and [data-pad] buttons in the page), or the keyboard.
-// The D-pad is one surface: the thumb's angle from its centre picks the direction, so sliding across switches.
-// axis: "x" (left and right only), 4, or 8 directions. While menu() returns an open menu, the D-pad moves through
-// it and A chooses (any other button closes it). Otherwise onDir(dir) hears every change ("" when let go),
-// onPress(id) and onRelease(id) the buttons, and onAny() any touch at all (games unlock their sound with it).
-function createPad({ store, axis = 4, menu = () => null, onDir = () => {}, onPress = () => {}, onRelease = () => {}, onAny = () => {} }){
-  const pad = document.getElementById("gamepad"), dpad = document.getElementById("dpad");
-  let touch = matchMedia("(pointer: coarse)").matches;   // default follows the device; the menu's Controls row overrides it
-  const saved = store.get("controls"); if (saved) touch = saved === "touch";
-  const buzz = () => navigator.vibrate && navigator.vibrate(8);   // a tick of feedback on phones that support it
-  const P = {
-    get touch(){ return touch; },
-    set(t, save){ touch = t; document.body.classList.toggle("touch", t); pad.hidden = !t; if (save) store.set("controls", t ? "touch" : "keyboard"); },
-    toggle(){ P.set(!touch, true); }
-  };
-  P.set(touch, false);
-  const NAMES8 = ["right", "downright", "down", "downleft", "left", "upleft", "up", "upright"];
-  function dirAt(e, mode){
-    const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-    if (mode === "x") return Math.abs(dx) < r.width * 0.1 ? "" : dx < 0 ? "left" : "right";
-    if (Math.hypot(dx, dy) < r.width * 0.1) return "";
-    if (mode === 8) return NAMES8[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
-    return Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-  }
-  let dir = "";
-  function at(e){
-    const m = menu(), d = dirAt(e, m ? 4 : axis);
-    if (d === dir) return;
-    dir = d; dpad.dataset.dir = d.includes("left") ? "left" : d.includes("right") ? "right" : d;
-    if (d) buzz();
-    if (m){ if (d) d === "up" ? m.move(-1) : d === "down" ? m.move(1) : m.change(d === "left" ? -1 : 1); return; }   // in a menu: one step per push
-    onDir(d);
-  }
-  dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); onAny(); at(e); });
-  dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) at(e); });
-  for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dir = ""; dpad.dataset.dir = ""; if (!menu()) onDir(""); });
-  document.querySelectorAll("[data-pad]").forEach(b => {
-    const id = b.dataset.pad;
-    b.addEventListener("pointerdown", e => {
-      e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz(); onAny();
-      const m = menu();
-      if (m){ id === "a" ? m.choose() : m.hide(); return; }
-      onPress(id);
-    });
-    const up = () => { b.classList.remove("on"); onRelease(id); };
-    b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+// Touch, the mouse and the keyboard all work at once. INPUT.touch says which was used last (a touch-first device
+// starts with touch), so a game shows the hints for it; body.touch hides the keyboard hints in the header.
+const INPUT = { touch: false };
+function setTouch(t){ INPUT.touch = t; document.body.classList.toggle("touch", t); }
+setTouch(matchMedia("(pointer: coarse)").matches);
+addEventListener("pointerdown", e => { if (e.pointerType === "touch") setTouch(true); }, true);
+addEventListener("keydown", () => setTouch(false), true);
+// The game screen is the controller, as in Balote: each finger (or the mouse) is followed on its own, so two thumbs
+// work together. down(p), move(p) and up(p) get { x0, y0, x, y } as fractions of the canvas (0 to 1 across and
+// down), moved: the furthest it strayed from where it went down, in CSS pixels, and on up, tap: a quick touch that
+// barely moved. It listens on the whole stage, so the empty space around the picture works too (fractions there
+// fall outside 0 to 1).
+function createTouch(cv, { down = () => {}, move = () => {}, up = () => {} }){
+  const el = cv.parentElement, live = new Map(), at = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, r]; };
+  el.addEventListener("pointerdown", e => {
+    e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch (err){}
+    const [x, y] = at(e), p = { x0: x, y0: y, x, y, t0: performance.now(), moved: 0 };
+    live.set(e.pointerId, p); down(p);
   });
-  return P;
+  el.addEventListener("pointermove", e => {
+    const p = live.get(e.pointerId); if (!p) return;
+    const [x, y, r] = at(e); p.x = x; p.y = y;
+    p.moved = Math.max(p.moved, Math.hypot((x - p.x0) * r.width, (y - p.y0) * r.height)); move(p);
+  });
+  const end = cancel => e => {
+    const p = live.get(e.pointerId); if (!p) return;
+    live.delete(e.pointerId); p.tap = !cancel && p.moved < 12 && performance.now() - p.t0 < 500; up(p);
+  };
+  el.addEventListener("pointerup", end(false)); el.addEventListener("pointercancel", end(true));
+  return live;
+}
+// The header's Menu and Sound buttons (#menuBtn, #soundBtn). The sound label follows every mute, from anywhere.
+function headerButtons(menu, audio){
+  const m = document.getElementById("menuBtn"), s = document.getElementById("soundBtn"), toggle = audio.toggleMute;
+  const label = () => { s.textContent = audio.muted ? "Sound off" : "Sound on"; s.setAttribute("aria-pressed", String(!audio.muted)); };
+  audio.toggleMute = () => { toggle(); label(); };
+  // blur: a focused button would take the Space key that the games use
+  m.addEventListener("click", () => { m.blur(); audio.unlock(); menu.toggle(); });
+  s.addEventListener("click", () => { s.blur(); audio.toggleMute(); });
+  label();
 }
 
 // The short names every game draws with, on whichever screen get() returns (it changes when the page is re-fitted).

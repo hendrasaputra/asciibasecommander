@@ -16,7 +16,7 @@ game(){ out=$1; dir=$2; shift 2; page "$out" "src/$dir/head.html" src/core.js sr
 page ascii-physics.html src/engine/head.html src/core.js src/engine/ui.js
 { cat src/tutorial/head.html src/tutorial/body.html; echo "<script>"; cat src/tutorial/code.js src/core.js src/tutorial/util.js src/tutorial/demos.js; echo "</script>"; echo "</body></html>"; } > ascii-engine-tutorial.html
 game base-commander.html game src/audio/sfx-data.js src/audio/music-data.js src/game/game.js
-game rooftop-rumble.html rooftop src/audio/sfx-data.js src/rooftop/game.js
+game rooftop-rumble.html rooftop src/audio/sfx-data.js src/pixel.js src/rooftop/game.js
 game crater-duel.html crater src/audio/crater-sfx-data.js src/pixel.js src/crater/game.js
 game stack-smash.html stack src/audio/stack-sfx-data.js src/stack/game.js
 game rover-patrol.html rover src/audio/rover-sfx-data.js src/pixel.js src/rover/game.js

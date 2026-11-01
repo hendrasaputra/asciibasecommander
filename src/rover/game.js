@@ -4,8 +4,10 @@ const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stag
 // A side-scroller after Moon Patrol. Rules run on a grid of world columns and rows: the course scrolls left
 // under the rover, one column at a time. The ground is an engine terrain grid rebuilt every frame, so rubble,
 // dust and the wreck of the rover bounce and roll on it. Everything is drawn as pixel art (src/pixel.js), four
-// pixels to a column and eight to a row, and scrolls smoothly between columns.
+// pixels to a column and eight to a row, and scrolls smoothly between columns. Text and the menu use their own,
+// coarser grid (TGW x TGH), so the letters are big enough to read on a phone.
 const GW = 120, GH = 44, GBASE = GH - 7;          // GBASE: ground row on flat ground
+const TGW = 72, TGH = 28;
 const CW = 8, CH = 16, PU = 2, PX = CW / PU, PY = CH / PU;   // world units per column and row; per pixel; pixels per column and row
 const SEC = 160, POST = 40;                        // course columns per checkpoint; post position in a section
 const CRUISE = 14, VMIN = 8, VMAX = 24;            // speed in columns per second
@@ -34,7 +36,7 @@ const FONT = {   // 5x5 block letters for the title, drawn two cells wide per do
 applyArcadeSettings(defaultDisplay());   // the tube TV filter from the shared Settings page
 const world = new World(); world.openTop = true;
 world.w = GW * CW; world.h = GH * CH; world.unit = CW; world.drag = 2e-4 * (600 / world.h) ** 2; world.g = { x: 0, y: world.h * 1.2 };
-const pix = createPixels(GW * PX, GH * PY, GW, GH, PU);
+const pix = createPixels(GW * PX, GH * PY, TGW, TGH, PU);
 let ready = false, state = "title", stateT = 0;
 const stars = Array.from({ length: 140 }, () => ({ x: Math.random() * GW * PX, y: 16 + Math.random() * 180, ph: Math.random() * 6.283, b: Math.random() }));
 let scroll = 0, sc = 0, speed = CRUISE, features = [], genTo = 0, seed = 1, gr = new Int16Array(GW + 16);
@@ -510,7 +512,7 @@ function drawCourse(t){
     for (let y = base - 30; y < base; y++) pix.px(x, y, F[y === base - 30 ? 4 : 3], 3);
     pix.rect(x + 1, base - 30, 9, 6, pix.ramp(next ? C.hiAccent : C.post)[next ? 3 : 1], 3);
     pix.px(x, base - 31, next && (t / 300 | 0) % 2 ? C.amber : F[2], 3);
-    pix.text(Math.round(postX(k) - scroll) - 1, Math.floor((base - 40) / PY), "[" + letter(k) + "]", next ? ACCENT : DIM);
+    pix.text(Math.round((x + 5) / pix.W * TGW) - 1, Math.floor((base - 40) / pix.H * TGH), "[" + letter(k) + "]", next ? ACCENT : DIM);
   }
 }
 function drawShots(t){
@@ -531,7 +533,7 @@ function drawWorld(){
   pix.ox = 0;
 }
 function drawTitle(){
-  [["ROVER", 7], ["PATROL", 14]].forEach(([word, y0], wi) => {
+  [["ROVER", 5], ["PATROL", 11]].forEach(([word, y0], wi) => {
     const x0 = Math.floor((GW - word.length * 12 + 2) / 2), R = pix.ramp(wi ? C.gold : C.saucer);
     [...word].forEach((ch, li) => FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#"){
       const X = (x0 + li * 12 + dx * 2) * PX, Y = (y0 + dy) * PY, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
@@ -542,14 +544,16 @@ function drawTitle(){
     } }));
   });
   const blink = (performance.now() / 500 | 0) % 2;
-  pix.center(21, pad.touch ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
-  pix.center(23, pad.touch ? "D-PAD LEFT/RIGHT SPEED   A OR UP JUMP (HOLD: FURTHER)   B FIRE   SELECT MENU" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP (HOLD: FURTHER)   X FIRE   ESC MENU", DIM);
-  pix.center(24, "JUMP CRATERS AND MINES. SHOOT ROCKS AHEAD AND UFOS ABOVE.", DIM);
-  pix.center(25, "LATER: TANKS (JUMP THEIR SHELLS), ROLLING BOULDERS, AND FIGHTERS THAT DIVE (CHANGE SPEED TO DODGE).", DIM);
-  if (furthest) pix.center(19, "START AT POINT " + letter(Math.min(startAt, furthest)) + "  (MENU: START AT, UP TO " + letter(furthest) + ")", DIM);
-  if (scores.list.length){
-    pix.center(27, "HIGH SCORES", ACCENT);
-    scores.list.forEach((s, i) => pix.center(28 + i, `${i + 1}. ${String(s.score).padStart(7)}   POINT ${s.point.padEnd(2)}`, i ? DIM : WHITE));
+  pix.center(12, INPUT.touch ? "TAP TO START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
+  pix.center(14, INPUT.touch ? "RIGHT SIDE: JUMP (HOLD TO JUMP FURTHER)" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP (HOLD: FURTHER)", DIM);
+  pix.center(15, INPUT.touch ? "LEFT SIDE: FIRE, AND SLIDE TO CHANGE SPEED" : "X FIRE   ESC MENU", DIM);
+  pix.center(16, "JUMP CRATERS AND MINES. SHOOT ROCKS AHEAD AND UFOS ABOVE.", DIM);
+  pix.center(17, "LATER: TANKS (JUMP THEIR SHELLS) AND ROLLING BOULDERS,", DIM);
+  pix.center(18, "AND FIGHTERS THAT DIVE (CHANGE SPEED TO DODGE).", DIM);
+  if (furthest) pix.center(11, "START AT POINT " + letter(Math.min(startAt, furthest)) + "  (MENU: START AT, UP TO " + letter(furthest) + ")", DIM);
+  if (scores.list.length){   // the best three; more would run onto the ground
+    pix.center(19, "HIGH SCORES", ACCENT);
+    scores.list.slice(0, 3).forEach((s, i) => pix.center(20 + i, `${i + 1}. ${String(s.score).padStart(7)}   POINT ${s.point.padEnd(2)}`, i ? DIM : WHITE));
   }
 }
 function draw(t){
@@ -573,19 +577,18 @@ function draw(t){
     // HUD: score and lives on the left, the course A..Z in the middle, time on the right
     pix.text(1, 0, "SCORE " + String(score).padStart(6, "0"), WHITE);
     pix.text(1, 1, "HI    " + String(Math.max(score, scores.list[0] ? scores.list[0].score : 0)).padStart(6, "0"), DIM);
-    pix.text(GW - 18, 0, "LIVES " + "^".repeat(Math.max(0, lives - (state === "dead" ? 1 : 0))), ROVER_RGB);
-    pix.text(GW - 18, 1, "TIME  " + String(Math.floor(pointT)).padStart(3), DIM);
-    const x0 = Math.floor((GW - 51) / 2), here = reached % 26;
-    for (let k = 0; k < 26; k++) pix.text(x0 + k * 2, 0, letter(k), k === here ? ACCENT : k < here ? WHITE : DIM);
+    pix.text(TGW - 14, 0, "LIVES " + "^".repeat(Math.max(0, lives - (state === "dead" ? 1 : 0))), ROVER_RGB);
+    pix.text(TGW - 14, 1, "TIME  " + String(Math.floor(pointT)).padStart(3), DIM);
+    const x0 = (TGW - 26) >> 1, here = reached % 26;
+    for (let k = 0; k < 26; k++) pix.text(x0 + k, 0, letter(k), k === here ? ACCENT : k < here ? WHITE : DIM);
     if (state === "over"){
-      pix.center(16, "  GAME OVER  ", WHITE);
-      pix.center(18, `  ${score} POINTS  `, ACCENT);
-      if (best) pix.center(20, "  NEW HIGH SCORE!  ", ACCENT);
-      if (stateT > 1) pix.center(22, pad.touch ? "  PRESS START  " : "  PRESS SPACE  ", DIM);
-    } else if (msgT > 0) pix.center(4, "  " + msg + "  ", WHITE);
+      pix.center(9, "  GAME OVER  ", WHITE);
+      pix.center(11, `  ${score} POINTS  `, ACCENT);
+      if (best) pix.center(12, "  NEW HIGH SCORE!  ", ACCENT);
+      if (stateT > 1) pix.center(14, INPUT.touch ? "  TAP TO GO ON  " : "  PRESS SPACE  ", DIM);
+    } else if (msgT > 0) pix.center(3, "  " + msg + "  ", WHITE);
   }
-  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
-  pix.text(GW - 1 - hint.length, GH - 1, hint, DIM);
+  if (!INPUT.touch) pix.text(TGW - 11, TGH - 1, " ESC MENU ", DIM);
   if (menu.open) menu.draw(pix, { accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED" });
   pix.present(ctx);
 }
@@ -605,7 +608,6 @@ const menu = createMenu(() => [
   { label: state === "title" ? "START GAME" : "RESTART", select: () => { menu.hide(); audio.unlock(); newGame(); } },
   { label: "START AT", value: () => "POINT " + letter(Math.min(startAt, furthest)), change: d => { startAt = (Math.min(startAt, furthest) + (d || 1) + furthest + 1) % (furthest + 1); } },
   { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
-  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
@@ -628,21 +630,26 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; if (FIRE_KEYS.has(e.key)) fireHeld = false; if (JUMP_KEYS.has(e.key)) jumpHeld = false; });
 addEventListener("blur", () => { for (const k in keys) keys[k] = false; fireHeld = jumpHeld = false; });
 
-const pad = createPad({ store, menu: () => menu.open && menu, onAny: () => audio.unlock(),
-  onDir: d => { if (d === "up" && state === "play" && !jumpHeld) jumpQueued = JUMP_BUFFER; jumpHeld = d === "up"; keys.left = d === "left"; keys.right = d === "right"; },
-  onPress: id => {
-    if (id === "select") return menu.show();
-    if (state === "title" || state === "over"){ if (id === "a" || id === "start") action(); return; }
-    if (id === "start") return menu.show();
-    if (id === "a"){ jumpQueued = JUMP_BUFFER; jumpHeld = true; } else fireHeld = true;
+// Touch and mouse: the right half of the screen jumps (hold for a longer jump); the left half fires while touched,
+// and sliding that finger right or left speeds up or slows down. Both thumbs work at once. Taps start a game, go on
+// from game over, and pick rows in the menu.
+let jumper = null, gunner = null;   // the touches that are jumping and firing
+createTouch(cv, {
+  down: p => {
+    audio.unlock();
+    if (menu.open || state !== "play") return;
+    if (p.x >= 0.5){ jumper = p; jumpQueued = JUMP_BUFFER; jumpHeld = true; } else { gunner = p; fireHeld = true; }
   },
-  onRelease: id => { if (id === "b") fireHeld = false; if (id === "a") jumpHeld = false; } });
-cv.addEventListener("pointerdown", e => {
-  audio.unlock();
-  if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
-  if (state === "title" || state === "over") action();
-  else if (!pad.touch) menu.show();   // a mouse click during play opens the menu
+  move: p => { if (p === gunner){ const d = (p.x - p.x0) * pix.W; keys.right = d > 16; keys.left = d < -16; } },
+  up: p => {
+    if (p === jumper){ jumper = null; jumpHeld = false; return; }
+    if (p === gunner){ gunner = null; fireHeld = false; keys.left = keys.right = false; return; }
+    if (!p.tap) return;
+    if (menu.open) menu.tap(Math.floor(p.x * TGW), Math.floor(p.y * TGH));
+    else action();
+  }
 });
+headerButtons(menu, audio);
 
 /* ---------- loop ---------- */
 function tick(dt, t){

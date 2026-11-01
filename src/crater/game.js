@@ -4,8 +4,8 @@ const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stag
 // The ground is an engine terrain grid of small square cells (2 x 2 pixels), so blasts dig round craters. Tanks sit on
 // it and fall when it goes. Shells and rubble are engine bodies on top. After every blast, unsupported dirt falls
 // until the ground settles. Two to four tanks, each a person or the computer; between rounds each spends its winnings
-// in the shop. Everything is drawn as pixel art (src/pixel.js); text and the menu use a 100 x 56 grid over it.
-const TGW = 100, TGH = 56, WIN_ROUNDS = 3;         // the text grid
+// in the shop. Everything is drawn as pixel art (src/pixel.js); text and the menu use a 64 x 40 grid over it.
+const TGW = 64, TGH = 40, WIN_ROUNDS = 3;          // the text grid: big enough letters to read on a phone
 const NX = 200, NY = 224, CELL = 4, PU = 2;        // ground cells; world units per cell and per pixel
 const COL = 8, ROW = 16;                           // a text column and row in world units: the sizes things are measured in
 const TW = 10, TH = 8;                             // a tank in ground cells (20 x 16 pixels)
@@ -451,39 +451,41 @@ function drawWorld(t){
   vfx.draw(pix);
 }
 function drawTitle(){
-  pix.rect(30, 25 * 8 - 4, pix.W - 60, 9 * 8 + 8, [10, 12, 22], 3);   // a dark panel behind the text
-  [["CRATER", 10], ["DUEL", 17]].forEach(([word, y0], wi) => {
-    const x0 = Math.floor((TGW - word.length * 12 + 2) / 2), R = pix.ramp(TANK_PIX[wi]);
+  pix.rect(24, 184, pix.W - 48, 146, [10, 12, 22], 3);   // a dark panel behind the buttons and text
+  [["CRATER", 80], ["DUEL", 136]].forEach(([word, y0], wi) => {
+    const x0 = (pix.W - word.length * 48 + 8) >> 1, R = pix.ramp(TANK_PIX[wi]);
     [...word].forEach((ch, li) => FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#"){
-      const X = (x0 + li * 12 + dx * 2) * 4, Y = (y0 + dy) * 8, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
+      const X = x0 + li * 48 + dx * 8, Y = y0 + dy * 8, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
       for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++){   // each dot a bevelled block, joined to its neighbours
         const lv = (j === 0 && !on(0, -1)) || (i === 0 && !on(-1, 0)) ? 4 : (j === 7 && !on(0, 1)) || (i === 7 && !on(1, 0)) ? 1 : j < 3 ? 3 : 2;
         pix.px(X + i, Y + j, R[lv], 3);
       }
     } }));
   });
-  const blink = (performance.now() / 500 | 0) % 2;
-  pix.center(27, (pad.touch ? "A" : "1") + "  ONE PLAYER (VS COMPUTER)     " + (pad.touch ? "B" : "2") + "  TWO PLAYERS", blink ? WHITE : DIM);
-  pix.center(29, pad.touch ? "D-PAD LEFT/RIGHT AIM, UP/DOWN DRIVE.  HOLD A FOR POWER, LET GO TO FIRE.  B WEAPON" : "LEFT/RIGHT AIM  SHIFT+LEFT/RIGHT DRIVE  HOLD SPACE FOR POWER  TAB WEAPON  ESC MENU", DIM);
-  pix.center(31, "LAST TANK STANDING WINS THE ROUND. FIRST TO " + WIN_ROUNDS + " ROUNDS. SHOP BETWEEN ROUNDS.", DIM);
-  pix.center(32, count + " TANKS (CHANGE IN THE MENU)", DIM);
+  const t = INPUT.touch;
+  pix.button(17, (t ? "" : "1  ") + "ONE PLAYER (VS COMPUTER)", WHITE); pix.button(20, (t ? "" : "2  ") + "TWO PLAYERS", WHITE);
+  pix.center(24, t ? "DRAG BACK FROM ANYWHERE AND LET GO TO FIRE." : "LEFT/RIGHT AIM  SHIFT+LEFT/RIGHT DRIVE  ESC MENU", DIM);
+  pix.center(25, t ? "DRAG YOUR TANK TO DRIVE.  TAP THE WEAPON TO CHANGE IT." : "HOLD SPACE FOR POWER, LET GO TO FIRE  TAB WEAPON", DIM);
+  pix.center(27, "LAST TANK STANDING WINS THE ROUND. FIRST TO " + WIN_ROUNDS + " ROUNDS.", DIM);
+  pix.center(28, "SHOP BETWEEN ROUNDS.  " + count + " TANKS (CHANGE IN THE MENU)", DIM);
 }
+const shopGap = () => INPUT.touch ? 2 : 1;   // shop rows two lines apart on a touch screen, so a finger can pick one
 function drawShop(){
-  const T = tanks[shopAt], x0 = 25, y0 = 12, w = 50, text = pix.text;
-  pix.rect((x0 - 2) * 4, (y0 - 1) * 8, (w + 4) * 4, (17 + SHOP.length) * 8, [10, 12, 22], 3);
+  const T = tanks[shopAt], x0 = 7, y0 = 6, w = 50, text = pix.text, CW = pix.W / TGW, CH = pix.H / TGH, g = shopGap(), n = (SHOP.length + 1) * g - 1;   // n: rows from the first item to DONE, less one
+  pix.rect((x0 - 2) * CW, (y0 - 1) * CH, (w + 4) * CW, (17 + n) * CH, [10, 12, 22], 3);
   text(x0, y0, "THE SHOP", GOLD); text(x0 + w - 18, y0, ("ROUND " + (tanks.reduce((s, U) => s + U.wins, 0) + 1)).padStart(18), DIM);
   text(x0, y0 + 2, name(shopAt), TANK_RGB[shopAt]); text(x0 + 20, y0 + 2, ("MONEY $" + T.money).padStart(w - 20), GOLD);
   text(x0, y0 + 3, "EARNED LAST ROUND $" + T.earned, DIM);
   SHOP.forEach((it, k) => {
     const sel = k === shopSel, can = T.money >= it.price && !(it.one && it.has(T));
-    text(x0, y0 + 5 + k, (sel ? "> " : "  ") + it.name.padEnd(12) + ("$" + it.price).padStart(6) + "    HAVE " + String(it.has(T) || 0).padStart(3), sel ? (can ? WHITE : DIM) : can ? [1, 1, 1] : DIM);
+    text(x0, y0 + 5 + k * g, (sel ? "> " : "  ") + it.name.padEnd(12) + ("$" + it.price).padStart(6) + "    HAVE " + String(it.has(T) || 0).padStart(3), sel ? (can ? WHITE : DIM) : can ? [1, 1, 1] : DIM);
   });
-  text(x0, y0 + 6 + SHOP.length, (shopSel === SHOP.length ? "> " : "  ") + "DONE", shopSel === SHOP.length ? WHITE : [1, 1, 1]);
-  text(x0, y0 + 8 + SHOP.length, "MISSILES ARE FREE. AMMO, FUEL AND MONEY CARRY ON.", DIM);
-  text(x0, y0 + 9 + SHOP.length, "A SHIELD TAKES THE FIRST " + SHIELD_HP + " DAMAGE OF ONE ROUND.", DIM);
-  text(x0, y0 + 11 + SHOP.length, pad.touch ? "UP/DOWN CHOOSE   A BUY   B DONE" : "UP/DOWN CHOOSE   SPACE OR ENTER BUY   D WHEN DONE", DIM);
+  text(x0, y0 + 6 + n, (shopSel === SHOP.length ? "> " : "  ") + "DONE", shopSel === SHOP.length ? WHITE : [1, 1, 1]);
+  text(x0, y0 + 8 + n, "MISSILES ARE FREE. AMMO, FUEL AND MONEY CARRY ON.", DIM);
+  text(x0, y0 + 9 + n, "A SHIELD TAKES THE FIRST " + SHIELD_HP + " DAMAGE OF ONE ROUND.", DIM);
+  text(x0, y0 + 11 + n, INPUT.touch ? "TAP AN ITEM TO BUY IT.  TAP DONE TO GO ON." : "UP/DOWN CHOOSE   SPACE OR ENTER BUY   D WHEN DONE", DIM);
   const st = tanks.map((U, i) => name(i) + " " + U.wins).join("   ");
-  text(Math.max(x0, (TGW - st.length) >> 1), y0 + 13 + SHOP.length, st, DIM);
+  text(Math.max(x0, (TGW - st.length) >> 1), y0 + 13 + n, st, DIM);
 }
 function draw(t){
   const dim = state === "title" || state === "shop" ? 0.45 : 1, key = dim + "";
@@ -506,32 +508,34 @@ function draw(t){
   trail.forEach((p, i) => { if (i % 2 === 0) pix.px(p.x / PU, p.y / PU, [150, 140, 120], 1); });
   for (const b of shells) if (!b.dead){
     const x = b.x / PU, y = b.y / PU;
-    if (y < 28){ for (let k = 0; k < 3; k++) pix.rect(x - k, 28 + k, 2 * k + 1, 1, [255, 230, 160], 3); continue; }   // above the top: a mark shows where it will come down
+    if (y < 0){ for (let k = 0; k < 3; k++) pix.rect(x - k, 46 + k, 2 * k + 1, 1, [255, 230, 160], 3); continue; }   // above the top: a mark shows where it will come down
     pix.ball(x, y, 2, [255, 236, 190], 3, true); pix.glow(b.x, b.y, ROW * 1.2, [0.5, 0.35, 0.15]);
   }
   pix.edges();
   // HUD: each tank's health and rounds across the top, wind in the middle, the active tank's aim, weapon and fuel below
   const colW = Math.floor(TGW / tanks.length);
-  tanks.forEach((U, i) => { const s = `${name(i)} HP ${String(U.hp).padStart(3)}${U.shield ? "+" + U.shield : ""} R${U.wins}`; pix.text(i * colW + ((colW - s.length) >> 1), 0, s, U.dead ? DIM : TANK_RGB[i]); });
-  pix.center(1, "WIND " + (wind === 0 ? "CALM" : wind < 0 ? "<".repeat(Math.min(5, Math.ceil(-wind / 2))) + " " + -wind : wind + " " + ">".repeat(Math.min(5, Math.ceil(wind / 2)))), WHITE);
+  tanks.forEach((U, i) => {
+    const s = `HP ${U.hp}${U.shield ? "+" + U.shield : ""} R${U.wins}`, c = U.dead ? DIM : TANK_RGB[i];
+    pix.text(i * colW + ((colW - name(i).length) >> 1), 0, name(i), c); pix.text(i * colW + ((colW - s.length) >> 1), 1, s, c);
+  });
+  pix.center(2, "WIND " + (wind === 0 ? "CALM" : wind < 0 ? "<".repeat(Math.min(5, Math.ceil(-wind / 2))) + " " + -wind : wind + " " + ">".repeat(Math.min(5, Math.ceil(wind / 2)))), WHITE);
   if (state !== "over" && T && !T.dead){
     const W = WEAPONS[T.weapon], ammo = T.ammo[T.weapon] === Infinity ? "" : " x" + T.ammo[T.weapon];
-    pix.center(2, `ANGLE ${String(Math.round(T.angle)).padStart(3)}   POWER ${String(Math.round(T.power)).padStart(3)}   ${W.name}${ammo}   FUEL ${T.fuel}`, TANK_RGB[turn]);
+    pix.center(3, `ANGLE ${String(Math.round(T.angle)).padStart(3)}   POWER ${String(Math.round(T.power)).padStart(3)}   ${INPUT.touch ? "< " + W.name + ammo + " >" : W.name + ammo}   FUEL ${T.fuel}`, TANK_RGB[turn]);
   }
   if (state === "aim" || state === "cpu"){   // the power meter, with a mark where your last shot was
-    const R = pix.ramp(TANK_PIX[turn]), w = 120, x0 = (pix.W - w) >> 1, y0 = 26, fill = Math.round(T.power / 100 * w), lp = lastPower[turn];
+    const R = pix.ramp(TANK_PIX[turn]), w = 120, x0 = (pix.W - w) >> 1, y0 = 48, fill = Math.round(T.power / 100 * w), lp = lastPower[turn];
     pix.rect(x0 - 1, y0 - 1, w + 2, 6, [20, 22, 34], 4);
     for (let x = 0; x < w; x++) for (let y = 0; y < 4; y++) pix.px(x0 + x, y0 + y, x < fill ? R[y ? 3 : 4] : [44, 46, 62], 4);
     if (lp !== null){ const m = x0 + Math.min(w - 1, Math.round(lp / 100 * w)); pix.rect(m, y0 - 2, 1, 8, [240, 240, 240], 4); }
-    if (state === "aim" && charge === null && msgT <= 0) pix.center(5, pad.touch ? "HOLD A FOR POWER, LET GO TO FIRE.  D-PAD UP/DOWN DRIVES" : "HOLD SPACE FOR POWER, LET GO TO FIRE.  SHIFT+ARROWS DRIVE", DIM);
+    if (state === "aim" && charge === null && !sling && msgT <= 0) pix.center(5, INPUT.touch ? "DRAG BACK TO FIRE.  DRAG THE TANK TO DRIVE." : "HOLD SPACE FOR POWER, LET GO TO FIRE.  SHIFT DRIVES", DIM);
   }
   if (state === "over"){
     const w = winner();
-    pix.center(9, `  ${name(w)} WINS ${tanks.map(U => U.wins).join("-")}  `, TANK_RGB[w]);
-    pix.center(11, pad.touch ? "  PRESS START FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
-  } else if (msgT > 0) pix.center(9, "  " + msg + "  ", WHITE);
-  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
-  pix.text(TGW - 1 - hint.length, TGH - 1, hint, DIM);
+    pix.center(7, `  ${name(w)} WINS ${tanks.map(U => U.wins).join("-")}  `, TANK_RGB[w]);
+    pix.center(9, INPUT.touch ? "  TAP FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
+  } else if (msgT > 0) pix.center(7, "  " + msg + "  ", WHITE);
+  if (!INPUT.touch) pix.text(TGW - 11, TGH - 1, " ESC MENU ", DIM);
   finish();
 }
 function finish(){
@@ -555,18 +559,17 @@ function release(){   // Space, A up: fire with the power on the meter
   if (state !== "aim" || charge === null) return;
   charge = null; lastPower[turn] = tanks[turn].power; fire(turn);
 }
-// The pause menu (src/menu.js) holds what the old button row did. Open it with Esc or P, SELECT, or a mouse click.
+// The pause menu (src/menu.js). Open it with Esc or P, or the header's Menu button.
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
   { label: "NEW MATCH", select: () => { menu.hide(); audio.unlock(); start(nextMode); } },
   { label: "MODE", value: () => nextMode === "cpu" ? "VS COMPUTER" : "TWO PLAYERS", change: () => { nextMode = nextMode === "cpu" ? "two" : "cpu"; } },
   { label: "TANKS", value: () => String(nextCount), change: d => { nextCount = (nextCount - 2 + (d || 1) + 3) % 3 + 2; } },
   { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
-  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
-  onOpen: () => { charge = null; for (const k in keys) keys[k] = k === "drive" ? 0 : false; audio.pause(); },   // opening cancels a charge
+  onOpen: () => { charge = sling = null; keys.drive = 0; for (const k in keys) keys[k] = k === "drive" ? 0 : false; audio.pause(); },   // opening cancels a charge
   onClose: () => { audio.resume(); }
 });
 function nextWeapon(){   // cycle to the next weapon that still has ammo
@@ -600,28 +603,43 @@ addEventListener("keyup", e => {
   if (e.key === "Shift" || e.key === "ArrowLeft" || e.key === "ArrowRight") keys.drive = 0;
   if (e.key === " " || e.key === "Enter") release();
 });
-addEventListener("blur", () => { for (const k in keys) keys[k] = k === "drive" ? 0 : false; charge = null; });   // leaving the window cancels a charge
+addEventListener("blur", () => { for (const k in keys) keys[k] = k === "drive" ? 0 : false; charge = sling = null; });   // leaving the window cancels a charge
 
-const pad = createPad({ store, menu: () => menu.open && menu, onAny: () => audio.unlock(),
-  onDir: d => {
-    if (state === "shop"){ if (d === "up" || d === "down") shopKey(d); return; }
-    keys.left = d === "left"; keys.right = d === "right"; keys.drive = d === "up" ? 1 : d === "down" ? -1 : 0;   // up drives right, down drives left
+// Touch and mouse, after Balote: drag back from anywhere and let go to fire. The pull sets the angle (the shell goes
+// the opposite way) and its length the power; a short drag is cancelled. A drag that starts on your tank drives it
+// towards the finger instead. Taps choose the title's buttons and the shop's items, change the weapon (on the HUD
+// line that names it), go on from the end of a match, and pick rows in the menu.
+let sling = null, driving = null;   // the drag that is aiming or driving, while there is one
+function aimFrom(p){
+  const dx = (p.x0 - p.x) * pix.W, dy = (p.y0 - p.y) * pix.H, T = tanks[turn];
+  T.angle = clamp(Math.round(Math.atan2(Math.max(0, -dy), dx) * 180 / Math.PI), 0, 180);
+  T.power = clamp(Math.round(Math.hypot(dx, dy) / (pix.W * 0.4) * 100), 1, 100);
+}
+function driveTo(p){ const T = tanks[turn], d = p.x * pix.W - (T.x * 2 + TW); keys.drive = Math.abs(d) < 6 ? 0 : Math.sign(d); }
+createTouch(cv, {
+  down: p => {
+    audio.unlock();
+    if (menu.open || state !== "aim" || charge !== null) return;
+    const T = tanks[turn], dx = p.x * pix.W - (T.x * 2 + TW), dy = p.y * pix.H - (T.y * 2 + TH);
+    if (Math.abs(dx) < 18 && Math.abs(dy) < 16) driving = p; else sling = p;
   },
-  onPress: id => {
-    if (id === "select") return menu.show();
-    if (state === "title" && (id === "a" || id === "b")) return start(id === "a" ? "cpu" : "two");
-    if (state === "shop"){ shopKey(id === "b" ? "done" : "buy"); return; }
-    if (id === "b") return nextWeapon();
-    if (id === "start") return state === "title" || state === "over" ? action() : menu.show();
-    press();
-  },
-  onRelease: id => { if (id === "a") release(); } });
-cv.addEventListener("pointerdown", e => {
-  audio.unlock();
-  if (menu.open){ const [gx, gy] = gridAt(e, cv, TGW, TGH); menu.tap(gx, gy); return; }
-  if (state === "title" || state === "over") action();
-  else if (!pad.touch) menu.show();   // a mouse click during play opens the menu
+  move: p => { if (p === sling && p.moved >= 12) aimFrom(p); if (p === driving && state === "aim") driveTo(p); },
+  up: p => {
+    if (p === driving){ driving = null; keys.drive = 0; return; }
+    if (p === sling){ sling = null; if (p.moved >= 12 && state === "aim"){ aimFrom(p); lastPower[turn] = tanks[turn].power; fire(turn); return; } }
+    if (!p.tap) return;
+    if (menu.open) return menu.tap(Math.floor(p.x * TGW), Math.floor(p.y * TGH));
+    const gy = Math.floor(p.y * TGH);
+    if (state === "title"){ if (gy >= 17 && gy < 20) start("cpu"); else if (gy >= 20 && gy < 23) start("two"); }
+    else if (state === "over") action();
+    else if (state === "aim" && gy >= 2 && gy <= 4) nextWeapon();
+    else if (state === "shop"){   // the item rows, then DONE
+      const g = shopGap(), k = Math.floor((gy - 11 + (g >> 1)) / g);
+      if (k >= 0 && k < SHOP.length || k === SHOP.length + 1){ shopSel = Math.min(k, SHOP.length); shopKey("buy"); }
+    }
+  }
 });
+headerButtons(menu, audio);
 
 /* ---------- loop ---------- */
 world.onSub = checkShells;

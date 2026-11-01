@@ -6,13 +6,15 @@
 <title>Crater Duel</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
-/* Shared by the game pages: page layout, the touch gamepad, and the landscape phone layout. Built into each page. */
+/* Shared by the game pages: page layout, the header buttons, and the phone-on-its-side layout. Built into each page. */
 :root{
   --ground:#E9EDF1; --ink:#20304A; --muted:#5E6A7D; --line:#C9D1DB;
   --btn:#DCE2E9; --accent:#2F5BD3;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-left:env(safe-area-inset-left,0px);
+  padding-right:env(safe-area-inset-right,0px);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -26,49 +28,24 @@
 }
 *,*::before,*::after{box-sizing:inherit}
 html{height:100%;overscroll-behavior:none}
-body{height:100%;height:100svh;margin:0;touch-action:manipulation;overscroll-behavior:none;-webkit-touch-callout:none;background:var(--ground);color:var(--ink);
+body{height:100%;height:calc(100svh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));margin:0;touch-action:manipulation;overscroll-behavior:none;-webkit-touch-callout:none;background:var(--ground);color:var(--ink);
   font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   display:flex;flex-direction:column;overflow:hidden;-webkit-user-select:none;user-select:none}
-header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px;padding:10px 14px 6px}
-h1{font-size:17px;font-weight:650;margin:0;letter-spacing:-0.01em}
-h1 a{color:inherit;text-decoration:none}h1 a:hover{text-decoration:underline}
-#hud{font:12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted);white-space:nowrap}
-#stage{flex:1;position:relative;touch-action:none;margin:0 8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:0;background:#0B0F16}
+header{display:flex;align-items:center;gap:4px 12px;padding:2px 8px 2px 4px;min-height:48px}
+h1{font-size:17px;font-weight:650;margin:0;letter-spacing:-0.01em;flex:none}
+/* the back link and the buttons are at least 44px tall, so a thumb finds them */
+h1 a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;min-height:44px;padding:0 10px}h1 a:hover{text-decoration:underline}
+#hud{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font:12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted);white-space:nowrap}
+.tools{margin-left:auto;display:flex;gap:6px;flex:none}
+#stage{flex:1;position:relative;touch-action:none;margin:0 8px 8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:0;background:#0B0F16}
 #cv{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;touch-action:none}
-nav{padding:8px 8px 10px;display:flex;flex-direction:column;gap:6px}
-button{flex:1 1 auto;min-width:60px;min-height:40px;padding:6px 8px;border:0;border-radius:8px;background:var(--btn);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;touch-action:none}
+button{min-width:44px;min-height:44px;padding:6px 14px;border:0;border-radius:10px;background:var(--btn);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;touch-action:manipulation}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-/* Touch gamepad, styled after a handheld console: cross-shaped D-pad, slanted A/B, pill SELECT/START */
-#gamepad{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"dpad . ab" "mid mid mid";align-items:center;row-gap:4px;padding:4px 12px 20px;touch-action:none}
-#gamepad[hidden]{display:none}
-#dpad{grid-area:dpad;position:relative;width:120px;height:120px;touch-action:none;cursor:pointer}
-#dpad::before,#dpad::after{content:"";position:absolute;background:#2A2A31;border-radius:7px;box-shadow:0 4px 0 #0E0E12}
-#dpad::before{left:0;right:0;top:40px;height:40px}
-#dpad::after{top:0;bottom:0;left:40px;width:40px}
-#dpad span{position:absolute;z-index:1;color:#6E6E78;font-size:13px;line-height:1;pointer-events:none;transition:color .05s}
-#dpad .l{left:11px;top:53px}#dpad .r{right:11px;top:53px}#dpad .u{left:54px;top:11px}#dpad .d{left:54px;bottom:11px}
-#dpad[data-dir="left"] .l,#dpad[data-dir="right"] .r,#dpad[data-dir="up"] .u,#dpad[data-dir="down"] .d{color:#F4F4F8}
-#dpad[data-dir="left"]{transform:perspective(300px) rotateY(-8deg)}
-#dpad[data-dir="right"]{transform:perspective(300px) rotateY(8deg)}
-#dpad[data-dir="up"]{transform:perspective(300px) rotateX(8deg)}
-#dpad[data-dir="down"]{transform:perspective(300px) rotateX(-8deg)}
-.mid{grid-area:mid;justify-self:center;display:flex;gap:18px;transform:rotate(-22deg)}
-.mid button{min-width:0;min-height:0;width:52px;height:16px;padding:0;border-radius:8px;background:#8D8C94;box-shadow:0 3px 0 #55545B;font-size:0;position:relative}
-.mid button::after{content:attr(data-label);position:absolute;top:22px;left:50%;transform:translateX(-50%);font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;color:var(--muted)}
-.ab{grid-area:ab;display:flex;gap:14px;transform:rotate(-22deg)}
-.ab button{min-width:0;min-height:0;width:60px;height:60px;padding:0;border-radius:50%;background:#A3245C;color:#F7D7E6;font:700 19px/1 ui-monospace,Menlo,monospace;box-shadow:0 5px 0 #5E1233}
-.ab button:first-child{margin-top:30px}
-#gamepad button.on{transform:translateY(3px);box-shadow:0 2px 0 #0E0E12;filter:brightness(.85)}
-body.touch #hud{display:none}
-/* Phone on its side: D-pad on the left, A/B on the right, game in the middle */
-@media (orientation: landscape) and (max-height: 600px){
-  body.touch{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:1fr auto}
-  body.touch header{display:none}
-  body.touch nav,body.touch #gamepad{display:contents}
-  body.touch #stage{grid-column:2;grid-row:1;margin:6px 0 4px}
-  body.touch #dpad{grid-column:1;grid-row:1 / 3;align-self:center;justify-self:center;margin:0 18px 70px}
-  body.touch .mid{grid-column:1;grid-row:1 / 3;align-self:end;justify-self:center;margin-bottom:46px}
-  body.touch .ab{grid-column:3;grid-row:1 / 3;align-self:center;margin:0 18px 0 10px}
+body.touch #hud{visibility:hidden}
+/* Phone on its side: a slimmer header, so the game gets the height */
+@media (orientation: landscape) and (max-height: 500px){
+  header{min-height:44px;padding-top:0;padding-bottom:0}
+  #stage{margin-bottom:4px}
 }
 </style>
 </head>
@@ -76,17 +53,11 @@ body.touch #hud{display:none}
 <header>
   <h1><a href="./" title="Back to the cartridge shelf">&#8249; Crater Duel</a></h1>
   <div id="hud">&larr; &rarr; aim &middot; Shift+&larr; &rarr; drive &middot; hold Space for power, let go to fire &middot; Tab weapon &middot; Esc menu &middot; M sound</div>
+  <div class="tools"><button id="menuBtn" type="button">Menu</button><button id="soundBtn" type="button">Sound</button></div>
 </header>
 <div id="stage">
-  <canvas id="cv" aria-label="Game screen. Left and right aim the barrel; with Shift they drive the tank. Hold Space to build power and let go to fire. Tab changes weapon."></canvas>
+  <canvas id="cv" aria-label="Game screen. Left and right aim the barrel; with Shift they drive the tank. Hold Space to build power and let go to fire. Tab changes weapon. On a touch screen, drag back and let go to fire, drag your tank to drive, and tap the weapon to change it."></canvas>
 </div>
-<nav>
-  <div id="gamepad" hidden>
-    <div id="dpad" role="group" aria-label="Direction pad. Left and right aim the barrel; up and down drive the tank right and left."><span class="l">&#9664;</span><span class="r">&#9654;</span><span class="u">&#9650;</span><span class="d">&#9660;</span></div>
-    <div class="mid"><button data-pad="select" data-label="SELECT" aria-label="Select: open the menu"></button><button data-pad="start" data-label="START" aria-label="Start, continue, or open the menu"></button></div>
-    <div class="ab"><button data-pad="b" aria-label="B: change weapon">B</button><button data-pad="a" aria-label="A: hold for power, let go to fire">A</button></div>
-  </div>
-</nav>
 <script>
 "use strict";
 /* ================= Shared core: physics, light, ink, 24-bit renderer ================= */
@@ -946,10 +917,10 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     else if (k === "Escape" || k === "p" || k === "P") m.hide();
     return true;   // other keys do nothing while the menu is open
   };
-  // A tap or click at grid cell (gx, gy): picks that row and changes or chooses it. Taps outside the box close it.
+    // A tap or click at grid cell (gx, gy): picks that row and changes or chooses it. Taps outside the box close it.
   m.tap = (gx, gy) => {
     if (!m.open || !m.box) return false;
-    const b = m.box, i = gy - b.y0;
+    const b = m.box, i = Math.floor((gy - b.y0 + (b.gap >> 1)) / b.gap);
     if (gx < b.x0 || gx >= b.x0 + b.w || gy < b.top || gy >= b.top + b.h){ m.hide(); return true; }
     if (i >= 0 && i < b.n){ m.at = b.first + i; m.choose(); }
     return true;
@@ -957,11 +928,12 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
   m.draw = (screen, { accent, normal, dim, title = "PAUSED", note = "" }) => {
     const GW = screen.cols, GH = screen.rows, text = (x, y, s, rgb) => screen.text(x, y, s, rgb, MENU_LAYER);
     const R = rows(); m.at = Math.min(m.at, R.length - 1);
+    const gap = INPUT.touch ? 2 : 1;   // rows two lines apart on a touch screen, so a finger can pick one
     // a list longer than the screen shows a window around the chosen row, with ^ and v marks
-    const n = Math.min(R.length, Math.max(3, GH - 8 - (note ? 1 : 0))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
+    const n = Math.min(R.length, Math.max(3, Math.floor((GH - 8 - (note ? 1 : 0)) / gap))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
     // 40 wide, or wider (up to the screen) when a row or the note needs it
     const longest = Math.max(title.length + 4, note.length + 4, ...R.map(r => 5 + Math.max(18, r.label.length) + (r.value ? r.value().length + 4 : 0) + 3));
-    const w = Math.max(40, Math.min(GW - 2, longest)), h = n + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
+    const w = Math.max(40, Math.min(GW - 2, longest)), h = n * gap + 6 - (gap - 1) + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
     const edge = "+" + "-".repeat(w - 2) + "+";
     text(x0, top, edge, dim); text(x0, top + h - 1, edge, dim);
     for (let y = 1; y < h - 1; y++){
@@ -972,12 +944,12 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     text(x0 + ((w - title.length) >> 1), top + 1, title, accent);
     for (let i = 0; i < n; i++){
       const r = R[first + i], sel = first + i === m.at, v = r.value ? "< " + r.value() + " >" : "";
-      text(x0 + 3, top + 3 + i, (sel ? "> " : "  ") + r.label.padEnd(18) + v, sel ? accent : normal);
+      text(x0 + 3, top + 3 + i * gap, (sel ? "> " : "  ") + r.label.padEnd(18) + v, sel ? accent : normal);
     }
     if (first > 0) text(x0 + w - 3, top + 3, "^", dim);
-    if (first + n < R.length) text(x0 + w - 3, top + 2 + n, "v", dim);
+    if (first + n < R.length) text(x0 + w - 3, top + 3 + (n - 1) * gap, "v", dim);
     if (note) text(x0 + ((w - note.length) >> 1), top + h - 2, note, dim);
-    m.box = { x0, w, top, h, y0: top + 3, first, n };
+    m.box = { x0, w, top, h, y0: top + 3, first, n, gap };
   };
   return m;
 }
@@ -986,7 +958,7 @@ function gridAt(e, canvas, GW, GH){
   const r = canvas.getBoundingClientRect();
   return [Math.floor((e.clientX - r.left) / r.width * GW), Math.floor((e.clientY - r.top) / r.height * GH)];
 }
-/* ---------- shared by the game pages: saved settings, sound, the touch gamepad, fitting the canvas, the loop ---------- */
+/* ---------- shared by the game pages: saved settings, sound, touch, fitting the canvas, the loop ---------- */
 // Built into every cartridge after core.js and menu.js. Each game keeps only its own rules and drawing.
 
 // Saved settings for one game, under "<prefix><key>" in localStorage. Values are strings; *JSON for anything else.
@@ -1009,9 +981,13 @@ function scoreTable(store, n = 5, key = "scores", better = (a, b) => b.score - a
 // recording so MP3 padding never lands inside the loop. vol: per-sound gain (volume for the rest). minGap: seconds within which a
 // sound plays only once (a volley from many enemies still makes one sound). The mute choice is saved.
 function createAudio({ label, store, sounds, music = {}, vol = {}, volume = 0.6, sfxGain = 0.9, musicGain = 0.5, minGap = 0 }){
-  let ctx = null, master = null, sfxBus = null, musicBus = null, unlocked = false, waiting = null, song = null, songNode = null;
+  let ctx = null, master = null, sfxBus = null, musicBus = null, unlocked = false, waiting = null, song = null, songNode = null, paused = false;
   let muted = store.get("muted") === "1";
   const buffers = {}, lastPlayed = {};
+  // A touch's pointerdown does not count as a gesture that allows sound, so the context made then starts suspended;
+  // the end of the touch (or a key) wakes it.
+  const wake = () => { if (ctx && ctx.state === "suspended" && !paused) ctx.resume(); };
+  for (const ev of ["pointerup", "touchend", "keydown"]) addEventListener(ev, wake, true);
   function startSong(){
     const b = song && buffers["music:" + song]; if (!ctx || !b || songNode) return;
     const M = music[song], src = ctx.createBufferSource(), g = ctx.createGain();
@@ -1059,59 +1035,51 @@ function createAudio({ label, store, sounds, music = {}, vol = {}, volume = 0.6,
       if (master) master.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.02);
       store.set("muted", muted ? "1" : "0");
     },
-    pause(){ if (ctx) ctx.suspend(); }, resume(){ if (ctx) ctx.resume(); }
+    pause(){ paused = true; if (ctx) ctx.suspend(); }, resume(){ paused = false; if (ctx) ctx.resume(); }
   };
   return A;
 }
 
-// The handheld-style touch gamepad (#gamepad, #dpad and [data-pad] buttons in the page), or the keyboard.
-// The D-pad is one surface: the thumb's angle from its centre picks the direction, so sliding across switches.
-// axis: "x" (left and right only), 4, or 8 directions. While menu() returns an open menu, the D-pad moves through
-// it and A chooses (any other button closes it). Otherwise onDir(dir) hears every change ("" when let go),
-// onPress(id) and onRelease(id) the buttons, and onAny() any touch at all (games unlock their sound with it).
-function createPad({ store, axis = 4, menu = () => null, onDir = () => {}, onPress = () => {}, onRelease = () => {}, onAny = () => {} }){
-  const pad = document.getElementById("gamepad"), dpad = document.getElementById("dpad");
-  let touch = matchMedia("(pointer: coarse)").matches;   // default follows the device; the menu's Controls row overrides it
-  const saved = store.get("controls"); if (saved) touch = saved === "touch";
-  const buzz = () => navigator.vibrate && navigator.vibrate(8);   // a tick of feedback on phones that support it
-  const P = {
-    get touch(){ return touch; },
-    set(t, save){ touch = t; document.body.classList.toggle("touch", t); pad.hidden = !t; if (save) store.set("controls", t ? "touch" : "keyboard"); },
-    toggle(){ P.set(!touch, true); }
-  };
-  P.set(touch, false);
-  const NAMES8 = ["right", "downright", "down", "downleft", "left", "upleft", "up", "upright"];
-  function dirAt(e, mode){
-    const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-    if (mode === "x") return Math.abs(dx) < r.width * 0.1 ? "" : dx < 0 ? "left" : "right";
-    if (Math.hypot(dx, dy) < r.width * 0.1) return "";
-    if (mode === 8) return NAMES8[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
-    return Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-  }
-  let dir = "";
-  function at(e){
-    const m = menu(), d = dirAt(e, m ? 4 : axis);
-    if (d === dir) return;
-    dir = d; dpad.dataset.dir = d.includes("left") ? "left" : d.includes("right") ? "right" : d;
-    if (d) buzz();
-    if (m){ if (d) d === "up" ? m.move(-1) : d === "down" ? m.move(1) : m.change(d === "left" ? -1 : 1); return; }   // in a menu: one step per push
-    onDir(d);
-  }
-  dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); onAny(); at(e); });
-  dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) at(e); });
-  for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dir = ""; dpad.dataset.dir = ""; if (!menu()) onDir(""); });
-  document.querySelectorAll("[data-pad]").forEach(b => {
-    const id = b.dataset.pad;
-    b.addEventListener("pointerdown", e => {
-      e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz(); onAny();
-      const m = menu();
-      if (m){ id === "a" ? m.choose() : m.hide(); return; }
-      onPress(id);
-    });
-    const up = () => { b.classList.remove("on"); onRelease(id); };
-    b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+// Touch, the mouse and the keyboard all work at once. INPUT.touch says which was used last (a touch-first device
+// starts with touch), so a game shows the hints for it; body.touch hides the keyboard hints in the header.
+const INPUT = { touch: false };
+function setTouch(t){ INPUT.touch = t; document.body.classList.toggle("touch", t); }
+setTouch(matchMedia("(pointer: coarse)").matches);
+addEventListener("pointerdown", e => { if (e.pointerType === "touch") setTouch(true); }, true);
+addEventListener("keydown", () => setTouch(false), true);
+// The game screen is the controller, as in Balote: each finger (or the mouse) is followed on its own, so two thumbs
+// work together. down(p), move(p) and up(p) get { x0, y0, x, y } as fractions of the canvas (0 to 1 across and
+// down), moved: the furthest it strayed from where it went down, in CSS pixels, and on up, tap: a quick touch that
+// barely moved. It listens on the whole stage, so the empty space around the picture works too (fractions there
+// fall outside 0 to 1).
+function createTouch(cv, { down = () => {}, move = () => {}, up = () => {} }){
+  const el = cv.parentElement, live = new Map(), at = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, r]; };
+  el.addEventListener("pointerdown", e => {
+    e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch (err){}
+    const [x, y] = at(e), p = { x0: x, y0: y, x, y, t0: performance.now(), moved: 0 };
+    live.set(e.pointerId, p); down(p);
   });
-  return P;
+  el.addEventListener("pointermove", e => {
+    const p = live.get(e.pointerId); if (!p) return;
+    const [x, y, r] = at(e); p.x = x; p.y = y;
+    p.moved = Math.max(p.moved, Math.hypot((x - p.x0) * r.width, (y - p.y0) * r.height)); move(p);
+  });
+  const end = cancel => e => {
+    const p = live.get(e.pointerId); if (!p) return;
+    live.delete(e.pointerId); p.tap = !cancel && p.moved < 12 && performance.now() - p.t0 < 500; up(p);
+  };
+  el.addEventListener("pointerup", end(false)); el.addEventListener("pointercancel", end(true));
+  return live;
+}
+// The header's Menu and Sound buttons (#menuBtn, #soundBtn). The sound label follows every mute, from anywhere.
+function headerButtons(menu, audio){
+  const m = document.getElementById("menuBtn"), s = document.getElementById("soundBtn"), toggle = audio.toggleMute;
+  const label = () => { s.textContent = audio.muted ? "Sound off" : "Sound on"; s.setAttribute("aria-pressed", String(!audio.muted)); };
+  audio.toggleMute = () => { toggle(); label(); };
+  // blur: a focused button would take the Space key that the games use
+  m.addEventListener("click", () => { m.blur(); audio.unlock(); menu.toggle(); });
+  s.addEventListener("click", () => { s.blur(); audio.toggleMute(); });
+  label();
 }
 
 // The short names every game draws with, on whichever screen get() returns (it changes when the page is re-fitted).
@@ -1342,6 +1310,12 @@ function createPixels(W, H, cols, rows, unit){
     /* text, on the cols x rows grid, drawn sharp over the picture */
     text(x, y, s, v, layer = TEXT_LAYER){ texts.push({ x, y, s, v, layer }); },
     center(y, s, v){ P.text((cols - s.length) >> 1, y, s, v); },
+    // A button three text rows tall from row r0, big enough to tap, with its label in the middle row.
+    button(r0, label, v, w = W * 0.68){
+      const x0 = Math.round((W - w) / 2), x1 = W - 1 - x0, y0 = Math.round(r0 * H / rows), y1 = Math.round((r0 + 3) * H / rows) - 3;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) P.px(x, y, y === y0 || y === y1 || x === x0 || x === x1 ? [96, 104, 150] : [24, 28, 50], 3);
+      P.center(r0 + 1, label, v);
+    },
     // the edge pass: outlines from the layers (after Balote's shadeEdges, in core.js)
     edges(){ pixelArt(d, lay, flat, W, H); },
     fit(stage, cv, ctx){
@@ -1376,8 +1350,8 @@ const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stag
 // The ground is an engine terrain grid of small square cells (2 x 2 pixels), so blasts dig round craters. Tanks sit on
 // it and fall when it goes. Shells and rubble are engine bodies on top. After every blast, unsupported dirt falls
 // until the ground settles. Two to four tanks, each a person or the computer; between rounds each spends its winnings
-// in the shop. Everything is drawn as pixel art (src/pixel.js); text and the menu use a 100 x 56 grid over it.
-const TGW = 100, TGH = 56, WIN_ROUNDS = 3;         // the text grid
+// in the shop. Everything is drawn as pixel art (src/pixel.js); text and the menu use a 64 x 40 grid over it.
+const TGW = 64, TGH = 40, WIN_ROUNDS = 3;          // the text grid: big enough letters to read on a phone
 const NX = 200, NY = 224, CELL = 4, PU = 2;        // ground cells; world units per cell and per pixel
 const COL = 8, ROW = 16;                           // a text column and row in world units: the sizes things are measured in
 const TW = 10, TH = 8;                             // a tank in ground cells (20 x 16 pixels)
@@ -1823,39 +1797,41 @@ function drawWorld(t){
   vfx.draw(pix);
 }
 function drawTitle(){
-  pix.rect(30, 25 * 8 - 4, pix.W - 60, 9 * 8 + 8, [10, 12, 22], 3);   // a dark panel behind the text
-  [["CRATER", 10], ["DUEL", 17]].forEach(([word, y0], wi) => {
-    const x0 = Math.floor((TGW - word.length * 12 + 2) / 2), R = pix.ramp(TANK_PIX[wi]);
+  pix.rect(24, 184, pix.W - 48, 146, [10, 12, 22], 3);   // a dark panel behind the buttons and text
+  [["CRATER", 80], ["DUEL", 136]].forEach(([word, y0], wi) => {
+    const x0 = (pix.W - word.length * 48 + 8) >> 1, R = pix.ramp(TANK_PIX[wi]);
     [...word].forEach((ch, li) => FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#"){
-      const X = (x0 + li * 12 + dx * 2) * 4, Y = (y0 + dy) * 8, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
+      const X = x0 + li * 48 + dx * 8, Y = y0 + dy * 8, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
       for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++){   // each dot a bevelled block, joined to its neighbours
         const lv = (j === 0 && !on(0, -1)) || (i === 0 && !on(-1, 0)) ? 4 : (j === 7 && !on(0, 1)) || (i === 7 && !on(1, 0)) ? 1 : j < 3 ? 3 : 2;
         pix.px(X + i, Y + j, R[lv], 3);
       }
     } }));
   });
-  const blink = (performance.now() / 500 | 0) % 2;
-  pix.center(27, (pad.touch ? "A" : "1") + "  ONE PLAYER (VS COMPUTER)     " + (pad.touch ? "B" : "2") + "  TWO PLAYERS", blink ? WHITE : DIM);
-  pix.center(29, pad.touch ? "D-PAD LEFT/RIGHT AIM, UP/DOWN DRIVE.  HOLD A FOR POWER, LET GO TO FIRE.  B WEAPON" : "LEFT/RIGHT AIM  SHIFT+LEFT/RIGHT DRIVE  HOLD SPACE FOR POWER  TAB WEAPON  ESC MENU", DIM);
-  pix.center(31, "LAST TANK STANDING WINS THE ROUND. FIRST TO " + WIN_ROUNDS + " ROUNDS. SHOP BETWEEN ROUNDS.", DIM);
-  pix.center(32, count + " TANKS (CHANGE IN THE MENU)", DIM);
+  const t = INPUT.touch;
+  pix.button(17, (t ? "" : "1  ") + "ONE PLAYER (VS COMPUTER)", WHITE); pix.button(20, (t ? "" : "2  ") + "TWO PLAYERS", WHITE);
+  pix.center(24, t ? "DRAG BACK FROM ANYWHERE AND LET GO TO FIRE." : "LEFT/RIGHT AIM  SHIFT+LEFT/RIGHT DRIVE  ESC MENU", DIM);
+  pix.center(25, t ? "DRAG YOUR TANK TO DRIVE.  TAP THE WEAPON TO CHANGE IT." : "HOLD SPACE FOR POWER, LET GO TO FIRE  TAB WEAPON", DIM);
+  pix.center(27, "LAST TANK STANDING WINS THE ROUND. FIRST TO " + WIN_ROUNDS + " ROUNDS.", DIM);
+  pix.center(28, "SHOP BETWEEN ROUNDS.  " + count + " TANKS (CHANGE IN THE MENU)", DIM);
 }
+const shopGap = () => INPUT.touch ? 2 : 1;   // shop rows two lines apart on a touch screen, so a finger can pick one
 function drawShop(){
-  const T = tanks[shopAt], x0 = 25, y0 = 12, w = 50, text = pix.text;
-  pix.rect((x0 - 2) * 4, (y0 - 1) * 8, (w + 4) * 4, (17 + SHOP.length) * 8, [10, 12, 22], 3);
+  const T = tanks[shopAt], x0 = 7, y0 = 6, w = 50, text = pix.text, CW = pix.W / TGW, CH = pix.H / TGH, g = shopGap(), n = (SHOP.length + 1) * g - 1;   // n: rows from the first item to DONE, less one
+  pix.rect((x0 - 2) * CW, (y0 - 1) * CH, (w + 4) * CW, (17 + n) * CH, [10, 12, 22], 3);
   text(x0, y0, "THE SHOP", GOLD); text(x0 + w - 18, y0, ("ROUND " + (tanks.reduce((s, U) => s + U.wins, 0) + 1)).padStart(18), DIM);
   text(x0, y0 + 2, name(shopAt), TANK_RGB[shopAt]); text(x0 + 20, y0 + 2, ("MONEY $" + T.money).padStart(w - 20), GOLD);
   text(x0, y0 + 3, "EARNED LAST ROUND $" + T.earned, DIM);
   SHOP.forEach((it, k) => {
     const sel = k === shopSel, can = T.money >= it.price && !(it.one && it.has(T));
-    text(x0, y0 + 5 + k, (sel ? "> " : "  ") + it.name.padEnd(12) + ("$" + it.price).padStart(6) + "    HAVE " + String(it.has(T) || 0).padStart(3), sel ? (can ? WHITE : DIM) : can ? [1, 1, 1] : DIM);
+    text(x0, y0 + 5 + k * g, (sel ? "> " : "  ") + it.name.padEnd(12) + ("$" + it.price).padStart(6) + "    HAVE " + String(it.has(T) || 0).padStart(3), sel ? (can ? WHITE : DIM) : can ? [1, 1, 1] : DIM);
   });
-  text(x0, y0 + 6 + SHOP.length, (shopSel === SHOP.length ? "> " : "  ") + "DONE", shopSel === SHOP.length ? WHITE : [1, 1, 1]);
-  text(x0, y0 + 8 + SHOP.length, "MISSILES ARE FREE. AMMO, FUEL AND MONEY CARRY ON.", DIM);
-  text(x0, y0 + 9 + SHOP.length, "A SHIELD TAKES THE FIRST " + SHIELD_HP + " DAMAGE OF ONE ROUND.", DIM);
-  text(x0, y0 + 11 + SHOP.length, pad.touch ? "UP/DOWN CHOOSE   A BUY   B DONE" : "UP/DOWN CHOOSE   SPACE OR ENTER BUY   D WHEN DONE", DIM);
+  text(x0, y0 + 6 + n, (shopSel === SHOP.length ? "> " : "  ") + "DONE", shopSel === SHOP.length ? WHITE : [1, 1, 1]);
+  text(x0, y0 + 8 + n, "MISSILES ARE FREE. AMMO, FUEL AND MONEY CARRY ON.", DIM);
+  text(x0, y0 + 9 + n, "A SHIELD TAKES THE FIRST " + SHIELD_HP + " DAMAGE OF ONE ROUND.", DIM);
+  text(x0, y0 + 11 + n, INPUT.touch ? "TAP AN ITEM TO BUY IT.  TAP DONE TO GO ON." : "UP/DOWN CHOOSE   SPACE OR ENTER BUY   D WHEN DONE", DIM);
   const st = tanks.map((U, i) => name(i) + " " + U.wins).join("   ");
-  text(Math.max(x0, (TGW - st.length) >> 1), y0 + 13 + SHOP.length, st, DIM);
+  text(Math.max(x0, (TGW - st.length) >> 1), y0 + 13 + n, st, DIM);
 }
 function draw(t){
   const dim = state === "title" || state === "shop" ? 0.45 : 1, key = dim + "";
@@ -1878,32 +1854,34 @@ function draw(t){
   trail.forEach((p, i) => { if (i % 2 === 0) pix.px(p.x / PU, p.y / PU, [150, 140, 120], 1); });
   for (const b of shells) if (!b.dead){
     const x = b.x / PU, y = b.y / PU;
-    if (y < 28){ for (let k = 0; k < 3; k++) pix.rect(x - k, 28 + k, 2 * k + 1, 1, [255, 230, 160], 3); continue; }   // above the top: a mark shows where it will come down
+    if (y < 0){ for (let k = 0; k < 3; k++) pix.rect(x - k, 46 + k, 2 * k + 1, 1, [255, 230, 160], 3); continue; }   // above the top: a mark shows where it will come down
     pix.ball(x, y, 2, [255, 236, 190], 3, true); pix.glow(b.x, b.y, ROW * 1.2, [0.5, 0.35, 0.15]);
   }
   pix.edges();
   // HUD: each tank's health and rounds across the top, wind in the middle, the active tank's aim, weapon and fuel below
   const colW = Math.floor(TGW / tanks.length);
-  tanks.forEach((U, i) => { const s = `${name(i)} HP ${String(U.hp).padStart(3)}${U.shield ? "+" + U.shield : ""} R${U.wins}`; pix.text(i * colW + ((colW - s.length) >> 1), 0, s, U.dead ? DIM : TANK_RGB[i]); });
-  pix.center(1, "WIND " + (wind === 0 ? "CALM" : wind < 0 ? "<".repeat(Math.min(5, Math.ceil(-wind / 2))) + " " + -wind : wind + " " + ">".repeat(Math.min(5, Math.ceil(wind / 2)))), WHITE);
+  tanks.forEach((U, i) => {
+    const s = `HP ${U.hp}${U.shield ? "+" + U.shield : ""} R${U.wins}`, c = U.dead ? DIM : TANK_RGB[i];
+    pix.text(i * colW + ((colW - name(i).length) >> 1), 0, name(i), c); pix.text(i * colW + ((colW - s.length) >> 1), 1, s, c);
+  });
+  pix.center(2, "WIND " + (wind === 0 ? "CALM" : wind < 0 ? "<".repeat(Math.min(5, Math.ceil(-wind / 2))) + " " + -wind : wind + " " + ">".repeat(Math.min(5, Math.ceil(wind / 2)))), WHITE);
   if (state !== "over" && T && !T.dead){
     const W = WEAPONS[T.weapon], ammo = T.ammo[T.weapon] === Infinity ? "" : " x" + T.ammo[T.weapon];
-    pix.center(2, `ANGLE ${String(Math.round(T.angle)).padStart(3)}   POWER ${String(Math.round(T.power)).padStart(3)}   ${W.name}${ammo}   FUEL ${T.fuel}`, TANK_RGB[turn]);
+    pix.center(3, `ANGLE ${String(Math.round(T.angle)).padStart(3)}   POWER ${String(Math.round(T.power)).padStart(3)}   ${INPUT.touch ? "< " + W.name + ammo + " >" : W.name + ammo}   FUEL ${T.fuel}`, TANK_RGB[turn]);
   }
   if (state === "aim" || state === "cpu"){   // the power meter, with a mark where your last shot was
-    const R = pix.ramp(TANK_PIX[turn]), w = 120, x0 = (pix.W - w) >> 1, y0 = 26, fill = Math.round(T.power / 100 * w), lp = lastPower[turn];
+    const R = pix.ramp(TANK_PIX[turn]), w = 120, x0 = (pix.W - w) >> 1, y0 = 48, fill = Math.round(T.power / 100 * w), lp = lastPower[turn];
     pix.rect(x0 - 1, y0 - 1, w + 2, 6, [20, 22, 34], 4);
     for (let x = 0; x < w; x++) for (let y = 0; y < 4; y++) pix.px(x0 + x, y0 + y, x < fill ? R[y ? 3 : 4] : [44, 46, 62], 4);
     if (lp !== null){ const m = x0 + Math.min(w - 1, Math.round(lp / 100 * w)); pix.rect(m, y0 - 2, 1, 8, [240, 240, 240], 4); }
-    if (state === "aim" && charge === null && msgT <= 0) pix.center(5, pad.touch ? "HOLD A FOR POWER, LET GO TO FIRE.  D-PAD UP/DOWN DRIVES" : "HOLD SPACE FOR POWER, LET GO TO FIRE.  SHIFT+ARROWS DRIVE", DIM);
+    if (state === "aim" && charge === null && !sling && msgT <= 0) pix.center(5, INPUT.touch ? "DRAG BACK TO FIRE.  DRAG THE TANK TO DRIVE." : "HOLD SPACE FOR POWER, LET GO TO FIRE.  SHIFT DRIVES", DIM);
   }
   if (state === "over"){
     const w = winner();
-    pix.center(9, `  ${name(w)} WINS ${tanks.map(U => U.wins).join("-")}  `, TANK_RGB[w]);
-    pix.center(11, pad.touch ? "  PRESS START FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
-  } else if (msgT > 0) pix.center(9, "  " + msg + "  ", WHITE);
-  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
-  pix.text(TGW - 1 - hint.length, TGH - 1, hint, DIM);
+    pix.center(7, `  ${name(w)} WINS ${tanks.map(U => U.wins).join("-")}  `, TANK_RGB[w]);
+    pix.center(9, INPUT.touch ? "  TAP FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
+  } else if (msgT > 0) pix.center(7, "  " + msg + "  ", WHITE);
+  if (!INPUT.touch) pix.text(TGW - 11, TGH - 1, " ESC MENU ", DIM);
   finish();
 }
 function finish(){
@@ -1927,18 +1905,17 @@ function release(){   // Space, A up: fire with the power on the meter
   if (state !== "aim" || charge === null) return;
   charge = null; lastPower[turn] = tanks[turn].power; fire(turn);
 }
-// The pause menu (src/menu.js) holds what the old button row did. Open it with Esc or P, SELECT, or a mouse click.
+// The pause menu (src/menu.js). Open it with Esc or P, or the header's Menu button.
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
   { label: "NEW MATCH", select: () => { menu.hide(); audio.unlock(); start(nextMode); } },
   { label: "MODE", value: () => nextMode === "cpu" ? "VS COMPUTER" : "TWO PLAYERS", change: () => { nextMode = nextMode === "cpu" ? "two" : "cpu"; } },
   { label: "TANKS", value: () => String(nextCount), change: d => { nextCount = (nextCount - 2 + (d || 1) + 3) % 3 + 2; } },
   { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
-  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
-  onOpen: () => { charge = null; for (const k in keys) keys[k] = k === "drive" ? 0 : false; audio.pause(); },   // opening cancels a charge
+  onOpen: () => { charge = sling = null; keys.drive = 0; for (const k in keys) keys[k] = k === "drive" ? 0 : false; audio.pause(); },   // opening cancels a charge
   onClose: () => { audio.resume(); }
 });
 function nextWeapon(){   // cycle to the next weapon that still has ammo
@@ -1972,28 +1949,43 @@ addEventListener("keyup", e => {
   if (e.key === "Shift" || e.key === "ArrowLeft" || e.key === "ArrowRight") keys.drive = 0;
   if (e.key === " " || e.key === "Enter") release();
 });
-addEventListener("blur", () => { for (const k in keys) keys[k] = k === "drive" ? 0 : false; charge = null; });   // leaving the window cancels a charge
+addEventListener("blur", () => { for (const k in keys) keys[k] = k === "drive" ? 0 : false; charge = sling = null; });   // leaving the window cancels a charge
 
-const pad = createPad({ store, menu: () => menu.open && menu, onAny: () => audio.unlock(),
-  onDir: d => {
-    if (state === "shop"){ if (d === "up" || d === "down") shopKey(d); return; }
-    keys.left = d === "left"; keys.right = d === "right"; keys.drive = d === "up" ? 1 : d === "down" ? -1 : 0;   // up drives right, down drives left
+// Touch and mouse, after Balote: drag back from anywhere and let go to fire. The pull sets the angle (the shell goes
+// the opposite way) and its length the power; a short drag is cancelled. A drag that starts on your tank drives it
+// towards the finger instead. Taps choose the title's buttons and the shop's items, change the weapon (on the HUD
+// line that names it), go on from the end of a match, and pick rows in the menu.
+let sling = null, driving = null;   // the drag that is aiming or driving, while there is one
+function aimFrom(p){
+  const dx = (p.x0 - p.x) * pix.W, dy = (p.y0 - p.y) * pix.H, T = tanks[turn];
+  T.angle = clamp(Math.round(Math.atan2(Math.max(0, -dy), dx) * 180 / Math.PI), 0, 180);
+  T.power = clamp(Math.round(Math.hypot(dx, dy) / (pix.W * 0.4) * 100), 1, 100);
+}
+function driveTo(p){ const T = tanks[turn], d = p.x * pix.W - (T.x * 2 + TW); keys.drive = Math.abs(d) < 6 ? 0 : Math.sign(d); }
+createTouch(cv, {
+  down: p => {
+    audio.unlock();
+    if (menu.open || state !== "aim" || charge !== null) return;
+    const T = tanks[turn], dx = p.x * pix.W - (T.x * 2 + TW), dy = p.y * pix.H - (T.y * 2 + TH);
+    if (Math.abs(dx) < 18 && Math.abs(dy) < 16) driving = p; else sling = p;
   },
-  onPress: id => {
-    if (id === "select") return menu.show();
-    if (state === "title" && (id === "a" || id === "b")) return start(id === "a" ? "cpu" : "two");
-    if (state === "shop"){ shopKey(id === "b" ? "done" : "buy"); return; }
-    if (id === "b") return nextWeapon();
-    if (id === "start") return state === "title" || state === "over" ? action() : menu.show();
-    press();
-  },
-  onRelease: id => { if (id === "a") release(); } });
-cv.addEventListener("pointerdown", e => {
-  audio.unlock();
-  if (menu.open){ const [gx, gy] = gridAt(e, cv, TGW, TGH); menu.tap(gx, gy); return; }
-  if (state === "title" || state === "over") action();
-  else if (!pad.touch) menu.show();   // a mouse click during play opens the menu
+  move: p => { if (p === sling && p.moved >= 12) aimFrom(p); if (p === driving && state === "aim") driveTo(p); },
+  up: p => {
+    if (p === driving){ driving = null; keys.drive = 0; return; }
+    if (p === sling){ sling = null; if (p.moved >= 12 && state === "aim"){ aimFrom(p); lastPower[turn] = tanks[turn].power; fire(turn); return; } }
+    if (!p.tap) return;
+    if (menu.open) return menu.tap(Math.floor(p.x * TGW), Math.floor(p.y * TGH));
+    const gy = Math.floor(p.y * TGH);
+    if (state === "title"){ if (gy >= 17 && gy < 20) start("cpu"); else if (gy >= 20 && gy < 23) start("two"); }
+    else if (state === "over") action();
+    else if (state === "aim" && gy >= 2 && gy <= 4) nextWeapon();
+    else if (state === "shop"){   // the item rows, then DONE
+      const g = shopGap(), k = Math.floor((gy - 11 + (g >> 1)) / g);
+      if (k >= 0 && k < SHOP.length || k === SHOP.length + 1){ shopSel = Math.min(k, SHOP.length); shopKey("buy"); }
+    }
+  }
 });
+headerButtons(menu, audio);
 
 /* ---------- loop ---------- */
 world.onSub = checkShells;

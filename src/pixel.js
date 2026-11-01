@@ -80,6 +80,12 @@ function createPixels(W, H, cols, rows, unit){
     /* text, on the cols x rows grid, drawn sharp over the picture */
     text(x, y, s, v, layer = TEXT_LAYER){ texts.push({ x, y, s, v, layer }); },
     center(y, s, v){ P.text((cols - s.length) >> 1, y, s, v); },
+    // A button three text rows tall from row r0, big enough to tap, with its label in the middle row.
+    button(r0, label, v, w = W * 0.68){
+      const x0 = Math.round((W - w) / 2), x1 = W - 1 - x0, y0 = Math.round(r0 * H / rows), y1 = Math.round((r0 + 3) * H / rows) - 3;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) P.px(x, y, y === y0 || y === y1 || x === x0 || x === x1 ? [96, 104, 150] : [24, 28, 50], 3);
+      P.center(r0 + 1, label, v);
+    },
     // the edge pass: outlines from the layers (after Balote's shadeEdges, in core.js)
     edges(){ pixelArt(d, lay, flat, W, H); },
     fit(stage, cv, ctx){

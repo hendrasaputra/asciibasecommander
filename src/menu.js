@@ -25,10 +25,10 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     else if (k === "Escape" || k === "p" || k === "P") m.hide();
     return true;   // other keys do nothing while the menu is open
   };
-  // A tap or click at grid cell (gx, gy): picks that row and changes or chooses it. Taps outside the box close it.
+    // A tap or click at grid cell (gx, gy): picks that row and changes or chooses it. Taps outside the box close it.
   m.tap = (gx, gy) => {
     if (!m.open || !m.box) return false;
-    const b = m.box, i = gy - b.y0;
+    const b = m.box, i = Math.floor((gy - b.y0 + (b.gap >> 1)) / b.gap);
     if (gx < b.x0 || gx >= b.x0 + b.w || gy < b.top || gy >= b.top + b.h){ m.hide(); return true; }
     if (i >= 0 && i < b.n){ m.at = b.first + i; m.choose(); }
     return true;
@@ -36,11 +36,12 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
   m.draw = (screen, { accent, normal, dim, title = "PAUSED", note = "" }) => {
     const GW = screen.cols, GH = screen.rows, text = (x, y, s, rgb) => screen.text(x, y, s, rgb, MENU_LAYER);
     const R = rows(); m.at = Math.min(m.at, R.length - 1);
+    const gap = INPUT.touch ? 2 : 1;   // rows two lines apart on a touch screen, so a finger can pick one
     // a list longer than the screen shows a window around the chosen row, with ^ and v marks
-    const n = Math.min(R.length, Math.max(3, GH - 8 - (note ? 1 : 0))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
+    const n = Math.min(R.length, Math.max(3, Math.floor((GH - 8 - (note ? 1 : 0)) / gap))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
     // 40 wide, or wider (up to the screen) when a row or the note needs it
     const longest = Math.max(title.length + 4, note.length + 4, ...R.map(r => 5 + Math.max(18, r.label.length) + (r.value ? r.value().length + 4 : 0) + 3));
-    const w = Math.max(40, Math.min(GW - 2, longest)), h = n + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
+    const w = Math.max(40, Math.min(GW - 2, longest)), h = n * gap + 6 - (gap - 1) + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
     const edge = "+" + "-".repeat(w - 2) + "+";
     text(x0, top, edge, dim); text(x0, top + h - 1, edge, dim);
     for (let y = 1; y < h - 1; y++){
@@ -51,12 +52,12 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     text(x0 + ((w - title.length) >> 1), top + 1, title, accent);
     for (let i = 0; i < n; i++){
       const r = R[first + i], sel = first + i === m.at, v = r.value ? "< " + r.value() + " >" : "";
-      text(x0 + 3, top + 3 + i, (sel ? "> " : "  ") + r.label.padEnd(18) + v, sel ? accent : normal);
+      text(x0 + 3, top + 3 + i * gap, (sel ? "> " : "  ") + r.label.padEnd(18) + v, sel ? accent : normal);
     }
     if (first > 0) text(x0 + w - 3, top + 3, "^", dim);
-    if (first + n < R.length) text(x0 + w - 3, top + 2 + n, "v", dim);
+    if (first + n < R.length) text(x0 + w - 3, top + 3 + (n - 1) * gap, "v", dim);
     if (note) text(x0 + ((w - note.length) >> 1), top + h - 2, note, dim);
-    m.box = { x0, w, top, h, y0: top + 3, first, n };
+    m.box = { x0, w, top, h, y0: top + 3, first, n, gap };
   };
   return m;
 }

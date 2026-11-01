@@ -232,6 +232,7 @@ function impact(s, y){   // an enemy shot lands on a shield or the floor; bombs 
 function update(dt){
   const d = DIFF[diffKey];
   if ((animT += dt) >= 0.35){ animT = 0; frame ^= 1; }
+  if (aimX !== null){ keys.left = aimX < px - 0.5; keys.right = aimX > px + 0.5; }   // a finger on the screen: the cannon goes to it
   px = Math.max(1, Math.min(GW - 1 - CW, px + ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * CANNON_SPEED * dt));
   if ((fireT -= dt) <= 0 && keys.fire){
     const G = GUNS[gun];
@@ -332,13 +333,13 @@ function drawTitle(t){
   for (let i = 0; i < 7; i++) eachCell(TYPES[i].art[frame], 6 + fleetX + i * 13, 28, (gx, gy, code) => put(gx, gy, TYPES[i].rgb, 0.9, 2, code));
   if (titleT > 3){
     center(25, "~ DEFEND THE BASE ~", CANNON_RGB);
-    if ((t / 500 | 0) % 2) center(46, audio.unlocked || audio.muted ? (pad.touch ? "PRESS START OR A TO BEGIN" : "PRESS SPACE TO START")
-      : (pad.touch ? "TAP ANY BUTTON FOR SOUND" : "PRESS ANY KEY FOR SOUND"), WHITE);
+    if ((t / 500 | 0) % 2) center(46, audio.unlocked || audio.muted ? (INPUT.touch ? "TAP TO BEGIN" : "PRESS SPACE TO START")
+      : (INPUT.touch ? "TAP TO BEGIN" : "PRESS ANY KEY FOR SOUND"), WHITE);
   }
   center(36, "HIGH SCORES", CANNON_RGB);
   if (!scores.list.length) center(38, "NO SCORES YET", DIM);
   scores.list.forEach((e, i) => center(38 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
-  center(52, pad.touch ? "D-PAD MOVE  A/B FIRE  SELECT MENU" : "ARROWS/A D MOVE  SPACE FIRE  ESC MENU  R RESTART  M SOUND", DIM);
+  center(52, INPUT.touch ? "TOUCH AND SLIDE: THE CANNON FOLLOWS YOUR FINGER AND FIRES" : "ARROWS/A D MOVE  SPACE FIRE  ESC MENU  R RESTART  M SOUND", DIM);
   center(54, "CATCH AIRDROPS: [P] PARTS  [S] SHIELDS  [L] LIFE", DIM);
   center(56, "DIFFICULTY: " + diffKey.toUpperCase(), DIM);
 }
@@ -374,15 +375,14 @@ function draw(t){
   text(2, GH - 1, " GUN " + GUNS[gun].name + "  PARTS " + (gun < GUNS.length - 1 ? parts + "/" + partsCost() : "MAX") + " ", CANNON_RGB);
   const left = " ENEMIES " + aliens.filter(a => a.alive).length + " ";
   text(GW - 2 - left.length, GH - 1, left, WHITE);
-  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
-  text(Math.floor((GW - hint.length) / 2), GH - 1, hint, DIM);
+  if (!INPUT.touch) text((GW - 10) >> 1, GH - 1, " ESC MENU ", DIM);
   const mid = GH >> 1;
   if (state === "over"){
-    center(mid, "  GAME OVER - press " + (pad.touch ? "START" : "R") + "  ", WHITE);
+    center(mid, (INPUT.touch ? "  GAME OVER - TAP TO PLAY AGAIN  " : "  GAME OVER - press R  "), WHITE);
     if (rank >= 0) center(mid + 2, "  NEW HIGH SCORE - RANK " + (rank + 1) + "  ", CANNON_RGB);
   } else if (state === "clear"){
     const n = makeLevel(level);
-    center(mid, "  WAVE " + (level - 1) + " CLEARED - press " + (pad.touch ? "START" : "R") + "  ", WHITE);
+    center(mid, "  WAVE " + (level - 1) + " CLEARED - " + (INPUT.touch ? "TAP" : "press R") + "  ", WHITE);
     center(mid + 2, "  NEXT: " + n.rows * n.cols + " ENEMIES" + (n.fresh !== undefined ? "  NEW: " + TYPES[n.fresh].name : "") + "  ", CANNON_RGB);
   }
   if (msgT > 0) center(4, " " + msg + " ", [1.6, 0.5, 0.35]);
@@ -409,7 +409,6 @@ const menu = createMenu(() => [
   { label: state === "title" ? "START GAME" : state === "clear" ? "NEXT WAVE" : "RESTART", select: () => { menu.hide(); audio.unlock(); restart(); } },
   { label: "DIFFICULTY", value: () => diffKey.toUpperCase(), change: d => { const ks = Object.keys(DIFF); diffKey = ks[(ks.indexOf(diffKey) + d + ks.length) % ks.length]; } },
   { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
-  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
@@ -433,26 +432,22 @@ addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false
 addEventListener("blur", () => { keys.left = keys.right = keys.fire = false; });
 
 /* ---------- controls: keyboard or the touch gamepad (src/arcade.js) ---------- */
-function padStart(){   // START: begin, continue after a wave or game over, otherwise open the menu
-  if (state === "title") titlePress();
-  else if (state === "over" || state === "clear") restart();
-  else { audio.unlock(); menu.show(); }
-}
-const firing = new Set();   // A and B both fire; firing stops once neither is held
-const pad = createPad({ store, axis: "x", menu: () => menu.open && menu,
-  onDir: d => { keys.left = d === "left"; keys.right = d === "right"; if (d) audio.unlock(); },
-  onPress: id => {
-    if (id === "select"){ audio.unlock(); return menu.show(); }
-    if (id === "start") return padStart();
-    if (state === "title") return titlePress();
-    audio.unlock(); firing.add(id); keys.fire = true;
-  },
-  onRelease: id => { if (firing.delete(id)) keys.fire = firing.size > 0; } });
-cv.addEventListener("pointerdown", e => {
-  if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
-  if (state === "title") titlePress();
-  else { audio.unlock(); if (!pad.touch && state !== "over" && state !== "clear") menu.show(); }   // a mouse click opens the menu
+// Touch and mouse: touch the screen and the cannon slides to your finger and fires while you hold on. Taps start a
+// game, go on after a wave or game over, and pick rows in the menu.
+let aimX = null, aimer = null;   // where the finger wants the cannon (its left column), and that finger
+const aimAt = t => { aimX = t.x * GW - CW / 2; };
+createTouch(cv, {
+  down: t => { if (menu.open || state !== "play" || aimer) return; aimer = t; audio.unlock(); aimAt(t); keys.fire = true; },
+  move: t => { if (t === aimer) aimAt(t); },
+  up: t => {
+    if (t === aimer){ aimer = aimX = null; keys.left = keys.right = keys.fire = false; return; }
+    if (!t.tap) return;
+    if (menu.open) menu.tap(Math.floor(t.x * GW), Math.floor(t.y * GH));
+    else if (state === "title"){ audio.unlock(); restart(); }
+    else if (state === "over" || state === "clear"){ audio.unlock(); restart(); }
+  }
 });
+headerButtons(menu, audio);
 
 /* ---------- loop ---------- */
 let pausedDrawn = false;

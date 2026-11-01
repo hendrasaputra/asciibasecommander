@@ -16,7 +16,7 @@ ASCII label instead.
 | Game | After | What the engine adds |
 |---|---|---|
 | [Base Commander](base-commander.html) | Space Invaders / ASCII Alien Attack | Generated waves, 7 enemy types, 6 gun upgrades from airdrops, sun-lit shields, tumbling debris |
-| [Rooftop Rumble](rooftop-rumble.html) | QBasic Gorillas | Lobbed fruit with wind; blasts carve buildings into rubble; apes fall when their roof goes. Easy, Normal and Hard, with a predicted aiming arc (all of it on Easy, its start on Normal) and a computer that judges its throws like you do |
+| [Rooftop Rumble](rooftop-rumble.html) | QBasic Gorillas | Lobbed fruit with wind; blasts carve buildings into rubble; apes fall when their roof goes. Pixel art drawn in code: a night city with lit windows, gorillas built from lit balls, a moon that flinches when hit; blasts punch round holes. Easy, Normal and Hard, with a predicted aiming arc (all of it on Easy, its start on Normal) and a computer that judges its throws like you do |
 | [Crater Duel](crater-duel.html) | Scorched Earth | Pixel art drawn in code: tanks after a modern tank, a dusk sky, layered ground with round craters. Hills that collapse after each blast, falling tanks, four weapons. Two to four tanks (people or the computer), money and a shop between rounds (big shots, MIRVs, dirt bombs, fuel, shields), and tanks that drive on fuel |
 | [Stack Smash](stack-smash.html) | Tetris, Columns, Puyo Puyo | Blocks as lit slabs; cleared lines burst into boxes that land on the stack. T-spins, back-to-back and combos; Versus, where clears send garbage to the other well (against the computer or a second player); and Columns and Puyo games in the same well, with chains |
 | [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Pixel art drawn in code: a moon buggy after the Apollo rover, the turning Earth, shaded hills. Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble. Hold jump to jump further; ground tanks, rolling boulders and diving fighters further along; start at any checkpoint you have reached |
@@ -30,11 +30,16 @@ Torchlight Dungeons, a Moria adaptation, began here and has moved to its own pro
 
 - **Keyboard:** each game lists its keys on the title screen. Esc or P opens the pause menu, M turns the sound on or
   off, and R restarts.
-- **Touch:** a handheld-style gamepad with a D-pad, A/B, SELECT and START. On a phone it shows up by itself; choose
-  between touch and keyboard in the pause menu. On a phone held sideways, the D-pad and buttons move to the sides.
+- **Touch:** the game screen is the controller, as in Pixel Plays' Balote; touch, mouse and keyboard all work at
+  once, and the hints follow whichever you used last. Rooftop Rumble and Crater Duel: drag back from anywhere and let
+  go to throw or fire (Crater Duel: drag your tank to drive, tap the weapon to change it). Rover Patrol: the right half
+  jumps (hold to jump further), the left half fires and slides to change speed. Stack Smash: slide to move, tap to
+  turn, drag down to drop faster, flick down to drop, swipe up to hold. Base Commander: the cannon follows your finger
+  and fires while you touch. Title buttons, the shop and the menu are tapped; the header has Menu and Sound buttons,
+  and every button is at least 44 pixels tall. On a phone, the menu's rows are spaced out for fingers.
 - **Pause menu:** drawn on the game screen. It has resume, restart, the game's own options (Rooftop Rumble's mode and
   difficulty, Crater Duel's mode and number of tanks, Stack Smash's game, opponent and starting level, Rover Patrol's
-  starting point), sound, controls, display settings, and the way back to the shelf.
+  starting point), sound, display settings, and the way back to the shelf.
 - **Display settings** (`settings.html`, shared by every game): draw with ASCII characters or pixels (text stays
   readable either way), pick the character set, choose the detail, and turn on a tube TV filter. Detail (Fine 2x,
   Finest 3x) draws the engine's lit balls, boxes, blocks, rubble and light with smaller characters, while game text
@@ -64,12 +69,12 @@ physics.
   A change to physics or rendering goes here, so every page stays in step.
 - `src/menu.js`: the pause menu, used by every game.
 - `src/arcade.js`: everything else the cartridges share: saved settings and high scores, sound (effects and looped
-  music), the touch gamepad, fitting the canvas to a fixed grid, resizing, the frame loop, and shake, freeze and
+  music), touch (`createTouch`, the header buttons), fitting the canvas to a fixed grid, resizing, the frame loop, and shake, freeze and
   flash (`createFeel`).
 - `src/pixel.js`: native pixel art (`createPixels`): a small canvas scaled to fit, shaded balls and plates, lit
-  outlines, light, and sharp text and menus over it. Rover Patrol and Crater Duel draw with it; the other games will follow.
+  outlines, light, and sharp text and menus over it. Rover Patrol, Crater Duel and Rooftop Rumble draw with it; the other games will follow. Their text uses a coarser grid than the picture (64 or 72 columns), so it stays readable on a phone.
 - `src/fx.js`: the cartridges' particle effects (`createFx`): sparks, embers, smoke, debris and light.
-- `src/arcade/pad.css`: the styles every cartridge page shares (layout, gamepad, phone on its side); `build.sh` puts
+- `src/arcade/pad.css`: the styles every cartridge page shares (layout, header buttons, phone on its side); `build.sh` puts
   it into each page.
 - `src/game/`, `src/rooftop/`, `src/crater/`, `src/stack/`, `src/rover/`: each game's page markup (`head.html`) and rules
   (`game.js`).
@@ -110,7 +115,7 @@ Everything is saved in the browser's localStorage. Nothing is sent anywhere.
 | `stackSmash.v1.scores.columns`, `stackSmash.v1.scores.puyo` | Stack Smash's Columns and Puyo high scores |
 | `rooftopRumble.v1.difficulty` | Rooftop Rumble's difficulty |
 | `roverPatrol.v1.furthest` | The furthest checkpoint reached in Rover Patrol, for choosing where to start |
-| `<game>.v1.muted`, `<game>.v1.controls` | Sound on or off, touch or keyboard, per game |
+| `<game>.v1.muted` | Sound on or off, per game |
 
 ## Notes
 

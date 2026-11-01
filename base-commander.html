@@ -6,13 +6,15 @@
 <title>Base Commander</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
-/* Shared by the game pages: page layout, the touch gamepad, and the landscape phone layout. Built into each page. */
+/* Shared by the game pages: page layout, the header buttons, and the phone-on-its-side layout. Built into each page. */
 :root{
   --ground:#E9EDF1; --ink:#20304A; --muted:#5E6A7D; --line:#C9D1DB;
   --btn:#DCE2E9; --accent:#2F5BD3;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-left:env(safe-area-inset-left,0px);
+  padding-right:env(safe-area-inset-right,0px);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -26,49 +28,24 @@
 }
 *,*::before,*::after{box-sizing:inherit}
 html{height:100%;overscroll-behavior:none}
-body{height:100%;height:100svh;margin:0;touch-action:manipulation;overscroll-behavior:none;-webkit-touch-callout:none;background:var(--ground);color:var(--ink);
+body{height:100%;height:calc(100svh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));margin:0;touch-action:manipulation;overscroll-behavior:none;-webkit-touch-callout:none;background:var(--ground);color:var(--ink);
   font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   display:flex;flex-direction:column;overflow:hidden;-webkit-user-select:none;user-select:none}
-header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px;padding:10px 14px 6px}
-h1{font-size:17px;font-weight:650;margin:0;letter-spacing:-0.01em}
-h1 a{color:inherit;text-decoration:none}h1 a:hover{text-decoration:underline}
-#hud{font:12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted);white-space:nowrap}
-#stage{flex:1;position:relative;touch-action:none;margin:0 8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:0;background:#0B0F16}
+header{display:flex;align-items:center;gap:4px 12px;padding:2px 8px 2px 4px;min-height:48px}
+h1{font-size:17px;font-weight:650;margin:0;letter-spacing:-0.01em;flex:none}
+/* the back link and the buttons are at least 44px tall, so a thumb finds them */
+h1 a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;min-height:44px;padding:0 10px}h1 a:hover{text-decoration:underline}
+#hud{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font:12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted);white-space:nowrap}
+.tools{margin-left:auto;display:flex;gap:6px;flex:none}
+#stage{flex:1;position:relative;touch-action:none;margin:0 8px 8px;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:0;background:#0B0F16}
 #cv{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;touch-action:none}
-nav{padding:8px 8px 10px;display:flex;flex-direction:column;gap:6px}
-button{flex:1 1 auto;min-width:60px;min-height:40px;padding:6px 8px;border:0;border-radius:8px;background:var(--btn);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;touch-action:none}
+button{min-width:44px;min-height:44px;padding:6px 14px;border:0;border-radius:10px;background:var(--btn);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;touch-action:manipulation}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-/* Touch gamepad, styled after a handheld console: cross-shaped D-pad, slanted A/B, pill SELECT/START */
-#gamepad{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"dpad . ab" "mid mid mid";align-items:center;row-gap:4px;padding:4px 12px 20px;touch-action:none}
-#gamepad[hidden]{display:none}
-#dpad{grid-area:dpad;position:relative;width:120px;height:120px;touch-action:none;cursor:pointer}
-#dpad::before,#dpad::after{content:"";position:absolute;background:#2A2A31;border-radius:7px;box-shadow:0 4px 0 #0E0E12}
-#dpad::before{left:0;right:0;top:40px;height:40px}
-#dpad::after{top:0;bottom:0;left:40px;width:40px}
-#dpad span{position:absolute;z-index:1;color:#6E6E78;font-size:13px;line-height:1;pointer-events:none;transition:color .05s}
-#dpad .l{left:11px;top:53px}#dpad .r{right:11px;top:53px}#dpad .u{left:54px;top:11px}#dpad .d{left:54px;bottom:11px}
-#dpad[data-dir="left"] .l,#dpad[data-dir="right"] .r,#dpad[data-dir="up"] .u,#dpad[data-dir="down"] .d{color:#F4F4F8}
-#dpad[data-dir="left"]{transform:perspective(300px) rotateY(-8deg)}
-#dpad[data-dir="right"]{transform:perspective(300px) rotateY(8deg)}
-#dpad[data-dir="up"]{transform:perspective(300px) rotateX(8deg)}
-#dpad[data-dir="down"]{transform:perspective(300px) rotateX(-8deg)}
-.mid{grid-area:mid;justify-self:center;display:flex;gap:18px;transform:rotate(-22deg)}
-.mid button{min-width:0;min-height:0;width:52px;height:16px;padding:0;border-radius:8px;background:#8D8C94;box-shadow:0 3px 0 #55545B;font-size:0;position:relative}
-.mid button::after{content:attr(data-label);position:absolute;top:22px;left:50%;transform:translateX(-50%);font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;color:var(--muted)}
-.ab{grid-area:ab;display:flex;gap:14px;transform:rotate(-22deg)}
-.ab button{min-width:0;min-height:0;width:60px;height:60px;padding:0;border-radius:50%;background:#A3245C;color:#F7D7E6;font:700 19px/1 ui-monospace,Menlo,monospace;box-shadow:0 5px 0 #5E1233}
-.ab button:first-child{margin-top:30px}
-#gamepad button.on{transform:translateY(3px);box-shadow:0 2px 0 #0E0E12;filter:brightness(.85)}
-body.touch #hud{display:none}
-/* Phone on its side: D-pad on the left, A/B on the right, game in the middle */
-@media (orientation: landscape) and (max-height: 600px){
-  body.touch{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:1fr auto}
-  body.touch header{display:none}
-  body.touch nav,body.touch #gamepad{display:contents}
-  body.touch #stage{grid-column:2;grid-row:1;margin:6px 0 4px}
-  body.touch #dpad{grid-column:1;grid-row:1 / 3;align-self:center;justify-self:center;margin:0 18px 70px}
-  body.touch .mid{grid-column:1;grid-row:1 / 3;align-self:end;justify-self:center;margin-bottom:46px}
-  body.touch .ab{grid-column:3;grid-row:1 / 3;align-self:center;margin:0 18px 0 10px}
+body.touch #hud{visibility:hidden}
+/* Phone on its side: a slimmer header, so the game gets the height */
+@media (orientation: landscape) and (max-height: 500px){
+  header{min-height:44px;padding-top:0;padding-bottom:0}
+  #stage{margin-bottom:4px}
 }
 </style>
 </head>
@@ -76,17 +53,11 @@ body.touch #hud{display:none}
 <header>
   <h1><a href="./" title="Back to the cartridge shelf">&#8249; Base Commander</a></h1>
   <div id="hud">&larr; &rarr; / A D move &middot; Space fire &middot; Esc menu &middot; R restart &middot; M sound</div>
+  <div class="tools"><button id="menuBtn" type="button">Menu</button><button id="soundBtn" type="button">Sound</button></div>
 </header>
 <div id="stage">
-  <canvas id="cv" aria-label="Game screen. Arrow keys or A and D move, Space fires."></canvas>
+  <canvas id="cv" aria-label="Game screen. Arrow keys or A and D move, Space fires. On a touch screen, the cannon follows your finger and fires while you touch."></canvas>
 </div>
-<nav>
-  <div id="gamepad" hidden>
-    <div id="dpad" role="group" aria-label="Direction pad. Hold left or right to move; slide to switch."><span class="l">&#9664;</span><span class="r">&#9654;</span><span class="u">&#9650;</span><span class="d">&#9660;</span></div>
-    <div class="mid"><button data-pad="select" data-label="SELECT" aria-label="Select: open the menu"></button><button data-pad="start" data-label="START" aria-label="Start, or open the menu"></button></div>
-    <div class="ab"><button data-pad="b" aria-label="B: fire">B</button><button data-pad="a" aria-label="A: fire">A</button></div>
-  </div>
-</nav>
 <script>
 "use strict";
 /* ================= Shared core: physics, light, ink, 24-bit renderer ================= */
@@ -946,10 +917,10 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     else if (k === "Escape" || k === "p" || k === "P") m.hide();
     return true;   // other keys do nothing while the menu is open
   };
-  // A tap or click at grid cell (gx, gy): picks that row and changes or chooses it. Taps outside the box close it.
+    // A tap or click at grid cell (gx, gy): picks that row and changes or chooses it. Taps outside the box close it.
   m.tap = (gx, gy) => {
     if (!m.open || !m.box) return false;
-    const b = m.box, i = gy - b.y0;
+    const b = m.box, i = Math.floor((gy - b.y0 + (b.gap >> 1)) / b.gap);
     if (gx < b.x0 || gx >= b.x0 + b.w || gy < b.top || gy >= b.top + b.h){ m.hide(); return true; }
     if (i >= 0 && i < b.n){ m.at = b.first + i; m.choose(); }
     return true;
@@ -957,11 +928,12 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
   m.draw = (screen, { accent, normal, dim, title = "PAUSED", note = "" }) => {
     const GW = screen.cols, GH = screen.rows, text = (x, y, s, rgb) => screen.text(x, y, s, rgb, MENU_LAYER);
     const R = rows(); m.at = Math.min(m.at, R.length - 1);
+    const gap = INPUT.touch ? 2 : 1;   // rows two lines apart on a touch screen, so a finger can pick one
     // a list longer than the screen shows a window around the chosen row, with ^ and v marks
-    const n = Math.min(R.length, Math.max(3, GH - 8 - (note ? 1 : 0))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
+    const n = Math.min(R.length, Math.max(3, Math.floor((GH - 8 - (note ? 1 : 0)) / gap))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
     // 40 wide, or wider (up to the screen) when a row or the note needs it
     const longest = Math.max(title.length + 4, note.length + 4, ...R.map(r => 5 + Math.max(18, r.label.length) + (r.value ? r.value().length + 4 : 0) + 3));
-    const w = Math.max(40, Math.min(GW - 2, longest)), h = n + 6 + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
+    const w = Math.max(40, Math.min(GW - 2, longest)), h = n * gap + 6 - (gap - 1) + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
     const edge = "+" + "-".repeat(w - 2) + "+";
     text(x0, top, edge, dim); text(x0, top + h - 1, edge, dim);
     for (let y = 1; y < h - 1; y++){
@@ -972,12 +944,12 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     text(x0 + ((w - title.length) >> 1), top + 1, title, accent);
     for (let i = 0; i < n; i++){
       const r = R[first + i], sel = first + i === m.at, v = r.value ? "< " + r.value() + " >" : "";
-      text(x0 + 3, top + 3 + i, (sel ? "> " : "  ") + r.label.padEnd(18) + v, sel ? accent : normal);
+      text(x0 + 3, top + 3 + i * gap, (sel ? "> " : "  ") + r.label.padEnd(18) + v, sel ? accent : normal);
     }
     if (first > 0) text(x0 + w - 3, top + 3, "^", dim);
-    if (first + n < R.length) text(x0 + w - 3, top + 2 + n, "v", dim);
+    if (first + n < R.length) text(x0 + w - 3, top + 3 + (n - 1) * gap, "v", dim);
     if (note) text(x0 + ((w - note.length) >> 1), top + h - 2, note, dim);
-    m.box = { x0, w, top, h, y0: top + 3, first, n };
+    m.box = { x0, w, top, h, y0: top + 3, first, n, gap };
   };
   return m;
 }
@@ -986,7 +958,7 @@ function gridAt(e, canvas, GW, GH){
   const r = canvas.getBoundingClientRect();
   return [Math.floor((e.clientX - r.left) / r.width * GW), Math.floor((e.clientY - r.top) / r.height * GH)];
 }
-/* ---------- shared by the game pages: saved settings, sound, the touch gamepad, fitting the canvas, the loop ---------- */
+/* ---------- shared by the game pages: saved settings, sound, touch, fitting the canvas, the loop ---------- */
 // Built into every cartridge after core.js and menu.js. Each game keeps only its own rules and drawing.
 
 // Saved settings for one game, under "<prefix><key>" in localStorage. Values are strings; *JSON for anything else.
@@ -1009,9 +981,13 @@ function scoreTable(store, n = 5, key = "scores", better = (a, b) => b.score - a
 // recording so MP3 padding never lands inside the loop. vol: per-sound gain (volume for the rest). minGap: seconds within which a
 // sound plays only once (a volley from many enemies still makes one sound). The mute choice is saved.
 function createAudio({ label, store, sounds, music = {}, vol = {}, volume = 0.6, sfxGain = 0.9, musicGain = 0.5, minGap = 0 }){
-  let ctx = null, master = null, sfxBus = null, musicBus = null, unlocked = false, waiting = null, song = null, songNode = null;
+  let ctx = null, master = null, sfxBus = null, musicBus = null, unlocked = false, waiting = null, song = null, songNode = null, paused = false;
   let muted = store.get("muted") === "1";
   const buffers = {}, lastPlayed = {};
+  // A touch's pointerdown does not count as a gesture that allows sound, so the context made then starts suspended;
+  // the end of the touch (or a key) wakes it.
+  const wake = () => { if (ctx && ctx.state === "suspended" && !paused) ctx.resume(); };
+  for (const ev of ["pointerup", "touchend", "keydown"]) addEventListener(ev, wake, true);
   function startSong(){
     const b = song && buffers["music:" + song]; if (!ctx || !b || songNode) return;
     const M = music[song], src = ctx.createBufferSource(), g = ctx.createGain();
@@ -1059,59 +1035,51 @@ function createAudio({ label, store, sounds, music = {}, vol = {}, volume = 0.6,
       if (master) master.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.02);
       store.set("muted", muted ? "1" : "0");
     },
-    pause(){ if (ctx) ctx.suspend(); }, resume(){ if (ctx) ctx.resume(); }
+    pause(){ paused = true; if (ctx) ctx.suspend(); }, resume(){ paused = false; if (ctx) ctx.resume(); }
   };
   return A;
 }
 
-// The handheld-style touch gamepad (#gamepad, #dpad and [data-pad] buttons in the page), or the keyboard.
-// The D-pad is one surface: the thumb's angle from its centre picks the direction, so sliding across switches.
-// axis: "x" (left and right only), 4, or 8 directions. While menu() returns an open menu, the D-pad moves through
-// it and A chooses (any other button closes it). Otherwise onDir(dir) hears every change ("" when let go),
-// onPress(id) and onRelease(id) the buttons, and onAny() any touch at all (games unlock their sound with it).
-function createPad({ store, axis = 4, menu = () => null, onDir = () => {}, onPress = () => {}, onRelease = () => {}, onAny = () => {} }){
-  const pad = document.getElementById("gamepad"), dpad = document.getElementById("dpad");
-  let touch = matchMedia("(pointer: coarse)").matches;   // default follows the device; the menu's Controls row overrides it
-  const saved = store.get("controls"); if (saved) touch = saved === "touch";
-  const buzz = () => navigator.vibrate && navigator.vibrate(8);   // a tick of feedback on phones that support it
-  const P = {
-    get touch(){ return touch; },
-    set(t, save){ touch = t; document.body.classList.toggle("touch", t); pad.hidden = !t; if (save) store.set("controls", t ? "touch" : "keyboard"); },
-    toggle(){ P.set(!touch, true); }
-  };
-  P.set(touch, false);
-  const NAMES8 = ["right", "downright", "down", "downleft", "left", "upleft", "up", "upright"];
-  function dirAt(e, mode){
-    const r = dpad.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-    if (mode === "x") return Math.abs(dx) < r.width * 0.1 ? "" : dx < 0 ? "left" : "right";
-    if (Math.hypot(dx, dy) < r.width * 0.1) return "";
-    if (mode === 8) return NAMES8[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
-    return Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-  }
-  let dir = "";
-  function at(e){
-    const m = menu(), d = dirAt(e, m ? 4 : axis);
-    if (d === dir) return;
-    dir = d; dpad.dataset.dir = d.includes("left") ? "left" : d.includes("right") ? "right" : d;
-    if (d) buzz();
-    if (m){ if (d) d === "up" ? m.move(-1) : d === "down" ? m.move(1) : m.change(d === "left" ? -1 : 1); return; }   // in a menu: one step per push
-    onDir(d);
-  }
-  dpad.addEventListener("pointerdown", e => { e.preventDefault(); dpad.setPointerCapture(e.pointerId); onAny(); at(e); });
-  dpad.addEventListener("pointermove", e => { if (dpad.hasPointerCapture(e.pointerId)) at(e); });
-  for (const ev of ["pointerup", "pointercancel"]) dpad.addEventListener(ev, () => { dir = ""; dpad.dataset.dir = ""; if (!menu()) onDir(""); });
-  document.querySelectorAll("[data-pad]").forEach(b => {
-    const id = b.dataset.pad;
-    b.addEventListener("pointerdown", e => {
-      e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add("on"); buzz(); onAny();
-      const m = menu();
-      if (m){ id === "a" ? m.choose() : m.hide(); return; }
-      onPress(id);
-    });
-    const up = () => { b.classList.remove("on"); onRelease(id); };
-    b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+// Touch, the mouse and the keyboard all work at once. INPUT.touch says which was used last (a touch-first device
+// starts with touch), so a game shows the hints for it; body.touch hides the keyboard hints in the header.
+const INPUT = { touch: false };
+function setTouch(t){ INPUT.touch = t; document.body.classList.toggle("touch", t); }
+setTouch(matchMedia("(pointer: coarse)").matches);
+addEventListener("pointerdown", e => { if (e.pointerType === "touch") setTouch(true); }, true);
+addEventListener("keydown", () => setTouch(false), true);
+// The game screen is the controller, as in Balote: each finger (or the mouse) is followed on its own, so two thumbs
+// work together. down(p), move(p) and up(p) get { x0, y0, x, y } as fractions of the canvas (0 to 1 across and
+// down), moved: the furthest it strayed from where it went down, in CSS pixels, and on up, tap: a quick touch that
+// barely moved. It listens on the whole stage, so the empty space around the picture works too (fractions there
+// fall outside 0 to 1).
+function createTouch(cv, { down = () => {}, move = () => {}, up = () => {} }){
+  const el = cv.parentElement, live = new Map(), at = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, r]; };
+  el.addEventListener("pointerdown", e => {
+    e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch (err){}
+    const [x, y] = at(e), p = { x0: x, y0: y, x, y, t0: performance.now(), moved: 0 };
+    live.set(e.pointerId, p); down(p);
   });
-  return P;
+  el.addEventListener("pointermove", e => {
+    const p = live.get(e.pointerId); if (!p) return;
+    const [x, y, r] = at(e); p.x = x; p.y = y;
+    p.moved = Math.max(p.moved, Math.hypot((x - p.x0) * r.width, (y - p.y0) * r.height)); move(p);
+  });
+  const end = cancel => e => {
+    const p = live.get(e.pointerId); if (!p) return;
+    live.delete(e.pointerId); p.tap = !cancel && p.moved < 12 && performance.now() - p.t0 < 500; up(p);
+  };
+  el.addEventListener("pointerup", end(false)); el.addEventListener("pointercancel", end(true));
+  return live;
+}
+// The header's Menu and Sound buttons (#menuBtn, #soundBtn). The sound label follows every mute, from anywhere.
+function headerButtons(menu, audio){
+  const m = document.getElementById("menuBtn"), s = document.getElementById("soundBtn"), toggle = audio.toggleMute;
+  const label = () => { s.textContent = audio.muted ? "Sound off" : "Sound on"; s.setAttribute("aria-pressed", String(!audio.muted)); };
+  audio.toggleMute = () => { toggle(); label(); };
+  // blur: a focused button would take the Space key that the games use
+  m.addEventListener("click", () => { m.blur(); audio.unlock(); menu.toggle(); });
+  s.addEventListener("click", () => { s.blur(); audio.toggleMute(); });
+  label();
 }
 
 // The short names every game draws with, on whichever screen get() returns (it changes when the page is re-fitted).
@@ -1496,6 +1464,7 @@ function impact(s, y){   // an enemy shot lands on a shield or the floor; bombs 
 function update(dt){
   const d = DIFF[diffKey];
   if ((animT += dt) >= 0.35){ animT = 0; frame ^= 1; }
+  if (aimX !== null){ keys.left = aimX < px - 0.5; keys.right = aimX > px + 0.5; }   // a finger on the screen: the cannon goes to it
   px = Math.max(1, Math.min(GW - 1 - CW, px + ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * CANNON_SPEED * dt));
   if ((fireT -= dt) <= 0 && keys.fire){
     const G = GUNS[gun];
@@ -1596,13 +1565,13 @@ function drawTitle(t){
   for (let i = 0; i < 7; i++) eachCell(TYPES[i].art[frame], 6 + fleetX + i * 13, 28, (gx, gy, code) => put(gx, gy, TYPES[i].rgb, 0.9, 2, code));
   if (titleT > 3){
     center(25, "~ DEFEND THE BASE ~", CANNON_RGB);
-    if ((t / 500 | 0) % 2) center(46, audio.unlocked || audio.muted ? (pad.touch ? "PRESS START OR A TO BEGIN" : "PRESS SPACE TO START")
-      : (pad.touch ? "TAP ANY BUTTON FOR SOUND" : "PRESS ANY KEY FOR SOUND"), WHITE);
+    if ((t / 500 | 0) % 2) center(46, audio.unlocked || audio.muted ? (INPUT.touch ? "TAP TO BEGIN" : "PRESS SPACE TO START")
+      : (INPUT.touch ? "TAP TO BEGIN" : "PRESS ANY KEY FOR SOUND"), WHITE);
   }
   center(36, "HIGH SCORES", CANNON_RGB);
   if (!scores.list.length) center(38, "NO SCORES YET", DIM);
   scores.list.forEach((e, i) => center(38 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
-  center(52, pad.touch ? "D-PAD MOVE  A/B FIRE  SELECT MENU" : "ARROWS/A D MOVE  SPACE FIRE  ESC MENU  R RESTART  M SOUND", DIM);
+  center(52, INPUT.touch ? "TOUCH AND SLIDE: THE CANNON FOLLOWS YOUR FINGER AND FIRES" : "ARROWS/A D MOVE  SPACE FIRE  ESC MENU  R RESTART  M SOUND", DIM);
   center(54, "CATCH AIRDROPS: [P] PARTS  [S] SHIELDS  [L] LIFE", DIM);
   center(56, "DIFFICULTY: " + diffKey.toUpperCase(), DIM);
 }
@@ -1638,15 +1607,14 @@ function draw(t){
   text(2, GH - 1, " GUN " + GUNS[gun].name + "  PARTS " + (gun < GUNS.length - 1 ? parts + "/" + partsCost() : "MAX") + " ", CANNON_RGB);
   const left = " ENEMIES " + aliens.filter(a => a.alive).length + " ";
   text(GW - 2 - left.length, GH - 1, left, WHITE);
-  const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
-  text(Math.floor((GW - hint.length) / 2), GH - 1, hint, DIM);
+  if (!INPUT.touch) text((GW - 10) >> 1, GH - 1, " ESC MENU ", DIM);
   const mid = GH >> 1;
   if (state === "over"){
-    center(mid, "  GAME OVER - press " + (pad.touch ? "START" : "R") + "  ", WHITE);
+    center(mid, (INPUT.touch ? "  GAME OVER - TAP TO PLAY AGAIN  " : "  GAME OVER - press R  "), WHITE);
     if (rank >= 0) center(mid + 2, "  NEW HIGH SCORE - RANK " + (rank + 1) + "  ", CANNON_RGB);
   } else if (state === "clear"){
     const n = makeLevel(level);
-    center(mid, "  WAVE " + (level - 1) + " CLEARED - press " + (pad.touch ? "START" : "R") + "  ", WHITE);
+    center(mid, "  WAVE " + (level - 1) + " CLEARED - " + (INPUT.touch ? "TAP" : "press R") + "  ", WHITE);
     center(mid + 2, "  NEXT: " + n.rows * n.cols + " ENEMIES" + (n.fresh !== undefined ? "  NEW: " + TYPES[n.fresh].name : "") + "  ", CANNON_RGB);
   }
   if (msgT > 0) center(4, " " + msg + " ", [1.6, 0.5, 0.35]);
@@ -1673,7 +1641,6 @@ const menu = createMenu(() => [
   { label: state === "title" ? "START GAME" : state === "clear" ? "NEXT WAVE" : "RESTART", select: () => { menu.hide(); audio.unlock(); restart(); } },
   { label: "DIFFICULTY", value: () => diffKey.toUpperCase(), change: d => { const ks = Object.keys(DIFF); diffKey = ks[(ks.indexOf(diffKey) + d + ks.length) % ks.length]; } },
   { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
-  { label: "CONTROLS", value: () => pad.touch ? "TOUCH" : "KEYBOARD", change: () => pad.toggle() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
 ], {
@@ -1697,26 +1664,22 @@ addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false
 addEventListener("blur", () => { keys.left = keys.right = keys.fire = false; });
 
 /* ---------- controls: keyboard or the touch gamepad (src/arcade.js) ---------- */
-function padStart(){   // START: begin, continue after a wave or game over, otherwise open the menu
-  if (state === "title") titlePress();
-  else if (state === "over" || state === "clear") restart();
-  else { audio.unlock(); menu.show(); }
-}
-const firing = new Set();   // A and B both fire; firing stops once neither is held
-const pad = createPad({ store, axis: "x", menu: () => menu.open && menu,
-  onDir: d => { keys.left = d === "left"; keys.right = d === "right"; if (d) audio.unlock(); },
-  onPress: id => {
-    if (id === "select"){ audio.unlock(); return menu.show(); }
-    if (id === "start") return padStart();
-    if (state === "title") return titlePress();
-    audio.unlock(); firing.add(id); keys.fire = true;
-  },
-  onRelease: id => { if (firing.delete(id)) keys.fire = firing.size > 0; } });
-cv.addEventListener("pointerdown", e => {
-  if (menu.open){ const [gx, gy] = gridAt(e, cv, GW, GH); menu.tap(gx, gy); return; }
-  if (state === "title") titlePress();
-  else { audio.unlock(); if (!pad.touch && state !== "over" && state !== "clear") menu.show(); }   // a mouse click opens the menu
+// Touch and mouse: touch the screen and the cannon slides to your finger and fires while you hold on. Taps start a
+// game, go on after a wave or game over, and pick rows in the menu.
+let aimX = null, aimer = null;   // where the finger wants the cannon (its left column), and that finger
+const aimAt = t => { aimX = t.x * GW - CW / 2; };
+createTouch(cv, {
+  down: t => { if (menu.open || state !== "play" || aimer) return; aimer = t; audio.unlock(); aimAt(t); keys.fire = true; },
+  move: t => { if (t === aimer) aimAt(t); },
+  up: t => {
+    if (t === aimer){ aimer = aimX = null; keys.left = keys.right = keys.fire = false; return; }
+    if (!t.tap) return;
+    if (menu.open) menu.tap(Math.floor(t.x * GW), Math.floor(t.y * GH));
+    else if (state === "title"){ audio.unlock(); restart(); }
+    else if (state === "over" || state === "clear"){ audio.unlock(); restart(); }
+  }
 });
+headerButtons(menu, audio);
 
 /* ---------- loop ---------- */
 let pausedDrawn = false;
