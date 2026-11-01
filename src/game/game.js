@@ -1,8 +1,10 @@
 (() => {
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
-// Rules run on a fixed character grid; physics and light run in pixels on top of it.
+// Rules run on a fixed grid of cells (the old character grid); physics runs in world units on top of it. Everything
+// is drawn as pixel art (src/pixel.js), 4 x 8 pixels to a cell; text and the menu use a coarser grid over it.
 const GW = 96, GH = 66, PY = GH - 4;   // playfield in cells; PY is the cannon's top row
+const COL = 8, ROW = 16, PU = 2, XP = COL / PU, YP = ROW / PU;   // world units per cell column and row, and per pixel; pixels per cell
 const AW = 7, AH = 4;                   // alien sprite size
 // Enemy types, two frames each. `from` is the first level they can appear in. Every enemy fires
 // laser lines: rate multiplies fire rate, speed the laser speed, bomb is the chance a shot is a bomb.
@@ -22,8 +24,7 @@ const TYPES = [
   { name: "BOMBER",  from: 6, hp: 4, pts: 60, rate: 1,   speed: 1,   bomb: 0.6,  rgb: [1.0, 0.35, 0.3],
     art: [["__/^\\__", "[ OOO ]", " \\_v_/ ", "  | |  "], ["__/^\\__", "[ ooo ]", " \\_v_/ ", "  ! !  "]] }
 ];
-// Enemy fire is the brightest thing on screen but emits no light: only the sun lights the scene, so attacks read
-// as sharp lines against the dimmed debris.
+// Enemy fire is the brightest thing on screen, so attacks read as sharp lines against the dimmed debris.
 const WEAPONS = {   // speed in cells per second
   laser: { speed: 34, rgb: [3.0, 0.15, 0.1], glyph: 124 },   // very bright, low green and blue so it stays red after tone mapping
   bomb:  { speed: 16, rgb: [2.4, 1.6, 0.4], glyph: 111, blast: true }
@@ -61,15 +62,16 @@ const FONT = {   // 7x7 block letters for the launch screen
 };
 const TITLE = [["BASE", 5], ["COMMANDER", 15]];   // word, top row
 
-const D = defaultDisplay(); D.room = 0.3; D.glow = 0.2;
-applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
-const world = new World(), sun = { on: false };   // lamp off: spheres fall back to the engine's fixed directional light
-let screen = null, stars = [], diffKey = "normal", score = 0, lives = 3, level = 1, lv = null;
+applyArcadeSettings(defaultDisplay());   // the tube TV filter from the shared Settings page
+const world = new World();
+world.w = GW * COL; world.h = (GH - 1) * ROW; world.unit = COL; world.g = { x: 0, y: world.h * 1.6 }; world.drag = 2e-4 * (600 / world.h) ** 2;
+const pix = createPixels(GW * XP, GH * YP, 64, 43, PU);
+let ready = false, diffKey = "normal", score = 0, lives = 3, level = 1, lv = null;
 let state = "title", titleT = 0, fwT = 0, landed = new Set(), paused = false, deadT = 0, msg = "", msgT = 0;
 let px = 0, fireT = 0, gun = 0, parts = 0, shots = [], bombs = [], aliens = [], shields = [], cannon = null, plane = null, dropT = 0;
 let fleet = { dir: 1, t: 0, every: 0.7 }, frame = 0, animT = 0, chewT = 0;
 let recorded = false, rank = -1;
-const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
+const cx = gx => (gx + 0.5) * COL, cy = gy => (gy + 0.5) * ROW;
 const partsCost = () => 3 + gun * 2;
 const cannonArt = () => [GUNS[gun].top, ...CANNON_BASE];
 
@@ -117,14 +119,7 @@ for (let n = 1; n <= 40; n++){   // self-check: every generated level fits above
 for (const T of TYPES) for (const f of T.art) console.assert(f.length === AH && f.every(r => r.length === AW), "Base Commander: bad sprite", T.name);
 for (const G of GUNS) console.assert(G.top.length === CW, "Base Commander: bad cannon top", G.name);
 
-function layout(){
-  const old = screen; screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old) return;
-  const W = GW * screen.cw;
-  world.w = W; world.h = (GH - 1) * screen.ch; world.unit = screen.cw;
-  world.g = { x: 0, y: world.h * 1.6 }; world.drag = 2e-4 * (600 / world.h) ** 2;
-  rescaleBodies(world, old, screen);
-  stars = Array.from({ length: 140 }, () => ({ i: (1 + Math.floor(Math.random() * (GH - 2))) * GW + 1 + Math.floor(Math.random() * (GW - 2)), ph: Math.random() * 6.283 }));
-}
+function layout(){ if (pix.fit(stage, cv, ctx)) ready = true; }
 
 function buildShields(){
   for (const s of shields) world.bodies.splice(world.bodies.indexOf(s.body), 1);
@@ -132,7 +127,7 @@ function buildShields(){
   for (const sx of SHIELD_X) SHIELD.forEach((row, dy) => [...row].forEach((ch, dx) => {
     if (ch !== "#") return;
     const s = { x: sx - 5 + dx, y: PY - 8 + dy, hp: 3 };
-    s.body = world.add(cx(s.x), cy(s.y), screen.ch * 0.5, "peg", SHIELD_RGB.slice());
+    s.body = world.add(cx(s.x), cy(s.y), ROW * 0.5, "peg", SHIELD_RGB.slice());
     shields.push(s);
   }));
 }
@@ -147,7 +142,7 @@ function setupLevel(){
   } });
   fleet = { dir: 1, t: 0, every: lv.step };
   buildShields();
-  cannon = world.add(-1e4, 0, screen.cw * 3.2, "peg"); cannon.hidden = true;   // invisible bumper so debris bounces off the cannon
+  cannon = world.add(-1e4, 0, COL * 3.2, "peg"); cannon.hidden = true;   // invisible bumper so debris bounces off the cannon
   sfx("level_start");
   flash("LEVEL " + level + (lv.fresh !== undefined ? "  NEW ENEMY: " + TYPES[lv.fresh].name : ""), 2.5);
 }
@@ -164,8 +159,8 @@ function flash(text, secs = 1.4){ msg = text; msgT = secs; }
 function burst(x, y, rgb, n, vy0 = 0, vivid = false){
   const alb = vivid ? rgb : rgb.map(v => 0.06 + 0.22 * Math.min(v, 1.2));
   for (let i = 0; i < n; i++){
-    const a = Math.random() * 6.283, sp = 120 + Math.random() * 380, r = screen.cw * (0.55 + Math.random() * 0.35);
-    const b = world.add(x + (Math.random() - 0.5) * screen.cw, y + (Math.random() - 0.5) * screen.ch, r, "debris", alb, DEBRIS);
+    const a = Math.random() * 6.283, sp = 120 + Math.random() * 380, r = COL * (0.55 + Math.random() * 0.35);
+    const b = world.add(x + (Math.random() - 0.5) * COL, y + (Math.random() - 0.5) * ROW, r, "debris", alb, DEBRIS);
     b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp + vy0; b.w = (Math.random() - 0.5) * 30;
     b.flash = vivid ? 1 : 0.25; b.life = 3 + Math.random() * 2; b.r0 = r;
   }
@@ -173,14 +168,14 @@ function burst(x, y, rgb, n, vy0 = 0, vivid = false){
 // Airdrop crates are real bodies: they float down on a chute, then bounce off shields and debris.
 function dropCrate(x, y){
   const r = Math.random(), kind = r < 0.7 ? "P" : r < 0.9 ? "S" : "L";
-  const b = world.add(x, y, screen.ch * 0.5, "crate", DROPS[kind].rgb, CRATE);
+  const b = world.add(x, y, ROW * 0.5, "crate", DROPS[kind].rgb, CRATE);
   b.crate = kind; b.chute = true; b.ttl = 8;   // ttl counts down only once it has landed
 }
 function eachCell(sprite, x, y, fn){ sprite.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") fn(x + dx, y + dy, row.charCodeAt(dx)); }); }
 
 /* ---------- rules ---------- */
 function damage(s){
-  s.hp--; s.body.flash = 1; sfx("shield"); vfx.burst(s.body.x, s.body.y, { n: 8, speed: screen.ch * 10, pal: PAL.ice, life: 0.35 }); s.body.alb = SHIELD_RGB.map(v => v * (0.25 + 0.75 * s.hp / 3));
+  s.hp--; s.body.flash = 1; sfx("shield"); vfx.burst(s.body.x, s.body.y, { n: 8, speed: ROW * 10, pal: PAL.ice, life: 0.35 }); s.body.alb = SHIELD_RGB.map(v => v * (0.25 + 0.75 * s.hp / 3));
   if (s.hp > 0) return;
   world.bodies.splice(world.bodies.indexOf(s.body), 1); shields.splice(shields.indexOf(s), 1);
   burst(s.body.x, s.body.y, SHIELD_RGB, 2);
@@ -193,7 +188,7 @@ function hitAlien(x, y, shot){
     if (dx < 0 || dx >= AW || dy < 0 || dy >= AH || art[dy][dx] === " ") continue;
     shot.hits.add(a); a.flash = 0.12;
     if (--a.hp > 0){ sfx("hit"); score += 1; burst(cx(x), cy(y), T.rgb, 2, -150); return true; }
-    a.alive = false; sfx("explode"); vfx.explode(cx(a.x + AW / 2), cy(a.y + AH / 2), screen.ch * 1.2); feel.shake(1.5, 0.15); score += T.pts + Math.floor((GH - a.y) / 4) + level;
+    a.alive = false; sfx("explode"); vfx.explode(cx(a.x + AW / 2), cy(a.y + AH / 2), ROW * 1.2); feel.shake(1.5, 0.15); score += T.pts + Math.floor((GH - a.y) / 4) + level;
     eachCell(art, a.x, a.y, (gx, gy) => burst(cx(gx), cy(gy), T.rgb, 1, -250));
     if (a.maxHp >= 3 && Math.random() < 0.35) dropCrate(cx(a.x + 3), cy(a.y + 2));   // armoured enemies may drop parts
     return true;
@@ -204,13 +199,13 @@ function inCannon(x, y){ const art = cannonArt(), dx = x - Math.round(px), dy = 
 function loseLife(){
   eachCell(cannonArt(), Math.round(px), PY, (gx, gy) => burst(cx(gx), cy(gy), CANNON_RGB, 2, -300));
   lives--; shots = []; bombs = []; sfx("death");
-  vfx.explode(cx(Math.round(px) + 3), cy(PY + 1), screen.ch * 2.5); feel.shake(8, 0.45); feel.freeze(0.15); feel.flash(0.45);
+  vfx.explode(cx(Math.round(px) + 3), cy(PY + 1), ROW * 2.5); feel.shake(8, 0.45); feel.freeze(0.15); feel.flash(0.45);
   if (lives <= 0){ state = "over"; recordScore(); playSong(null); setTimeout(() => sfx("game_over"), 900); return; }
   const lost = gun > 0; gun = Math.max(0, gun - 1);
   px = (GW - CW) / 2; state = "dead"; deadT = 1.2; flash(lost ? "SHIP LOST - GUN DOWN TO " + GUNS[gun].name : "SHIP LOST");
 }
 function collect(kind){
-  burst(cannon.x, cannon.y - screen.ch * 2, DROPS[kind].rgb, 6, -300);
+  burst(cannon.x, cannon.y - ROW * 2, DROPS[kind].rgb, 6, -300);
   if (kind === "S"){ buildShields(); sfx("pickup"); flash("SHIELDS REPAIRED"); return; }
   if (kind === "L"){ lives++; sfx("life"); flash("+1 LIFE"); return; }
   parts++;
@@ -295,17 +290,99 @@ function update(dt){
     if (!plane.done && Math.abs(plane.x + 4 - plane.dropX) < 1){ plane.done = true; dropCrate(cx(plane.dropX), cy(3)); }
     if (plane.x < -9 || plane.x > GW + 1) plane = null;
   }
-  for (const b of world.bodies) if (b.crate && b.ttl > 0 && Math.hypot(b.x - cannon.x, b.y - cannon.y) < cannon.r + b.r + screen.ch * 0.5){ b.ttl = 0; collect(b.crate); }
+  for (const b of world.bodies) if (b.crate && b.ttl > 0 && Math.hypot(b.x - cannon.x, b.y - cannon.y) < cannon.r + b.r + ROW * 0.5){ b.ttl = 0; collect(b.crate); }
   // passing bullets shove loose debris
   for (const b of world.bodies) if (b.life){
-    for (const s of shots) if (Math.abs(cx(s.x) - b.x) < screen.cw * 1.5 && Math.abs(cy(s.y) - b.y) < screen.ch){ b.vy = Math.min(b.vy, -500); b.vx += (b.x - cx(s.x)) * 20; }
-    for (const s of bombs) if (Math.abs(cx(s.x) - b.x) < screen.cw * 1.5 && Math.abs(cy(s.y) - b.y) < screen.ch) b.vy = Math.max(b.vy, 400);
+    for (const s of shots) if (Math.abs(cx(s.x) - b.x) < COL * 1.5 && Math.abs(cy(s.y) - b.y) < ROW){ b.vy = Math.min(b.vy, -500); b.vx += (b.x - cx(s.x)) * 20; }
+    for (const s of bombs) if (Math.abs(cx(s.x) - b.x) < COL * 1.5 && Math.abs(cy(s.y) - b.y) < ROW) b.vy = Math.max(b.vy, 400);
   }
 }
 
-/* ---------- drawing ---------- */
-const { put, text, center } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
-const SHOT_RGB = [0.5, 1.1, 1.6], LANCE_RGB = [1.6, 0.6, 1.4], WHITE = [1.6, 1.6, 1.6], DIM = [0.35, 0.4, 0.55], BORDER_RGB = [0.12, 0.16, 0.28];
+/* ---------- drawing: pixel art (src/pixel.js) ---------- */
+// After Balote: each colour as a ramp of five shades, light from the upper left, outlines from the edge pass. A cell
+// is 4 x 8 pixels, so an enemy (7 x 4 cells) is 28 x 32 pixels. The enemies are built from lit balls and bevelled
+// plates; their hit areas are still the old character shapes.
+const SHOT_RGB = [0.5, 1.1, 1.6], WHITE = [1.6, 1.6, 1.6], DIM = [0.35, 0.4, 0.55];
+const ALIEN_PIX = [[120, 220, 70], [70, 180, 230], [230, 80, 190], [235, 205, 70], [235, 140, 50], [180, 100, 235], [235, 80, 70]];
+const METAL = [150, 156, 176], GOLD = [235, 190, 90], DROP_PIX = { P: [235, 190, 80], S: [90, 220, 130], L: [235, 90, 110] };
+const lit = (c, k) => k > 1 ? c.map(v => v + (255 - v) * Math.min(1, k - 1)) : c.map(v => v * k);   // above 1: towards white
+function bev(x, y, w, h, c, layer = 3){   // a bevelled plate: lit top and left, shaded bottom and right
+  const R = pix.ramp(c);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) pix.px(x + i, y + j, R[j === 0 || i === 0 ? 4 : j === h - 1 || i === w - 1 ? 1 : 3], layer);
+}
+const eye = (x, y, look = 0) => { pix.rect(x, y, 3, 3, [245, 245, 250], 3); pix.px(x + 1 + look, y + 1, [20, 16, 30], 3); };
+function drawAlien(type, gx, gy, f, k, t){
+  const x = gx * XP, y = gy * YP, c = lit(ALIEN_PIX[type], k), R = pix.ramp(c), B = (bx, by, r, col = c) => pix.ball(x + bx, y + by, r, col);
+  const look = cannon && state === "play" ? Math.sign(Math.round(px) * XP + 14 - x - 14) : 0;
+  if (type === 0){   // GRUNT: a round blob on stubby legs
+    for (const lx of f ? [9, 17] : [7, 19]) pix.rect(x + lx, y + 23, 3, 6, R[1], 3);
+    B(14, 15, 9); eye(x + 9, y + 10, look); eye(x + 16, y + 10, look); pix.rect(x + 11, y + 19, 6, 1, R[0], 3);
+  } else if (type === 1){   // TROOPER: a helmet with a visor, arms up and down
+    for (const s of [-1, 1]) pix.line(x + 14 + s * 7, y + 17, x + 14 + s * 12, y + (f ? 11 : 23), R[2], 3);
+    for (const lx of [10, 16]) pix.rect(x + lx, y + 24, 3, 5, R[1], 3);
+    B(14, 17, 8); bev(x + 5, y + 6, 18, 6, METAL); pix.rect(x + 8, y + 12, 12, 3, [16, 20, 34], 3); pix.rect(x + 9 + (f ? 0 : 7), y + 13, 3, 1, [150, 230, 255], 3);
+  } else if (type === 2){   // SCOUT: a small eye on beating wings
+    for (let i = 0; i < 12; i++) for (let j = 0; j <= (12 - i) >> 1; j++) for (const s of [-1, 1]) pix.px(x + 14 + s * (5 + i), y + 15 + (f ? -1 : 1) * Math.round(i * 0.4) - j, R[j ? 2 : 3], 3);
+    B(14, 15, 6); eye(x + 13, y + 13, look); pix.px(x + 14, y + 6, R[4], 3); pix.px(x + 14, y + 7, R[3], 3); pix.px(x + 14, y + 8, R[3], 3);
+  } else if (type === 3){   // GUNNER: twin side guns
+    bev(x + 1, y + 13, 6, 5, METAL); bev(x + 21, y + 13, 6, 5, METAL);
+    if (f){ pix.px(x + 3, y + 19, [255, 220, 120], 3); pix.px(x + 24, y + 19, [255, 220, 120], 3); }
+    B(14, 15, 8); pix.rect(x + 9, y + 12, 10, 2, [20, 16, 30], 3); pix.rect(x + 10 + (f ? 0 : 6), y + 12, 2, 1, [255, 90, 60], 3);
+    for (const lx of [10, 16]) pix.rect(x + lx, y + 23, 3, 5, R[1], 3);
+  } else if (type === 4){   // TANK: an armoured hull on treads, a turret and its gun
+    const K = pix.ramp([60, 60, 70]);
+    for (let i = 0; i < 26; i++) for (let j = 0; j < 6; j++) pix.px(x + 1 + i, y + 22 + j, K[j === 0 ? 3 : (i + (f ? 1 : 0)) % 3 ? 1 : 2], 3);
+    bev(x + 2, y + 9, 24, 13, c); for (let i = 5; i < 24; i += 6) pix.px(x + i, y + 15, R[1], 3);
+    B(14, 10, 5); pix.rect(x + 13, y + 26, 2, 6, METAL.map(v => v * 0.8), 3);
+  } else if (type === 5){   // SEEKER: one big eye that follows your cannon
+    B(14, 15, 10, [228, 222, 238]); pix.ball(x + 14 + look * 3, y + 15, 4.5, c); pix.rect(x + 13 + look * 3, y + 14, 2, 2, [16, 12, 24], 3);
+    for (let i = -8; i <= 8; i++) pix.px(x + 14 + i, y + 6 + Math.round(i * i / 18), R[f ? 3 : 1], 3);
+  } else {   // BOMBER: a saucer with a dome, rim lights and a bomb bay
+    for (let j = -5; j <= 5; j++) for (let i = -13; i <= 13; i++) if ((i / 13.5) ** 2 + (j / 5.5) ** 2 <= 1) pix.px(x + 14 + i, y + 17 + j, R[j < -2 ? 4 : j < 1 ? 3 : j < 4 ? 2 : 1], 3);
+    pix.ball(x + 14, y + 11, 5, [170, 220, 240]);
+    for (let i = -10; i <= 10; i += 5) pix.px(x + 14 + i, y + 18, ((i / 5 + (f ? 1 : 0)) & 1) ? [255, 240, 150] : R[1], 3);
+    bev(x + 11, y + 22, 6, 4, METAL);
+  }
+}
+function drawCannon(){
+  const x = Math.round(px) * XP, y = PY * YP, G = GUNS[gun], R = pix.ramp(GOLD);
+  for (const [ox] of G.shots){ const bx = x + 13 + ox * XP; bev(bx, y + (ox ? 4 : 0), 3, ox ? 8 : 10, METAL); }   // a barrel for each shot
+  pix.ball(x + 14, y + 11, 6, GOLD);
+  for (let j = 0; j < 8; j++) for (let i = 3 - (j >> 2); i < 25 + (j >> 2); i++) pix.px(x + i, y + 15 + j, R[j === 0 ? 4 : j === 7 ? 1 : i < 6 ? 4 : i > 22 ? 1 : 3], 3);
+  for (let i = 6; i < 23; i += 4) pix.px(x + i, y + 19, R[1], 3);
+}
+function drawShield(sh){
+  const c = [70, 200, 110].map(v => v * (0.4 + 0.6 * sh.hp / 3)), x = sh.x * XP, y = sh.y * YP;
+  bev(x, y, XP, YP, sh.body.flash > 0 ? lit(c, 1.6) : c, 2);
+  if (sh.hp < 3) pix.px(x + 1 + (sh.x & 1), y + 3 + (sh.y & 1) * 2, [20, 40, 26], 2);   // a crack
+}
+const TINY = { P: ["##", "##", "#."], S: [".#", "#.", "#."], L: ["#.", "#.", "##"] };   // letters for the crates, 2 x 3
+function drawCrate(b, t){
+  const x = Math.round(b.x / PU) - 4, y = Math.round(b.y / PU) - 4;
+  if (b.chute){ for (let i = -7; i <= 7; i++) pix.px(x + 4 + i, y - 6 - Math.round(Math.sqrt(49 - i * i) * 0.6), [235, 235, 245], 3);
+    pix.line(x - 3, y - 6, x, y, [200, 200, 210], 3); pix.line(x + 11, y - 6, x + 7, y, [200, 200, 210], 3); }
+  if (!(b.ttl > 3 || (t / 150 | 0) % 2)) return;   // blinks before it disappears
+  bev(x, y, 8, 8, DROP_PIX[b.crate]);
+  TINY[b.crate].forEach((row, j) => [...row].forEach((ch, i) => { if (ch === "#") pix.px(x + 3 + i, y + 2 + j, [40, 30, 20], 3); }));
+}
+function drawPlane(t){
+  const x = Math.round(plane.x * XP), y = 2 * YP + 2, d = plane.dir, P = (i, j, w, h, c) => bev(d > 0 ? x + i : x + 32 - i - w, y + j, w, h, c);
+  P(4, 3, 24, 6, [200, 205, 215]); P(12, 0, 6, 12, [170, 175, 190]); P(2, 0, 4, 4, [180, 60, 60]);
+  pix.rect(d > 0 ? x + 28 : x + 2, y + 3 + ((t / 60 | 0) % 2) * 3, 2, 3, [60, 60, 70], 3);   // the propeller
+  pix.rect(d > 0 ? x + 20 : x + 9, y + 4, 4, 2, [90, 160, 230], 3);
+}
+const back = { d: null, lay: null };
+function bakeBack(){   // deep space: a dithered gradient, a faint nebula, and stars
+  pix.clear();
+  for (let y = 0; y < pix.H; y++) for (let x = 0; x < pix.W; x++){
+    const n = pixNoise(x * 0.012, y * 0.012), v = y / pix.H + (pix.bayer(x, y) - 0.5) * 0.15;
+    let c = v < 0.5 ? [8, 9, 22] : [12, 11, 28];
+    if (n + (pix.bayer(x, y) - 0.5) * 0.15 > 0.66) c = [26, 16, 42];
+    pix.px(x, y, c, -1);
+  }
+  for (let k = 0; k < 160; k++){ const v = 60 + 120 * pixHash(k, 3); pix.px(pixHash(k, 1) * pix.W, pixHash(k, 2) * pix.H, [v, v, v * 1.15], -1); }
+  back.d = new Uint8ClampedArray(pix.d); back.lay = new Int8Array(pix.lay);
+}
 function bounce(p){   // ease-out bounce: a letter dropping onto the floor
   const n = 7.5625, d = 2.75;
   if (p < 1 / d) return n * p * p;
@@ -322,88 +399,79 @@ function drawTitle(t){
       const p = Math.max(0, Math.min(1, (titleT - 0.15 * k) / 1.1)); if (!p) continue;
       const x = x0 + i * 8, y = Math.round(y0 - (1 - bounce(p)) * (y0 + 8));
       if (p > 0.37 && !landed.has(k)){ landed.add(k); burst(cx(x + 3), cy(y0 + 7), hue(x / GW), 6, -150, true); }   // dust on first impact
-      FONT[word[i]].forEach((row, dy) => { for (let dx = 0; dx < 7; dx++) if (row[dx] === "#"){
-        const c = hue(t * 0.0002 + (x + dx) / GW * 0.6 + dy * 0.03);
-        put(x + dx + 1, y + dy + 1, c, 0.12, 1, 46);   // drop shadow
-        put(x + dx, y + dy, c, 1.5, 2, 35);
-      } });
+      FONT[word[i]].forEach((row, dy) => { for (let dx = 0; dx < 7; dx++) if (row[dx] === "#")
+        bev((x + dx) * XP, (y + dy) * YP, XP, YP, pix.rgb(hue(t * 0.0002 + (x + dx) / GW * 0.6 + dy * 0.03).map(v => v * 1.2))); });
     }
   }
   const fleetX = Math.round(Math.sin(titleT * 0.8) * 3);
-  for (let i = 0; i < 7; i++) eachCell(TYPES[i].art[frame], 6 + fleetX + i * 13, 28, (gx, gy, code) => put(gx, gy, TYPES[i].rgb, 0.9, 2, code));
+  for (let i = 0; i < 7; i++) drawAlien(i, 6 + fleetX + i * 13, 28, frame, 1, t);
+  const C = pix.center;
   if (titleT > 3){
-    center(25, "~ DEFEND THE BASE ~", CANNON_RGB);
-    if ((t / 500 | 0) % 2) center(46, audio.unlocked || audio.muted ? (INPUT.touch ? "TAP TO BEGIN" : "PRESS SPACE TO START")
-      : (INPUT.touch ? "TAP TO BEGIN" : "PRESS ANY KEY FOR SOUND"), WHITE);
+    C(16, "~ DEFEND THE BASE ~", CANNON_RGB);
+    if ((t / 500 | 0) % 2) C(29, audio.unlocked || audio.muted || INPUT.touch ? (INPUT.touch ? "TAP TO BEGIN" : "PRESS SPACE TO START") : "PRESS ANY KEY FOR SOUND", WHITE);
   }
-  center(36, "HIGH SCORES", CANNON_RGB);
-  if (!scores.list.length) center(38, "NO SCORES YET", DIM);
-  scores.list.forEach((e, i) => center(38 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
-  center(52, INPUT.touch ? "TOUCH AND SLIDE: THE CANNON FOLLOWS YOUR FINGER AND FIRES" : "ARROWS/A D MOVE  SPACE FIRE  ESC MENU  R RESTART  M SOUND", DIM);
-  center(54, "CATCH AIRDROPS: [P] PARTS  [S] SHIELDS  [L] LIFE", DIM);
-  center(56, "DIFFICULTY: " + diffKey.toUpperCase(), DIM);
+  C(22, "HIGH SCORES", CANNON_RGB);
+  if (!scores.list.length) C(23, "NO SCORES YET", DIM);
+  scores.list.forEach((e, i) => C(23 + i, (i + 1) + ". " + String(e.s).padStart(6, "0") + "  LV " + String(e.l).padEnd(3) + " " + e.d.toUpperCase().padEnd(6) + " " + new Date(e.t).toISOString().slice(0, 10), WHITE));
+  C(31, INPUT.touch ? "TOUCH AND SLIDE: THE CANNON FOLLOWS YOUR FINGER AND FIRES" : "ARROWS/A D MOVE  SPACE FIRE  ESC MENU  R RESTART  M SOUND", DIM);
+  C(32, "CATCH AIRDROPS: [P] PARTS  [S] SHIELDS  [L] LIFE", DIM);
+  C(33, "DIFFICULTY: " + diffKey.toUpperCase(), DIM);
 }
 function draw(t){
-  screen.clear();
-  for (const s of stars){ const v = 0.07 + 0.05 * Math.sin(t * 0.002 + s.ph); screen.put(s.i, v, v, v * 1.2, 0, 46); }
-  const bodies = world.bodies.filter(b => !b.hidden);
-  for (const b of bodies) if (!b.crate) screen.sphere(b, sun, { stripe: false });
-  vfx.draw(screen);
-  if (state === "title") for (const b of bodies) if (b.life) screen.streak(b, world.unit);   // in play, streaks would look like enemy lasers
-  if (state === "title"){ drawTitle(t); drawBorder(); drawMenu(); screen.render(ctx); return; }
+  if (!back.d) bakeBack();
+  pix.clear(); pix.d.set(back.d); pix.lay.set(back.lay);
+  for (let k = 0; k < 40; k++){ const v = (90 + 120 * pixHash(k, 7)) * (0.5 + 0.5 * Math.sin(t * 0.002 + k)); pix.px(pixHash(k, 5) * pix.W, pixHash(k, 6) * pix.H, [v, v, v * 1.2], -1); }   // twinkling
+  const shieldBodies = new Set(shields.map(q => q.body));
+  for (const q of shields) drawShield(q);
+  for (const b of world.bodies){   // debris; in play it is dimmed so it never competes with enemy fire
+    if (b.hidden || b.crate || shieldBodies.has(b)) continue;
+    pix.ball(b.x / PU, b.y / PU, Math.max(1, b.r / PU), pix.rgb(b.alb.map(v => v * (state === "title" ? 1.6 : 2.6))), 3, true);
+  }
+  vfx.draw(pix);
+  if (state === "title"){ drawTitle(t); return finish(); }
   const pulse = 0.85 + 0.15 * frame;
-  for (const a of aliens) if (a.alive){
-    const k = a.flash > 0 ? 2 : pulse * (0.55 + 0.45 * a.hp / a.maxHp);   // damaged armour glows dimmer
-    eachCell(TYPES[a.type].art[frame], a.x, a.y, (gx, gy, code) => put(gx, gy, TYPES[a.type].rgb, k, 2, code));
+  for (const a of aliens) if (a.alive) drawAlien(a.type, a.x, a.y, frame, a.flash > 0 ? 1.8 : pulse * (0.55 + 0.45 * a.hp / a.maxHp), t);   // damaged armour is dimmer
+  for (const b of world.bodies) if (b.crate) drawCrate(b, t);
+  if (plane) drawPlane(t);
+  for (const s of shots) pix.rect(s.x * XP + 1, s.y * YP, 2, 7, GUNS[gun].pierce ? [240, 120, 230] : [150, 225, 255], 3);
+  for (const s of bombs){   // lasers are a long red line, bombs a hot ball
+    if (s.kind === "laser"){ pix.rect(s.x * XP + 1, (s.y - 1) * YP, 2, 16, [255, 50, 30], 3); pix.rect(s.x * XP + 1, (s.y - 1) * YP + 2, 1, 12, [255, 210, 190], 3); }
+    else { pix.ball(s.x * XP + 2, s.y * YP + 4, 2.6, [255, 200, 90], 3, true); pix.glow(cx(s.x), cy(s.y), ROW * 1.4, [0.5, 0.3, 0.1]); }
   }
-  for (const b of bodies) if (b.crate && (b.ttl > 3 || (t / 150 | 0) % 2)){
-    const gx = Math.floor(b.x / screen.cw), gy = Math.floor(b.y / screen.ch), c = DROPS[b.crate].rgb;
-    text(gx - 1, gy, "[" + b.crate + "]", c);
-    if (b.chute) text(gx - 1, gy - 1, "/~\\", WHITE);
-  }
-  if (plane) text(Math.floor(plane.x), 2, plane.dir > 0 ? "==-[H]->" : "<-[H]-==", WHITE);
-  for (const s of shots) put(s.x, s.y, GUNS[gun].pierce ? LANCE_RGB : SHOT_RGB, 1, 3, s.vx < 0 ? 92 : s.vx > 0 ? 47 : 124);
-  for (const s of bombs){   // lasers are a two-cell line, bombs a small dot
-    const W = WEAPONS[s.kind]; put(s.x, s.y, W.rgb, 1, 3, W.glyph);
-    if (s.kind === "laser") put(s.x, s.y - 1, W.rgb, 0.6, 3, W.glyph);
-  }
-  if (state === "play" || state === "clear") eachCell(cannonArt(), Math.round(px), PY, (gx, gy, code) => put(gx, gy, CANNON_RGB, 1, 3, code));
-  drawBorder();
-  text(2, 0, " SCORE " + String(score).padStart(6, "0") + "  HI " + String(Math.max(score, scores.list[0]?.s || 0)).padStart(6, "0") + " ", WHITE);
-  const right = " LV " + level + "  LIVES " + Math.max(0, lives) + "  " + diffKey.toUpperCase() + " ";
-  text(GW - 2 - right.length, 0, right, WHITE);
-  text(2, GH - 1, " GUN " + GUNS[gun].name + "  PARTS " + (gun < GUNS.length - 1 ? parts + "/" + partsCost() : "MAX") + " ", CANNON_RGB);
-  const left = " ENEMIES " + aliens.filter(a => a.alive).length + " ";
-  text(GW - 2 - left.length, GH - 1, left, WHITE);
-  if (!INPUT.touch) text((GW - 10) >> 1, GH - 1, " ESC MENU ", DIM);
-  const mid = GH >> 1;
+  if (state === "play" || state === "clear") drawCannon();
+  pix.edges();
+  pix.rect(0, 0, pix.W, 11, [10, 12, 26], 4); pix.rect(0, 11, pix.W, 1, [40, 48, 80], 4);                       // the HUD bars
+  pix.rect(0, pix.H - 8, pix.W, 8, [10, 12, 26], 4); pix.rect(0, pix.H - 9, pix.W, 1, [40, 48, 80], 4);       // under the floor, clear of the cannon
+  const T = pix.text, cols = pix.cols, rows = pix.rows;
+  T(1, 0, "SCORE " + String(score).padStart(6, "0") + "  HI " + String(Math.max(score, scores.list[0]?.s || 0)).padStart(6, "0"), WHITE);
+  const right = "LV " + level + "  LIVES " + Math.max(0, lives) + "  " + diffKey.toUpperCase();
+  T(cols - 1 - right.length, 0, right, WHITE);
+  T(1, rows - 1, "GUN " + GUNS[gun].name + "  PARTS " + (gun < GUNS.length - 1 ? parts + "/" + partsCost() : "MAX"), CANNON_RGB);
+  const left = "ENEMIES " + aliens.filter(a => a.alive).length;
+  T(cols - 1 - left.length, rows - 1, left, WHITE);
+  const mid = rows >> 1;
   if (state === "over"){
-    center(mid, (INPUT.touch ? "  GAME OVER - TAP TO PLAY AGAIN  " : "  GAME OVER - press R  "), WHITE);
-    if (rank >= 0) center(mid + 2, "  NEW HIGH SCORE - RANK " + (rank + 1) + "  ", CANNON_RGB);
+    pix.center(mid, (INPUT.touch ? "  GAME OVER - TAP TO PLAY AGAIN  " : "  GAME OVER - press R  "), WHITE);
+    if (rank >= 0) pix.center(mid + 2, "  NEW HIGH SCORE - RANK " + (rank + 1) + "  ", CANNON_RGB);
   } else if (state === "clear"){
     const n = makeLevel(level);
-    center(mid, "  WAVE " + (level - 1) + " CLEARED - " + (INPUT.touch ? "TAP" : "press R") + "  ", WHITE);
-    center(mid + 2, "  NEXT: " + n.rows * n.cols + " ENEMIES" + (n.fresh !== undefined ? "  NEW: " + TYPES[n.fresh].name : "") + "  ", CANNON_RGB);
+    pix.center(mid, "  WAVE " + (level - 1) + " CLEARED - " + (INPUT.touch ? "TAP" : "press R") + "  ", WHITE);
+    pix.center(mid + 2, "  NEXT: " + n.rows * n.cols + " ENEMIES" + (n.fresh !== undefined ? "  NEW: " + TYPES[n.fresh].name : "") + "  ", CANNON_RGB);
   }
-  if (msgT > 0) center(4, " " + msg + " ", [1.6, 0.5, 0.35]);
-  drawMenu();
-  screen.render(ctx);
+  if (msgT > 0) pix.center(3, " " + msg + " ", [1.6, 0.5, 0.35]);
+  finish();
 }
-function drawMenu(){
+function finish(){
+  if (state === "title") pix.edges();
   // the menu writes on its own layer, above the game's text, so nothing shows through its box
-  if (menu.open) menu.draw(screen, { accent: CANNON_RGB, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "DIFFICULTY APPLIES ON RESTART" });
-}
-
-function drawBorder(){
-  for (let x = 0; x < GW; x++){ put(x, 0, BORDER_RGB, 1, 1, 45); put(x, GH - 1, BORDER_RGB, 1, 1, 45); }
-  for (let y = 0; y < GH; y++){ put(0, y, BORDER_RGB, 1, 1, 124); put(GW - 1, y, BORDER_RGB, 1, 1, 124); }
-  for (const [x, y] of [[0, 0], [GW - 1, 0], [0, GH - 1], [GW - 1, GH - 1]]) put(x, y, BORDER_RGB, 1, 1, 43);
+  if (menu.open) menu.draw(pix, { accent: CANNON_RGB, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED", note: "DIFFICULTY APPLIES ON RESTART" });
+  pix.present(ctx);
 }
 
 /* ---------- input ---------- */
 const keys = { left: false, right: false, fire: false };
 const KEYMAP = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right", " ": "fire" };
-// The pause menu (src/menu.js) holds what the old button row did. Open it with Esc or P, SELECT, or a mouse click.
+// The pause menu (src/menu.js). Open it with Esc or P, or the header's Menu button.
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
   { label: state === "title" ? "START GAME" : state === "clear" ? "NEXT WAVE" : "RESTART", select: () => { menu.hide(); audio.unlock(); restart(); } },
@@ -431,7 +499,6 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys[k] = false; });
 addEventListener("blur", () => { keys.left = keys.right = keys.fire = false; });
 
-/* ---------- controls: keyboard or the touch gamepad (src/arcade.js) ---------- */
 // Touch and mouse: touch the screen and the cannon slides to your finger and fires while you hold on. Taps start a
 // game, go on after a wave or game over, and pick rows in the menu.
 let aimX = null, aimer = null;   // where the finger wants the cannon (its left column), and that finger
@@ -442,7 +509,7 @@ createTouch(cv, {
   up: t => {
     if (t === aimer){ aimer = aimX = null; keys.left = keys.right = keys.fire = false; return; }
     if (!t.tap) return;
-    if (menu.open) menu.tap(Math.floor(t.x * GW), Math.floor(t.y * GH));
+    if (menu.open) menu.tap(Math.floor(t.x * pix.cols), Math.floor(t.y * pix.rows));
     else if (state === "title"){ audio.unlock(); restart(); }
     else if (state === "over" || state === "clear"){ audio.unlock(); restart(); }
   }
@@ -452,7 +519,7 @@ headerButtons(menu, audio);
 /* ---------- loop ---------- */
 let pausedDrawn = false;
 function tick(dt, t){
-  if (screen && !paused && (dt = feel.step(dt))){   // a hit-stop holds everything still for a moment
+  if (ready && !paused && (dt = feel.step(dt))){   // a hit-stop holds everything still for a moment
     vfx.update(dt);
     if (state === "play") update(dt);
     else if (state === "dead" && (deadT -= dt) <= 0) state = "play";
@@ -464,7 +531,7 @@ function tick(dt, t){
       }
     }
     msgT -= dt;
-    if (cannon){ cannon.x = state === "play" ? cx(Math.round(px) + 3) : -1e4; cannon.y = (PY + 1.5) * screen.ch; }
+    if (cannon){ cannon.x = state === "play" ? cx(Math.round(px) + 3) : -1e4; cannon.y = (PY + 1.5) * ROW; }
     world.step(dt);
     for (const b of world.bodies){
       if (b.life){ b.life -= dt; if (b.life < 1) b.r = b.r0 * Math.max(0.3, b.life); }
@@ -472,14 +539,14 @@ function tick(dt, t){
         if (!b.chute) b.ttl -= dt;
         // the chute holds the fall to a slow drift until the crate lands on something
         if (b.chute && (b.touch || b.y + b.r >= world.h - 1)) b.chute = false;
-        if (b.chute){ b.vy = Math.min(b.vy, screen.ch * 8); b.vx *= 0.95; }
+        if (b.chute){ b.vy = Math.min(b.vy, ROW * 8); b.vx *= 0.95; }
       }
     }
     world.bodies = world.bodies.filter(b => !(b.life <= 0) && !(b.ttl <= 0));
   }
-  if (screen && !(paused && pausedDrawn)){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); pausedDrawn = paused; }   // a paused screen is drawn once
+  if (ready && !(paused && pausedDrawn)){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); pausedDrawn = paused; }   // a paused screen is drawn once
 }
 layout();
-onResize(stage, () => { layout(); pausedDrawn = false; for (const s of shields){ s.body.x = cx(s.x); s.body.y = cy(s.y); } });
+onResize(stage, () => { layout(); pausedDrawn = false; });
 startLoop(tick);
 })();
