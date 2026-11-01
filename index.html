@@ -5,187 +5,66 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Cartridge Shelf</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<meta name="description" content="Games built on an ASCII physics engine. Pick a cartridge to play.">
+<meta name="description" content="Pixel-art games built on an ASCII physics engine. Play with touch, a mouse or the keyboard.">
 <style>
 :root{
-  --room:#E7E4DC; --shelf:#B79268; --shelf-edge:#8C6A45; --ink:#2A2A30; --muted:#6B6A72;
-  --shell:#C9C7C2; --shell-hi:#E2E0DB; --shell-lo:#9E9C97; --recess:#8F8D88; --focus:#2F5BD3;
+  --room:#E9EDF1; --card:#F7F8FA; --ink:#20304A; --muted:#5E6A7D; --line:#20304A; --shade:#20304A; --chip:#2F5BD3; --chip-ink:#fff; --focus:#2F5BD3;
   box-sizing:border-box;
 }
 @media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --room:#14161C; --shelf:#4A3A2A; --shelf-edge:#2E241A; --ink:#E4E2DC; --muted:#8E8C95;
-    --shell:#7D7B80; --shell-hi:#98969B; --shell-lo:#545257; --recess:#4C4A4F; --focus:#8FB0FF;
-  }
+  :root:not([data-theme="light"]){ --room:#0E121A; --card:#182030; --ink:#D9E1EC; --muted:#8792A3; --line:#3A4760; --shade:#05070B; --chip:#FFC857; --chip-ink:#1A1306; --focus:#7FA2FF; }
 }
-:root[data-theme="dark"]{
-  --room:#14161C; --shelf:#4A3A2A; --shelf-edge:#2E241A; --ink:#E4E2DC; --muted:#8E8C95;
-  --shell:#7D7B80; --shell-hi:#98969B; --shell-lo:#545257; --recess:#4C4A4F; --focus:#8FB0FF;
-}
+:root[data-theme="dark"]{ --room:#0E121A; --card:#182030; --ink:#D9E1EC; --muted:#8792A3; --line:#3A4760; --shade:#05070B; --chip:#FFC857; --chip-ink:#1A1306; --focus:#7FA2FF; }
 *,*::before,*::after{box-sizing:inherit}
 body{margin:0;min-height:100vh;background:var(--room);color:var(--ink);
   font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  display:flex;flex-direction:column;align-items:center;padding:clamp(24px,6vw,56px) 16px 32px}
-header{text-align:center;margin-bottom:clamp(24px,5vw,44px)}
-h1{margin:0;font:700 clamp(22px,5vw,34px)/1.1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.06em}
-header p{margin:8px 0 0;color:var(--muted)}
-header p a{color:var(--ink)}
-.shelf{width:min(100%,1060px);display:flex;flex-wrap:wrap;justify-content:center;gap:clamp(20px,4vw,40px);
-  padding:0 clamp(8px,3vw,28px) 26px;border-bottom:14px solid var(--shelf);
-  box-shadow:0 12px 0 -2px var(--shelf-edge)}   /* 2px narrower than the shelf, so its edges never show as side lines */
-/* A cartridge: grey shell with a clipped top-right corner, grip ridges, a recessed label and an arrow */
-.cart{position:relative;display:block;width:200px;text-decoration:none;color:inherit;
-  background:linear-gradient(160deg,var(--shell-hi),var(--shell) 40%,var(--shell-lo));
-  clip-path:polygon(0 0,86% 0,100% 7%,100% 100%,0 100%);border-radius:0 0 12px 12px;
-  padding:30px 16px 34px;transition:transform .18s ease,filter .18s ease}
-.cart::before{content:"";position:absolute;top:8px;left:16px;right:30px;height:12px;
-  background:repeating-linear-gradient(90deg,var(--shell-lo) 0 2px,transparent 2px 7px);opacity:.7}
-.cart::after{content:"\25BC";position:absolute;bottom:9px;left:0;right:0;text-align:center;font-size:12px;color:var(--shell-lo)}
-.cart:hover{transform:translateY(-6px)}
-.cart:focus-visible{outline:none;filter:drop-shadow(0 0 0 var(--focus)) drop-shadow(0 0 3px var(--focus)) drop-shadow(0 0 3px var(--focus))}
-.cart.inserting{transform:translateY(60px) scale(.96);filter:brightness(.8);transition:transform .38s cubic-bezier(.5,0,.75,0),filter .38s}
-.label{background:var(--recess);padding:6px;border-radius:4px;box-shadow:inset 0 2px 3px rgba(0,0,0,.35)}
-.art{position:relative;aspect-ratio:1;border-radius:2px;overflow:hidden;background:#0B0F16;display:flex;align-items:center;justify-content:center}
-.art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.art pre{margin:0;font:600 11px/1.15 ui-monospace,"SF Mono",Menlo,Consolas,monospace;white-space:pre}
-.title{display:block;margin-top:8px;padding:6px 6px 5px;border-radius:2px;background:#0B0F16;color:#F2EFE6;text-align:center;
-  font:700 13px/1.15 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase}
-.tag{display:block;margin-top:10px;text-align:center;font-size:12px;color:var(--ink);opacity:.75}
-.slot{width:200px;align-self:stretch;display:grid;place-content:center;text-align:center;padding:16px;min-height:300px;
-  border:2px dashed var(--muted);border-radius:0 0 12px 12px;color:var(--muted);font:600 12px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.06em}
-footer{margin-top:40px;color:var(--muted);font-size:13px;text-align:center}
-footer a{color:inherit;display:inline-block;padding:12px 6px}   /* tall enough to tap */
-header p a{display:inline-block;padding:12px 0}
-@media (prefers-reduced-motion: reduce){ .cart,.cart.inserting{transition:none} .cart:hover{transform:none} }
+  padding:max(20px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.wrap{max-width:1040px;margin:0 auto}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+header{margin:clamp(4px,3vw,28px) 0 clamp(18px,4vw,32px)}
+h1{margin:0;font:800 clamp(24px,6vw,40px)/1.05 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.04em}
+header p{margin:8px 0 0;color:var(--muted);max-width:56ch}
+/* the games: two across on a phone, more on a wider screen; each whole card is the link */
+.shelf{list-style:none;margin:0;padding:0;display:grid;gap:clamp(12px,2.5vw,22px);grid-template-columns:repeat(auto-fill,minmax(min(210px,42vw),1fr))}
+.cart{position:relative;display:flex;flex-direction:column;height:100%;text-decoration:none;color:inherit;background:var(--card);
+  border:3px solid var(--line);border-radius:6px;box-shadow:0 5px 0 var(--shade);transition:transform .08s,box-shadow .08s;-webkit-tap-highlight-color:transparent}
+.cart:hover{transform:translateY(-2px);box-shadow:0 7px 0 var(--shade)}
+.cart:active{transform:translateY(4px);box-shadow:0 1px 0 var(--shade)}
+.cart:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.cart img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;background:#0B0F16;border-bottom:3px solid var(--line);border-radius:3px 3px 0 0}
+.name{display:block;padding:10px 10px 2px;font:800 14px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.05em;text-transform:uppercase}
+.tag{display:block;padding:0 10px 12px;font-size:13px;color:var(--muted)}
+.new{position:absolute;top:8px;left:8px;padding:3px 7px;border-radius:3px;background:var(--chip);color:var(--chip-ink);font:800 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em}
+footer{margin-top:clamp(28px,6vw,48px);display:flex;flex-wrap:wrap;gap:10px}
+footer a{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:2px solid var(--line);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}
+footer a:hover{background:var(--card)}
+footer a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){ .cart{transition:none} .cart:hover,.cart:active{transform:none} }
 </style>
 </head>
 <body>
+<div class="wrap">
 <header>
   <h1>SELECT A CARTRIDGE</h1>
-  <p>Games built on an ASCII physics engine. Each one opens on its own page. <a href="settings.html">Display settings</a></p>
+  <p>Pixel-art games that run in your browser. Play with touch, a mouse or the keyboard.</p>
 </header>
 
-<main class="shelf" aria-label="Cartridges">
-  <!-- Album art goes in cartridges/<id>.jpg (see CARTRIDGE_PROMPT.md); until then the ASCII label shows. -->
-  <a class="cart" href="base-commander.html" data-id="base-commander">
-    <div class="label">
-      <div class="art">
-        <pre aria-hidden="true"><span style="color:#FF5CC8">  (^)     (^) </span>
-<span style="color:#FF5CC8"> &lt;o_o&gt;   &lt;o_o&gt;</span>
-<span style="color:#58C8FF">~[===]~ ~[===]~</span>
-<span style="color:#FF6A50">   |        |  </span>
-<span style="color:#FF6A50">        |      </span>
-<span style="color:#5BE38A"> ##### #####  </span>
-<span style="color:#FFD36A">      /###\   </span></pre>
-        <img src="cartridges/base-commander.jpg" alt="" onerror="this.remove()">
-      </div>
-      <span class="title">Base Commander</span>
-    </div>
-    <span class="tag">Defend the base from alien waves</span>
-  </a>
-
-  <a class="cart" href="ascii-physics.html" data-id="physics-sandbox">
-    <div class="label">
-      <div class="art">
-        <pre aria-hidden="true"><span style="color:#FFD9A0">       *       </span>
-<span style="color:#7FA2FF">   .:=+=:.     </span>
-<span style="color:#7FA2FF">  :+#@@#+:  </span><span style="color:#F07FB8">[##]</span>
-<span style="color:#38D9B8">   ':=+=:'  </span><span style="color:#F07FB8">[##]</span>
-<span style="color:#C8CDD6">  .=#=.  .=#=. </span>
-<span style="color:#56617A">_______________</span></pre>
-        <img src="cartridges/physics-sandbox.jpg" alt="" onerror="this.remove()">
-      </div>
-      <span class="title">Physics Sandbox</span>
-    </div>
-    <span class="tag">Throw balls and boxes under a lamp</span>
-  </a>
-
-  <a class="cart" href="rooftop-rumble.html" data-id="rooftop-rumble">
-    <div class="label">
-      <div class="art">
-        <pre aria-hidden="true"><span style="color:#F2EFC8">       (o o)  </span>
-<span style="color:#FFE066">    .  .  (   </span>
-<span style="color:#F7B26A"> (..)      </span><span style="color:#7FD0FF">(..)</span>
-<span style="color:#6D7AB8">:##:  </span><span style="color:#B86A6A">::  </span><span style="color:#6D7AB8">:##:</span>
-<span style="color:#6D7AB8">:#:#  </span><span style="color:#B86A6A">:#:#</span><span style="color:#6D7AB8"> #:#:</span>
-<span style="color:#6D7AB8">:##:  </span><span style="color:#B86A6A">:##:</span><span style="color:#6D7AB8"> :##:</span></pre>
-        <img src="cartridges/rooftop-rumble.jpg" alt="" onerror="this.remove()">
-      </div>
-      <span class="title">Rooftop Rumble</span>
-    </div>
-    <span class="tag">Lob fruit across a night skyline</span>
-  </a>
-
-  <a class="cart" href="crater-duel.html" data-id="crater-duel">
-    <div class="label">
-      <div class="art">
-        <pre aria-hidden="true"><span style="color:#FF9A4A">          ___ </span>
-<span style="color:#FF9A4A">         /###\</span>
-<span style="color:#E8E2C8">    .  *  .   </span>
-<span style="color:#F2B45A"> /#\  </span><span style="color:#E8E2C8">  ' </span><span style="color:#7FD0FF"> /#\ </span>
-<span style="color:#F2B45A">(ooo)</span><span style="color:#8A6A44">  _  </span><span style="color:#7FD0FF">(ooo)</span>
-<span style="color:#6E8C3A">=====</span><span style="color:#8A6A44">;%/ \%</span><span style="color:#6E8C3A">====</span>
-<span style="color:#8A6A44">:;%#:;%#:;%#:;</span></pre>
-        <img src="cartridges/crater-duel.jpg" alt="" onerror="this.remove()">
-      </div>
-      <span class="title">Crater Duel</span>
-    </div>
-    <span class="tag">Tank duel over hills that crumble</span>
-  </a>
-
-  <a class="cart" href="stack-smash.html" data-id="stack-smash">
-    <div class="label">
-      <div class="art">
-        <pre aria-hidden="true"><span style="color:#B85CFF">     [][][]   </span>
-<span style="color:#B85CFF">       []     </span>
-<span style="color:#E8E2C8">   .  *  '  . </span>
-<span style="color:#FFC21A">[][]</span><span style="color:#3DF03D">  [][]</span><span style="color:#2E8BFF">[]  </span>
-<span style="color:#FFC21A">[][]</span><span style="color:#3DF03D">[][]</span><span style="color:#2E8BFF">  [][][]</span>
-<span style="color:#FF2E3A">[][]</span><span style="color:#1FD0F0">[][][][]</span><span style="color:#FF7A12">[][]</span></pre>
-        <img src="cartridges/stack-smash.jpg" alt="" onerror="this.remove()">
-      </div>
-      <span class="title">Stack Smash</span>
-    </div>
-    <span class="tag">Falling blocks; lines shatter</span>
-  </a>
-
-  <a class="cart" href="rover-patrol.html" data-id="rover-patrol">
-    <div class="label">
-      <div class="art">
-        <pre aria-hidden="true"><span style="color:#8FF0B0">  .-.       </span><span style="color:#5C8CFF"> .-. </span>
-<span style="color:#8FF0B0"> &lt;=o=&gt;  </span><span style="color:#FFE9A0">|</span><span style="color:#5C8CFF">    (  ) </span>
-<span style="color:#FFE9A0">        |    </span><span style="color:#5C8CFF"> '-' </span>
-<span style="color:#FFD36A">   ._n_. </span><span style="color:#FFE9A0">-  </span><span style="color:#B8A890">@</span>
-<span style="color:#FFD36A">  [=###=]&gt; </span><span style="color:#B8A890"> (@)</span>
-<span style="color:#E0E0E8">   O  O  O </span>
-<span style="color:#B8AE98">=====\__/=====</span></pre>
-        <img src="cartridges/rover-patrol.jpg" alt="" onerror="this.remove()">
-      </div>
-      <span class="title">Rover Patrol</span>
-    </div>
-    <span class="tag">Jump craters, shoot UFOs on the Moon</span>
-  </a>
-
-  <div class="slot" role="note">NEXT CARTRIDGE<br>IN DEVELOPMENT</div>
-</main>
+<!-- Label art lives in cartridges/<id>.jpg (see CARTRIDGE_PROMPT.md). -->
+<ul class="shelf" aria-label="Cartridges">
+  <li><a class="cart" href="meadow-mines.html"><img src="cartridges/meadow-mines.jpg" alt="" width="512" height="512"><span class="new">NEW</span><span class="name">Meadow Mines</span><span class="tag">Dig the meadow, flag the buried mines</span></a></li>
+  <li><a class="cart" href="base-commander.html"><img src="cartridges/base-commander.jpg" alt="" width="512" height="512"><span class="name">Base Commander</span><span class="tag">Defend the base from alien waves</span></a></li>
+  <li><a class="cart" href="rover-patrol.html"><img src="cartridges/rover-patrol.jpg" alt="" width="512" height="512"><span class="name">Rover Patrol</span><span class="tag">Jump craters, shoot UFOs on the Moon</span></a></li>
+  <li><a class="cart" href="rooftop-rumble.html"><img src="cartridges/rooftop-rumble.jpg" alt="" width="512" height="512"><span class="name">Rooftop Rumble</span><span class="tag">Lob fruit across a night skyline</span></a></li>
+  <li><a class="cart" href="crater-duel.html"><img src="cartridges/crater-duel.jpg" alt="" width="512" height="512"><span class="name">Crater Duel</span><span class="tag">Tank duel over hills that crumble</span></a></li>
+  <li><a class="cart" href="stack-smash.html"><img src="cartridges/stack-smash.jpg" alt="" width="512" height="512"><span class="name">Stack Smash</span><span class="tag">Falling blocks; lines shatter</span></a></li>
+  <li><a class="cart" href="ascii-physics.html"><img src="cartridges/physics-sandbox.jpg" alt="" width="512" height="512"><span class="name">Physics Sandbox</span><span class="tag">Throw balls and boxes under a lamp</span></a></li>
+</ul>
 
 <footer>
-  <a href="settings.html">Settings: ASCII or pixels, TV filter</a> &middot;
-  <a href="ascii-engine-tutorial.html">Manual: how the engine works</a> &middot;
+  <a href="settings.html">Tube TV filter</a>
+  <a href="ascii-engine-tutorial.html">Manual: how the engine works</a>
   <a href="https://github.com/hendrasaputra/asciibasecommander">Source on GitHub</a>
 </footer>
-
-<script>
-// A plain click plays a short "insert" animation, then opens the game. Modified clicks (new tab, etc.) are left alone.
-const still = matchMedia("(prefers-reduced-motion: reduce)");
-document.querySelectorAll(".cart").forEach(cart => cart.addEventListener("click", e => {
-  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || still.matches) return;
-  e.preventDefault();
-  cart.classList.add("inserting");
-  setTimeout(() => { location.href = cart.href; }, 380);
-}));
-// Coming back with the browser's back button can restore the page mid-animation; reset it.
-addEventListener("pageshow", () => document.querySelectorAll(".inserting").forEach(c => c.classList.remove("inserting")));
-</script>
+</div>
 </body>
 </html>

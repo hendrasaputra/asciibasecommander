@@ -9,9 +9,9 @@ Every page is one self-contained HTML file. You can also open it straight from d
 
 ## The cartridge shelf
 
-`index.html` is the front page: a shelf of game cartridges. Click one to open its game. The album art is in
-`cartridges/<id>.jpg`, and `CARTRIDGE_PROMPT.md` has the prompts used to make it. A cartridge with no image shows an
-ASCII label instead.
+`index.html` is the front page: a grid of game cards, two across on a phone, each one a single large link to its
+game. The album art is in `cartridges/<id>.jpg`, and `CARTRIDGE_PROMPT.md` has the prompts used to make it; Meadow
+Mines' label is a picture of the game itself.
 
 | Game | After | What the engine adds |
 |---|---|---|
@@ -20,6 +20,7 @@ ASCII label instead.
 | [Crater Duel](crater-duel.html) | Scorched Earth | Pixel art drawn in code: tanks after a modern tank, a dusk sky, layered ground with round craters. Hills that collapse after each blast, falling tanks, four weapons. Two to four tanks (people or the computer), money and a shop between rounds (big shots, MIRVs, dirt bombs, fuel, shields), and tanks that drive on fuel |
 | [Stack Smash](stack-smash.html) | Tetris, Columns, Puyo Puyo | Pixel art drawn in code: bevelled tiles, cut jewels and round blobs with eyes; cleared lines burst into boxes that land on the stack. T-spins, back-to-back and combos; Versus, where clears send garbage to the other well (against the computer or a second player); and Columns and Puyo games in the same well, with chains |
 | [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Pixel art drawn in code: a moon buggy after the Apollo rover, the turning Earth, shaded hills. Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble. Hold jump to jump further; ground tanks, rolling boulders and diving fighters further along; start at any checkpoint you have reached |
+| [Meadow Mines](meadow-mines.html) | Minesweeper | Pixel art drawn in code: a grass meadow you dig into, numbered dirt, flags. The first dig is always safe; digging a number whose mines are all flagged clears around it; a mine sets the rest off one after another. Easy 9x9, Medium 16x16 and Hard 30x16 (it stands upright on a phone held upright), with best times |
 | [Physics Sandbox](ascii-physics.html) | | The engine itself: throw balls and boxes under a lamp |
 
 All games are original code and art. Rover Patrol takes its idea from msokalski's
@@ -35,17 +36,13 @@ Torchlight Dungeons, a Moria adaptation, began here and has moved to its own pro
   go to throw or fire (Crater Duel: drag your tank to drive, tap the weapon to change it). Rover Patrol: the right half
   jumps (hold to jump further), the left half fires and slides to change speed. Stack Smash: slide to move, tap to
   turn, drag down to drop faster, flick down to drop, swipe up to hold. Base Commander: the cannon follows your finger
-  and fires while you touch. Title buttons, the shop and the menu are tapped; the header has Menu and Sound buttons,
+  and fires while you touch. Meadow Mines: tap to dig, hold to flag (the DIG switch at the top swaps them). Title buttons, the shop and the menu are tapped; the header has Menu and Sound buttons,
   and every button is at least 44 pixels tall. On a phone, the menu's rows are spaced out for fingers.
 - **Pause menu:** drawn on the game screen. It has resume, restart, the game's own options (Rooftop Rumble's mode and
   difficulty, Crater Duel's mode and number of tanks, Stack Smash's game, opponent and starting level, Rover Patrol's
-  starting point), sound, display settings, and the way back to the shelf.
-- **Display settings** (`settings.html`, shared by every game): draw with ASCII characters or pixels (text stays
-  readable either way), pick the character set, choose the detail, and turn on a tube TV filter. Detail (Fine 2x,
-  Finest 3x) draws the engine's lit balls, boxes, blocks, rubble and light with smaller characters, while game text
-  and sprites keep their size. Pixel mode is pixel art four times finer than the characters, in the style of Pixel
-  Plays' Balote: shaded colour ramps, dithered lit surfaces, outlines, a sand grain, and the games' character art
-  smoothed with Scale2x.
+  starting point, Meadow Mines' field size), sound, the TV filter, and the way back to the shelf.
+- **Tube TV filter** (`settings.html`, shared by every game): scanlines, phosphor glow, rounded glass and a faint
+  flicker over the game screen.
 - **Game feel**, in every game: screen shake, a short freeze on heavy hits, a flash, and sparks, embers, smoke and
   debris.
 
@@ -96,12 +93,12 @@ a `src/audio/*-data.js` file:
 
 | Script | Game | Music |
 |---|---|---|
-| `audio/crater-sfx.py` | Crater Duel | none |
+| `audio/crater-sfx.py` | Crater Duel, Meadow Mines | none |
 | `audio/stack-sfx.py` | Stack Smash | Korobeiniki, a public-domain folk song |
 | `audio/rover-sfx.py` | Rover Patrol | an original groove |
 
 Then run `./build.sh`. The sound is embedded, so each page still works offline as one file. Sizes: Base Commander
-about 1 MB, Stack Smash 370 KB, Rover Patrol and Rooftop Rumble about 250 KB, Crater Duel 220 KB.
+about 1 MB, Stack Smash 370 KB, Rover Patrol and Rooftop Rumble about 250 KB, Crater Duel and Meadow Mines (which uses its sounds) about 220 KB.
 
 ## Saved data
 
@@ -109,10 +106,11 @@ Everything is saved in the browser's localStorage. Nothing is sent anywhere.
 
 | Key | What |
 |---|---|
-| `arcade.v1.display` | Display settings shared by the games |
+| `arcade.v1.display` | The tube TV filter, shared by the games (its older ASCII and detail choices are no longer used) |
 | `asciiPhysics.v3.display` | The sandbox's own display settings |
 | `<game>.v1.scores` | High scores (Base Commander, Stack Smash's Classic game, Rover Patrol) |
 | `stackSmash.v1.scores.columns`, `stackSmash.v1.scores.puyo` | Stack Smash's Columns and Puyo high scores |
+| `meadowMines.v1.level`, `meadowMines.v1.best` | Meadow Mines' field size and best times |
 | `rooftopRumble.v1.difficulty` | Rooftop Rumble's difficulty |
 | `roverPatrol.v1.furthest` | The furthest checkpoint reached in Rover Patrol, for choosing where to start |
 | `<game>.v1.muted` | Sound on or off, per game |
