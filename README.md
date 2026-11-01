@@ -19,7 +19,7 @@ ASCII label instead.
 | [Rooftop Rumble](rooftop-rumble.html) | QBasic Gorillas | Lobbed fruit with wind; blasts carve buildings into rubble; apes fall when their roof goes. Easy, Normal and Hard, with a predicted aiming arc (all of it on Easy, its start on Normal) and a computer that judges its throws like you do |
 | [Crater Duel](crater-duel.html) | Scorched Earth | Hills that collapse after each blast, falling tanks, four weapons. Two to four tanks (people or the computer), money and a shop between rounds (big shots, MIRVs, dirt bombs, fuel, shields), and tanks that drive on fuel |
 | [Stack Smash](stack-smash.html) | Tetris, Columns, Puyo Puyo | Blocks as lit slabs; cleared lines burst into boxes that land on the stack. T-spins, back-to-back and combos; Versus, where clears send garbage to the other well (against the computer or a second player); and Columns and Puyo games in the same well, with chains |
-| [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble. Hold jump to jump further; ground tanks, rolling boulders and diving fighters further along; start at any checkpoint you have reached |
+| [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Pixel art drawn in code: a moon buggy after the Apollo rover, the turning Earth, shaded hills. Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble. Hold jump to jump further; ground tanks, rolling boulders and diving fighters further along; start at any checkpoint you have reached |
 | [Physics Sandbox](ascii-physics.html) | | The engine itself: throw balls and boxes under a lamp |
 
 All games are original code and art. Rover Patrol takes its idea from msokalski's
@@ -66,6 +66,8 @@ physics.
 - `src/arcade.js`: everything else the cartridges share: saved settings and high scores, sound (effects and looped
   music), the touch gamepad, fitting the canvas to a fixed grid, resizing, the frame loop, and shake, freeze and
   flash (`createFeel`).
+- `src/pixel.js`: native pixel art (`createPixels`): a small canvas scaled to fit, shaded balls and plates, lit
+  outlines, light, and sharp text and menus over it. Rover Patrol draws with it; the other games will follow.
 - `src/fx.js`: the cartridges' particle effects (`createFx`): sparks, embers, smoke, debris and light.
 - `src/arcade/pad.css`: the styles every cartridge page shares (layout, gamepad, phone on its side); `build.sh` puts
   it into each page.

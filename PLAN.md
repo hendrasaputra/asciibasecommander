@@ -90,9 +90,9 @@ camera does not suit our side-view 2D physics, so only the drawing ideas come ov
 | 2. Effects | `src/fx.js`: sparks, embers, smoke and debris particles stepped at 120 Hz with drag, each with a dark-to-bright palette; colour pixels plus an additive light pool, so hot things glow | pixelfx's colour and light buffers, palette ramps, "fast attack, slow release" |
 | 3. Pixel renderer | Pixel mode draws on a grid four times finer than the characters. The games' character-grid art is enlarged into it with Scale2x twice, so steps become slopes and corners round; a lone character takes its glyph's shape. Then Balote's look: each colour's five-shade ramp (darker shades towards violet, the brightest towards warm yellow), lit balls and boxes shaded from that ramp with a 4x4 Bayer dither and a one-pixel bevel, flat areas given Balote's sand grain (four close tones and pebbles), dark edges against the background and a warm rim over other shapes. Light on the background is dimmed and dithered out. Text stays characters | Pixel Plays' `engine.js` (`rampOf`, `sphere`, `shadeEdges`) and Balote's `groundColor` |
 | 4. Games | Each game calls shake, hit-stop and the effects on its impacts | |
-| 5. Native pixel art (next) | Each game draws its ground, buildings and sprites per pixel in pixel mode, instead of per character cell enlarged: terrain from its height, sprites as pixel art. Scale2x is as far as the shared renderer can go on its own | |
+| 5. Native pixel art | Each game drops the character grid for drawing and draws its own pixel art in code (`src/pixel.js`): terrain from its height, sprites from reference photos, nothing copied. Done: Rover Patrol (a moon buggy after the Apollo rover, the Earth, hills, rocks, tanks, UFOs). Next: Crater Duel, Rooftop Rumble, Stack Smash, Base Commander. The Physics Sandbox and the tutorial stay ASCII | Balote's ramps, dither and edges |
 
-Steps 1 to 4 are built. Not taken from Balote: its white paper background (our games are night and space scenes with
+Steps 1 to 4 are built; step 5 is under way. Not taken from Balote: its white paper background (our games are night and space scenes with
 bright text) and its long cast shadows (they need a ground plane; ours are side views).
 
 ## Each game: features and tuning still to do

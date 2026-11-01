@@ -1,10 +1,12 @@
 (() => {
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
-// A side-scroller after Moon Patrol. Rules run on a character grid in world columns: the course scrolls left
+// A side-scroller after Moon Patrol. Rules run on a grid of world columns and rows: the course scrolls left
 // under the rover, one column at a time. The ground is an engine terrain grid rebuilt every frame, so rubble,
-// dust and the wreck of the rover bounce and roll on it. Rocks and the planet are lit engine spheres.
+// dust and the wreck of the rover bounce and roll on it. Everything is drawn as pixel art (src/pixel.js), four
+// pixels to a column and eight to a row, and scrolls smoothly between columns.
 const GW = 120, GH = 44, GBASE = GH - 7;          // GBASE: ground row on flat ground
+const CW = 8, CH = 16, PU = 2, PX = CW / PU, PY = CH / PU;   // world units per column and row; per pixel; pixels per column and row
 const SEC = 160, POST = 40;                        // course columns per checkpoint; post position in a section
 const CRUISE = 14, VMIN = 8, VMAX = 24;            // speed in columns per second
 const JUMPV = 18, G = 44, BOMB_G = 30;             // rows per second, rows per second squared
@@ -12,18 +14,14 @@ const JUMPV = 18, G = 44, BOMB_G = 30;             // rows per second, rows per 
 // HOLD_G of normal. A tap clears small rocks and craters; a full hold clears big rocks and wide craters.
 const JUMP_HOLD = 0.45, HOLD_G = 0.25, JUMP_BUFFER = 0.15;   // a press this long before landing still jumps
 const WHEELS = [1, 4, 7], RW = 9;                  // wheel columns in the rover sprite; sprite width
-const ROVER = ["  ._n_.  ", " [=###=]>"];
-const SAUCER = [" .-. ", "<=o=>"], BOMBER = ["\\_^_/", " (#) "], FIGHTER = ["\\_/", " V "];
-const TANK = ["<=[#]", "(ooo)"], TW = 5;            // a ground tank, facing the rover
+const TW = 5;                                      // a ground tank's width in columns
 // When the new hazards start: ground tanks from point E, rolling boulders from H, diving fighters from J.
 const TANKS_FROM = 4, BOULDERS_FROM = 7, FIGHTERS_FROM = 9, PAIR_GAP = 20;   // PAIR_GAP: columns between a rock pair, room to land and jump again
 const LIVES = 3;
 const WHITE = [1.6, 1.6, 1.6], DIM = [0.4, 0.45, 0.6], ACCENT = [1.6, 1.25, 0.45];
-const ROVER_RGB = [1.6, 1.3, 0.5], WHEEL_RGB = [1.1, 1.1, 1.2], SHOT_RGB = [2.2, 2.0, 1.2], BOMB_RGB = [2.6, 0.2, 0.1];
-// Everything that can wreck the rover (craters, rocks, mines, bombs) is drawn in warning red, so it never blends into the grey ground.
-const HAZARD_RGB = [2.4, 0.16, 0.08];
-const UFO_RGB = { saucer: [0.6, 1.6, 0.8], bomber: [1.6, 0.5, 1.4], fighter: [1.7, 1.0, 0.3] }, FLASH = [1.8, 0.9, 0.4];
-const GROUND_RGB = [0.75, 0.7, 0.6], HILL_RGB = [0.42, 0.42, 0.55], FAR_RGB = [0.28, 0.32, 0.55];
+// text and light in the engine's light values (above 1 is brighter than white); the pixel art's colours are C, below
+const ROVER_RGB = [1.6, 1.3, 0.5], BOMB_RGB = [2.6, 0.2, 0.1], FLASH = [1.8, 0.9, 0.4];
+const UFO_RGB = { saucer: [0.6, 1.6, 0.8], bomber: [1.6, 0.5, 1.4], fighter: [1.7, 1.0, 0.3] };
 const ROCK = { name: "rock", density: 1.4, e: 0.25, mu: 0.8, kd: 0.95, ks: 0.15, shine: 8 };
 const PART = { name: "part", density: 0.8, e: 0.45, mu: 0.6, kd: 0.9, ks: 0.6, shine: 24 };
 const FONT = {   // 5x5 block letters for the title, drawn two cells wide per dot
@@ -33,16 +31,17 @@ const FONT = {   // 5x5 block letters for the title, drawn two cells wide per do
   T: ["#####", "..#..", "..#..", "..#..", "..#.."], L: ["#....", "#....", "#....", "#....", "#####"]
 };
 
-const D = defaultDisplay(); D.room = 0.2; D.glow = 0.25; D.lampRGB = [1.0, 0.95, 0.85];   // a low sun on the left
-applyArcadeSettings(D);   // character set, pixel mode and TV filter from the shared Settings page
+applyArcadeSettings(defaultDisplay());   // the tube TV filter from the shared Settings page
 const world = new World(); world.openTop = true;
-const sun = { x: 0, y: 0, z: 0, on: true };
-let screen = null, state = "title", stateT = 0, stars = [];
+world.w = GW * CW; world.h = GH * CH; world.unit = CW; world.drag = 2e-4 * (600 / world.h) ** 2; world.g = { x: 0, y: world.h * 1.2 };
+const pix = createPixels(GW * PX, GH * PY, GW, GH, PU);
+let ready = false, state = "title", stateT = 0;
+const stars = Array.from({ length: 140 }, () => ({ x: Math.random() * GW * PX, y: 16 + Math.random() * 180, ph: Math.random() * 6.283, b: Math.random() }));
 let scroll = 0, sc = 0, speed = CRUISE, features = [], genTo = 0, seed = 1, gr = new Int16Array(GW + 16);
 let grounded = true, by = 0, vy = 0, wy = [0, 0, 0], airT = 0;
 let ufos = [], bombs = [], fShots = [], uShots = [], tShots = [], flashes = [], waveT = 0, fireT = 0;
 let score = 0, lives = LIVES, reached = 0, pointT = 0, msg = "", msgT = 0, best = false;
-const cx = gx => (gx + 0.5) * screen.cw, cy = gy => (gy + 0.5) * screen.ch;
+const cx = gx => (gx + 0.5) * CW, cy = gy => (gy + 0.5) * CH;
 const bxs = () => 16 + (speed - VMIN);   // the rover's screen column: it moves forward on screen as it speeds up
 const bx = () => sc + Math.floor(bxs());   // the rover's left world column
 const letter = k => String.fromCharCode(65 + k % 26);
@@ -58,14 +57,7 @@ const audio = createAudio({ label: "Rover Patrol", store, sounds: ROVER_SFX, mus
 const sfx = name => audio.play(name), playMusic = on => audio.music(on ? "music" : null);
 const feel = createFeel(), vfx = createFx();
 
-function layout(){
-  const old = screen; screen = fitGrid(stage, cv, ctx, D, GW, GH) || old; if (screen === old) return;
-  const W = GW * screen.cw, H = GH * screen.ch;
-  world.w = W; world.h = H; world.unit = screen.cw; world.drag = 2e-4 * (600 / H) ** 2; world.g = { x: 0, y: H * 1.2 };
-  sun.x = W * 0.08; sun.y = -H * 0.25; sun.z = H * 0.9;
-  rescaleBodies(world, old, screen);
-  stars = Array.from({ length: 110 }, () => ({ x: Math.floor(Math.random() * GW), y: 2 + Math.floor(Math.random() * 22), ph: Math.random() * 6.283 }));
-}
+function layout(){ if (pix.fit(stage, cv, ctx)) ready = true; }
 
 /* ---------- the course ---------- */
 // Each checkpoint section is generated from its own seed, so going back to a checkpoint rebuilds the same course.
@@ -89,7 +81,8 @@ function genSection(s){
   }
 }
 function add(f){ features.push(f); features.sort((a, b) => a.x - b.x); }
-const bump = wc => Math.max(0, Math.min(2, Math.round(1 + 0.6 * Math.sin(wc * 0.12) + 0.8 * Math.sin(wc * 0.037 + 2))));
+const bumpF = wc => Math.max(0, Math.min(2, 1 + 0.6 * Math.sin(wc * 0.12) + 0.8 * Math.sin(wc * 0.037 + 2)));   // the ground's rise, in rows
+const bump = wc => Math.round(bumpF(wc));
 function craterAt(wc){ for (const f of features) if (f.type === "crater" && wc >= f.x && wc < f.x + f.w) return f; return null; }
 function inPit(f, wc){ return f.w <= 2 ? true : wc > f.x && wc < f.x + f.w - 1; }   // the deep middle of a crater
 function groundRow(wc){
@@ -103,7 +96,7 @@ function computeGround(){
   for (let c = 0; c < gr.length; c++) gr[c] = groundRow(sc + c);
   const solid = world.terrain ? world.terrain.solid : new Uint8Array(GW * GH);
   for (let c = 0; c < GW; c++) for (let r = 0; r < GH; r++) solid[r * GW + c] = r >= gr[c] ? 1 : 0;
-  world.terrain = { cw: screen.cw, ch: screen.ch, cols: GW, rows: GH, solid, mat: ROCK };
+  world.terrain = { cw: CW, ch: CH, cols: GW, rows: GH, solid, mat: ROCK };
 }
 const groundAt = wc => gr[Math.max(0, Math.min(gr.length - 1, wc - sc))];
 
@@ -135,22 +128,22 @@ function die(){
   const x0 = bxs(), top = Math.min(...wy) - 2;
   boom(cx(x0 + 4), cy(top + 1), 1.4);
   for (let k = 0; k < 4; k++){
-    const b = world.addBox(cx(x0 + 1 + k * 2), cy(top + 1), screen.cw * 1.1, screen.ch * 0.4, "part", ROVER_RGB.map(v => v * 0.35), PART);
-    b.vx = (Math.random() - 0.3) * 300; b.vy = -200 - Math.random() * 250; b.w = (Math.random() - 0.5) * 20; b.flash = 1;
+    const b = world.addBox(cx(x0 + 1 + k * 2), cy(top + 1), CW * 1.1, CH * 0.4, "part", ROVER_RGB.map(v => v * 0.35), PART);
+    b.vx = (Math.random() - 0.3) * 300; b.vy = -200 - Math.random() * 250; b.w = (Math.random() - 0.5) * 20; b.flash = 1; b.gold = k % 2;
   }
   for (const w of WHEELS){
-    const b = world.add(cx(x0 + w), cy(wy[0]), screen.ch * 0.55, "rubber", [0.3, 0.3, 0.33]);
+    const b = world.add(cx(x0 + w), cy(wy[0]), CH * 0.55, "rubber", [0.3, 0.3, 0.33]);
     b.vx = (Math.random() - 0.2) * 300; b.vy = -250 - Math.random() * 200; b.w = (Math.random() - 0.5) * 30;
   }
 }
 function boom(px, py, size, rgb = FLASH, n = 0){   // a flash that lights the ground, a shove, and optional rubble
   flashes.push({ x: px, y: py, t: 0.5, size });
-  world.forces.push({ x: px, y: py, radius: screen.ch * 6 * size, strength: world.h * 10, t: 0.06 });
-  vfx.explode(px, py, screen.ch * 1.2 * size); if (n) vfx.debris(px, py, screen.ch * size, PAL.dirt, n);
+  world.forces.push({ x: px, y: py, radius: CH * 6 * size, strength: world.h * 10, t: 0.06 });
+  vfx.explode(px, py, CH * 1.2 * size); if (n) vfx.debris(px, py, CH * size, PAL.dirt, n);
   feel.shake(2 + size * 3, 0.25); if (size >= 1) feel.freeze(0.06);
   for (let k = 0; k < n; k++){
     const a = Math.random() * Math.PI, sp = 150 + Math.random() * 350;
-    const b = world.add(px, py, screen.ch * (0.25 + Math.random() * 0.25), "rock", rgb, ROCK);
+    const b = world.add(px, py, CH * (0.25 + Math.random() * 0.25), "rock", rgb, ROCK);
     b.vx = Math.cos(a) * sp; b.vy = -Math.sin(a) * sp; b.w = (Math.random() - 0.5) * 20; b.life = 1.5 + Math.random();
   }
 }
@@ -187,8 +180,8 @@ function update(dt){
     const land = Math.min(...WHEELS.map(w => groundAt(x + w) - 1));
     if (vy > 0 && by >= land){
       grounded = true; for (let i = 0; i < 3; i++) wy[i] = Math.max(by, groundAt(x + WHEELS[i]) - 1);
-      sfx("land"); vfx.puff(cx(bxs() + 4), cy(land), screen.ch, 3);
-      for (let k = 0; k < 3; k++){ const b = world.add(cx(bxs() + 1 + k * 3), cy(land), screen.ch * 0.2, "foam", [0.3, 0.28, 0.25]); b.vx = (Math.random() - 0.5) * 200; b.vy = -100 - Math.random() * 120; b.life = 0.6; }
+      sfx("land"); vfx.puff(cx(bxs() + 4), cy(land), CH, 3);
+      for (let k = 0; k < 3; k++){ const b = world.add(cx(bxs() + 1 + k * 3), cy(land), CH * 0.2, "foam", [0.3, 0.28, 0.25]); b.vx = (Math.random() - 0.5) * 200; b.vy = -100 - Math.random() * 120; b.life = 0.6; }
     } else for (let i = 0; i < 3; i++) wy[i] = by;
   }
   if (jumpQueued > 0 && grounded){ grounded = false; by = Math.min(...wy); vy = -JUMPV; airT = 0; jumpQueued = 0; sfx("jump"); }
@@ -204,7 +197,7 @@ function update(dt){
   if ((fireT -= dt) <= 0 && fireHeld && fShots.length < 1 + (uShots.length < 3 ? 1 : 0)){
     fireT = 0.28; sfx("fire");
     const row1 = Math.round(Math.min(...wy)) - 1;
-    vfx.burst(cx(bxs() + RW), cy(row1), { n: 4, speed: screen.ch * 8, life: 0.15, dir: 0, spread: 1, g: 0 });
+    vfx.burst(cx(bxs() + RW), cy(row1), { n: 4, speed: CH * 8, life: 0.15, dir: 0, spread: 1, g: 0 });
     if (!fShots.length) fShots.push({ x: x + RW, y: row1, d: 0 });
     if (uShots.length < 3) uShots.push({ x: x + 4, y: row1 - 2 });
   }
@@ -249,7 +242,7 @@ function update(dt){
 function scrollBy(cols){
   const before = sc; scroll += cols; sc = Math.floor(scroll);
   if (sc !== before){
-    const dx = (sc - before) * screen.cw;
+    const dx = (sc - before) * CW;
     for (const b of world.bodies) b.x -= dx;   // the rubble stays where it fell on the ground
     world.bodies = world.bodies.filter(b => b.x > -b.r * 2);
     for (const f of flashes) f.x -= dx;
@@ -333,114 +326,268 @@ function updateUfos(dt, x){
 }
 
 /* ---------- drawing ---------- */
-const { put, text, center, sprite } = pen(() => screen);   // drawing on the character grid (src/arcade.js)
-const ball = { a: 0, w: 0, flash: 0, mat: ROCK };
-function litBall(px, py, r, alb, mat = ROCK){ ball.x = px; ball.y = py; ball.r = r; ball.alb = alb; ball.mat = mat; screen.sphere(ball, sun, { stripe: false }); }
-function flashAt(gx, gy){
-  let v = 0;
-  for (const f of flashes){ const d = Math.hypot(cx(gx) - f.x, (cy(gy) - f.y) * 0.8) / (screen.ch * 10 * f.size); if (d < 1) v += (f.t / 0.5) * (1 - d) * 1.2; }
-  return v;
+// Pixel art, drawn in code. The buggy follows the Apollo moon buggy: a low open frame on big wire-mesh wheels under
+// gold fenders, two seats (the driver in front), an umbrella dish on a mast, an equipment rack at the back; ours
+// adds a cannon at the nose and one pointing up between the seats. Its frame tilts with the wheels, which ride the
+// ground on their own. Things that can wreck it (craters, rocks, mines, tanks, boulders, bombs) are in reds.
+const C = {
+  far: [62, 68, 108], hill: [92, 92, 118], dust: [178, 170, 154], earth: [52, 104, 186], land: [96, 140, 72], cloud: [232, 236, 240],
+  hull: [222, 224, 230], gold: [226, 170, 62], frame: [126, 130, 142], seat: [66, 72, 92], tire: [98, 100, 110], rim: [176, 178, 188],
+  suit: [236, 236, 230], visor: [240, 186, 70], rock: [164, 74, 54], tank: [150, 62, 50], tread: [64, 64, 72], mine: [116, 116, 126],
+  saucer: [110, 210, 140], bomber: [200, 104, 196], fighter: [232, 150, 60], warn: [240, 60, 40], glass: [150, 214, 250],
+  shot: [255, 246, 200], red: [255, 60, 40], amber: [255, 196, 90], post: [150, 156, 176], hiAccent: [255, 200, 90]
+};
+let frac = 0;   // how far the course has scrolled past the current whole column, 0 to 1
+const xOf = wc => (wc - scroll) * PX;   // a world column's left edge on screen, in pixels
+// The ground's height in pixels under screen pixel x: the smooth rise the rows are rounded from, and each crater a
+// round bowl as deep as its rows (the rules use the rows; the two differ by under half a row).
+function surf(x){
+  const u = sc + x / PX + frac, f = craterAt(Math.floor(u));
+  const e = f ? 2 * Math.max(0, Math.min(1, (u - f.x) / f.w)) - 1 : 1, dip = f ? (f.w <= 2 ? 2 : 3) * Math.min(1, 1.4 * (1 - e * e)) : 0;   // a flat-bottomed bowl
+  return (GBASE - bumpF(u) + dip) * PY;
 }
-// Far mountains and nearer hills scroll slower than the ground, for depth.
-const farH = x => 28 - Math.round(3 * Math.sin(x * 0.045) + 2 * Math.sin(x * 0.13 + 1) + 1.5 * Math.abs(Math.sin(x * 0.29)));
-const hillH = x => 33 - Math.round(2 * Math.sin(x * 0.07 + 3) + 1.3 * Math.sin(x * 0.19));
-function drawLand(t){
-  const fx = Math.floor(scroll * 0.12), hx = Math.floor(scroll * 0.35), lit = flashes.length > 0;
-  for (let c = 0; c < GW; c++){
-    const fTop = farH(c + fx), hTop = hillH(c + hx), g = gr[c], pit = craterAt(sc + c);
-    for (let r = 2; r < GH; r++){
-      let rgb, v, layer = 0, glyph = 0;
-      if (r >= g){   // the ground: lit from the left on rising slopes, darker with depth
-        const slope = (gr[Math.max(0, c - 1)] - gr[Math.min(GW - 1, c + 1)]) * 0.15, depth = r - g;
-        v = depth === 0 ? 0.55 + slope : Math.max(0.04, 0.24 - depth * 0.05); rgb = GROUND_RGB; layer = 1;
-        if (pit && depth <= 1){ rgb = HAZARD_RGB; v = depth === 0 ? 0.85 : 0.5; glyph = 35; }   // a crater's rim and floor, solid and red
-      } else if (r >= hTop){ v = r === hTop ? 0.2 : 0.05; rgb = HILL_RGB; }
-      else if (r >= fTop){ v = r === fTop ? 0.16 : 0.035; rgb = FAR_RGB; }
-      else continue;
-      const f = lit ? flashAt(c, r) : 0;
-      put(c, r, [rgb[0] * v + FLASH[0] * f * 0.5, rgb[1] * v + FLASH[1] * f * 0.5, rgb[2] * v + FLASH[2] * f * 0.5], 1, layer, glyph);
+const hash = (x, y) => pixHash(x, y);
+function drawSky(t){
+  // the earth, slowly turning: oceans, land and cloud from noise, lit from the left, with a dither at the terminator
+  const ex = (GW - 18) * PX, ey = 9 * PY, er = 24, R = { o: pix.ramp(C.earth), l: pix.ramp(C.land), c: pix.ramp(C.cloud) };
+  for (let y = -er; y <= er; y++) for (let x = -er; x <= er; x++){
+    const dx = (x + 0.5) / er, dy = (y + 0.5) / er, nn = dx * dx + dy * dy; if (nn > 1) continue;
+    const nz = Math.sqrt(1 - nn), lon = Math.atan2(dx, nz) + t * 0.00003, lat = Math.asin(dy);
+    const kind = pixNoise(lon * 2.2 + 7, lat * 3 + 3) > 0.57 ? "l" : "o", cloud = pixNoise(lon * 4 + 40 + t * 0.00002, lat * 7) > 0.66;
+    const l = Math.max(0, Math.min(1, -0.75 * dx - 0.25 * dy + 0.6 * nz));
+    const lv = Math.max(0, Math.min(4, Math.floor(l * 4.4 + 0.2 + (pix.bayer(x, y) - 0.5) * 0.7)));
+    pix.px(ex + x, ey + y, (cloud ? R.c : R[kind])[lv], 1);
+  }
+  // far mountains and nearer hills, scrolling slower than the ground; slopes facing the sun (left) are lit
+  const ridge = (x, k, f) => { const c = x / PX + scroll * k; return f(c) * PY; };
+  const farF = c => 28 - (3 * Math.sin(c * 0.045) + 2 * Math.sin(c * 0.13 + 1) + 1.5 * Math.abs(Math.sin(c * 0.29)));
+  const hillF = c => 33.5 - (2 * Math.sin(c * 0.07 + 3) + 1.3 * Math.sin(c * 0.19));
+  for (const [f, k, col, layer] of [[farF, 0.12, C.far, 1], [hillF, 0.35, C.hill, 1]]){
+    const R = pix.ramp(col);
+    for (let x = 0; x < pix.W; x++){
+      const top = ridge(x, k, f), lit = ridge(x - 1, k, f) - ridge(x + 1, k, f);   // > 0: rising to the right, facing the sun
+      for (let y = Math.max(0, Math.floor(top)); y < pix.H; y++){
+        const depth = y - top, b = pix.bayer(x, y);
+        let lv = depth < 1 ? 3 : 1 + (lit * 0.6 + 0.4 - depth * 0.02 + (b - 0.5) * 0.6 > 0.5 ? 1 : 0);
+        if (hash(Math.floor(x + scroll * k * PX), y) > 0.985) lv = 0;   // a pock mark
+        pix.px(x, y, R[Math.max(0, lv)], layer);
+      }
     }
   }
-  for (const s of stars) if (s.y < farH(s.x + fx)){ const v = 0.07 + 0.05 * Math.sin(t * 0.0015 + s.ph); put(s.x, s.y, [v, v, v * 1.3], 1, 0, 46); }
-  litBall(cx(GW - 18), cy(9), screen.ch * 3.2, [0.15, 0.35, 0.75], PART);   // a planet in the sky, lit from the side
+}
+function drawGround(){
+  const R = pix.ramp(C.dust), H = pix.ramp(C.rock), X0 = Math.floor(scroll * PX);
+  for (let x = 0; x < pix.W; x++){
+    const top = surf(x), slope = surf(x - 1) - surf(x + 1), wc = sc + Math.floor(x / PX + frac), pit = craterAt(wc), X = x + X0;
+    for (let y = Math.floor(top); y < pix.H; y++){
+      const depth = y - top, h = hash(X, y);
+      if (pit && inPit(pit, wc) && depth < 6){ pix.px(x, y, H[depth < 1 ? 3 : 2], 2); continue; }   // a crater's floor is red: a pit always reads as danger
+      let c = R[depth < 1 ? 4 : 3];
+      if (depth < 3 && Math.abs(slope) > 1.5) c = R[slope > 0 ? 4 : 2];   // slopes facing the sun are lit
+      else if (h > 0.986) c = R[4]; else if (hash(X - 1, y - 1) > 0.986) c = R[1];   // pebbles with a shadow
+      else if (depth >= 1){   // Balote's close tones from smooth noise, darkening with depth
+        const k = [0.9, 0.94, 0.98, 1.02][Math.max(0, Math.min(3, Math.floor((0.5 + (pixNoise(X * 0.06, y * 0.12) - 0.5) * 0.8) * 4 + (pix.bayer(x, y) - 0.5) * 0.6)))] * Math.max(0.55, 1 - depth * 0.006);
+        c = [c[0] * k, c[1] * k, c[2] * k];
+      }
+      pix.px(x, y, c, 2);
+    }
+  }
+}
+// A wire-mesh wheel of radius r turned by angle a: a chevron tread, spokes, a hub.
+function wheel(cx, cy, r, a){
+  const T = pix.ramp(C.tire), M = pix.ramp(C.rim);
+  for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++){
+    const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy), th = Math.atan2(dy, dx) - a;
+    if (d > r + 0.5) continue;
+    const tread = ((Math.floor(th * 10 / Math.PI) % 2) + 2) % 2;
+    if (d > r - 0.6){ if (tread) pix.px(x, y, T[2], 3); continue; }   // the tread's bumps stand proud of the tyre
+    if (d > r - 1.8){ pix.px(x, y, T[tread ? 1 : 2], 3); continue; }
+    if (d < 1.4){ pix.px(x, y, M[4], 3); continue; }
+    let spoke = false; for (let k = 0; k < 3; k++) if (Math.abs(Math.sin(th - k * Math.PI / 3)) * d < 0.6) spoke = true;
+    pix.px(x, y, spoke ? M[3] : (x + y) & 1 ? T[1] : T[0], 3);   // the wire mesh
+  }
+}
+function drawBuggy(t){
+  const x0 = Math.round(bxs() * PX), r = 6;
+  const W3 = WHEELS.map((w, i) => {
+    const x = x0 + w * PX + 2;
+    return { x, y: (grounded || state === "title" ? surf(x) : (wy[i] + 1) * PY) - r };
+  });
+  const axle = lx => { const x = x0 + lx; return x <= W3[1].x ? W3[0].y + (W3[1].y - W3[0].y) * (x - W3[0].x) / (W3[1].x - W3[0].x) : W3[1].y + (W3[2].y - W3[1].y) * (x - W3[1].x) / (W3[2].x - W3[1].x); };
+  const P = (lx, ly, c) => pix.px(x0 + lx, Math.round(axle(lx)) + ly, c, 3);   // a pixel on the buggy, which tilts with its wheels
+  const box = (lx, ly, w, h, R, top = 4, mid = 3, bot = 2) => { for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) P(lx + i, ly + j, R[j === 0 ? top : j === h - 1 ? bot : mid]); };
+  const hull = pix.ramp(C.hull), gold = pix.ramp(C.gold), fr = pix.ramp(C.frame), seat = pix.ramp(C.seat), suit = pix.ramp(C.suit);
+  const spin = scroll * PX / r;
+  // suspension arms, then the wheels on them
+  for (const w of W3) for (let k = 0; k <= 4; k++) P(w.x - x0 - k, -k, fr[2]);
+  W3.forEach(w => wheel(w.x, w.y, r, spin));
+  // the frame: a two-pixel tube from end to end, a deck, the rack at the back and the nose
+  for (let lx = 1; lx <= 36; lx++){ P(lx, -5, fr[3]); P(lx, -4, fr[1]); }
+  box(4, -7, 30, 2, hull, 4, 3, 2);
+  box(2, -12, 7, 5, fr, 4, 3, 2); box(2, -13, 7, 1, gold, 4); P(3, -10, gold[3]); P(6, -10, gold[3]); P(4, -9, hull[4]);   // the equipment rack, gold foil on top
+  for (let k = 0; k < 4; k++) P(33 + k, -7 + Math.max(0, k - 1), hull[3 - (k >> 1)]);   // the nose slopes down
+  // fenders: gold arcs over each wheel, lit on top
+  for (const w of W3) for (let a = Math.PI * 1.08; a <= Math.PI * 1.92; a += 0.08){
+    const lx = Math.round(w.x - x0 + Math.cos(a) * (r + 1.6)), ly = Math.round(w.y - axle(w.x - x0) + Math.sin(a) * (r + 1.6));
+    P(lx, ly, gold[Math.sin(a) < -0.85 ? 4 : 3]); P(lx, ly - 1, gold[4]);
+  }
+  // two seats, the driver in the front one: white suit, helmet with a gold visor, backpack
+  box(12, -9, 6, 2, seat, 3, 2, 2); box(12, -14, 2, 5, seat, 3, 2, 1);
+  box(21, -9, 6, 2, seat, 3, 2, 2); box(21, -14, 2, 5, seat, 3, 2, 1);
+  box(23, -14, 3, 5, suit, 4, 3, 2); box(22, -13, 1, 4, fr, 3, 2, 2); box(26, -11, 3, 2, suit, 4, 3, 2);   // body, backpack, arm to the wheel
+  for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) if (x * x + y * y <= 9) P(24 + x, -17 + y, x > 0 && y > -2 && y < 2 ? pix.ramp(C.visor)[x > 1 ? 4 : 3] : suit[y < 0 && x < 1 ? 4 : 3]);
+  // the up cannon between the seats, the nose cannon with a headlight, the dish on its mast, the whip aerial
+  box(18, -11, 2, 3, fr, 3, 2, 2); for (let ly = -17; ly <= -12; ly++) P(18, ly, fr[ly === -17 ? 4 : 3]);
+  for (let lx = 34; lx <= 39; lx++) P(lx, -6, fr[lx === 39 ? 4 : 3]);
+  P(36, -8, C.amber); P(37, -8, C.amber);
+  for (let ly = -8; ly >= -18; ly--) P(31, ly, fr[2]);
+  for (let lx = -5; lx <= 5; lx++){ const h = Math.round(Math.abs(lx) * 0.35); P(31 + lx, -20 + h, hull[lx < 0 ? 4 : 3]); if (Math.abs(lx) < 5) P(31 + lx, -19 + h, hull[1]); }
+  for (let ly = -6; ly >= -22; ly--) P(1, ly, fr[3]);
+  P(1, -23, (t / 400 | 0) % 2 ? C.red : pix.ramp(C.red)[1]);
+}
+// Rocks are lumpy domes, each with its own shape; shading as a lit ball.
+function drawRock(f, x0, base){
+  const w = f.w * PX, h = f.h * PY * 0.85, seed = f.seed ??= Math.random() * 100, R = pix.ramp(C.rock);
+  for (let x = 0; x < w; x++){
+    const u = (x + 0.5 - w / 2) / (w / 2), top = base - h * Math.sqrt(Math.max(0, 1 - u * u)) * (0.8 + 0.35 * pixNoise(seed + x * 0.5, 1));
+    for (let y = Math.floor(top); y <= base + 1; y++){
+      const v = (y - (base - h / 2)) / (h / 2 + 1), l = Math.max(0, Math.min(1, -0.55 * u - 0.6 * v + 0.5));
+      const lv = Math.max(1, Math.min(4, Math.floor(l * 4.4 + 0.2 + (pix.bayer(x0 + x, y) - 0.5) * 0.7) - (hash(seed + x, y) > 0.9 ? 1 : 0)));
+      pix.px(x0 + x, y, R[lv], 3);
+    }
+  }
+}
+function drawTank(f, x0, base, t){
+  const R = pix.ramp(f.hp > 1 ? C.tank : C.tank.map(v => v * 0.7)), T = pix.ramp(C.tread), F = pix.ramp(C.frame);
+  for (let x = 1; x < 19; x++) for (let y = -5; y <= 0; y++){   // the tracks, round at the ends, with road wheels
+    const ends = (x < 3 || x > 16) && (y === -5 || y === 0); if (ends) continue;
+    pix.px(x0 + x, base + y, T[y === -5 ? 3 : (x + Math.floor(t / 60)) % 3 ? 1 : 2], 3);
+  }
+  for (const wx of [4, 8, 12, 16]) pix.ball(x0 + wx, base - 2.5, 1.6, C.frame, 3, true);
+  for (let x = 2; x < 18; x++) for (let y = -9; y <= -6; y++) if (!(y === -9 && (x < 4 || x > 15))) pix.px(x0 + x, base + y, R[y === -9 ? 4 : y === -6 ? 2 : 3], 3);
+  pix.ball(x0 + 11, base - 9.5, 3.6, f.hp > 1 ? C.tank : C.tank.map(v => v * 0.7), 3, true);
+  for (let x = -4; x < 8; x++){ pix.px(x0 + x, base - 11, F[3], 3); pix.px(x0 + x, base - 10, F[1], 3); }   // the gun points at you
+  if ((t / 300 | 0) % 2) pix.px(x0 + 13, base - 12, C.red, 3);
+}
+function drawUfo(u, t){
+  const cx = (u.x + 2.5) * PX, cy = (u.y + 1) * PY, warn = u.dv && u.dv.t < 0;
+  const col = u.kind === "fighter" && (warn || u.dv) ? C.warn : C[u.kind], R = pix.ramp(col), G = pix.ramp(C.glass);
+  if (u.kind === "fighter"){   // a dart pointing down, an engine glowing on top
+    for (let j = 0; j < 8; j++){ const hw = 6 - j * 0.75; for (let x = -hw; x <= hw; x++) pix.px(cx + x, cy - 4 + j, R[j === 0 ? 4 : Math.abs(x) > hw - 1 ? 2 : 3], 3); }
+    pix.px(cx, cy - 1, G[4]); pix.px(cx, cy, G[2]); pix.px(cx - 1, cy - 5, C.amber); pix.px(cx + 1, cy - 5, C.amber);
+    return;
+  }
+  const big = u.kind === "bomber", rx = big ? 10 : 9, ry = big ? 3.5 : 2.5;
+  for (let y = -Math.ceil(ry); y <= ry; y++) for (let x = -rx; x <= rx; x++){
+    if ((x / rx) ** 2 + (y / ry) ** 2 > 1) continue;
+    pix.px(cx + x, cy + y, R[y < -ry * 0.4 ? 4 : y < ry * 0.3 ? 3 : 1], 3);
+  }
+  for (let y = -4; y < -1; y++) for (let x = -4; x <= 4; x++) if ((x / 4.5) ** 2 + ((y + 1) / 3.5) ** 2 <= 1) pix.px(cx + x, cy + y - (big ? 1 : 0), G[x < 0 && y < -2 ? 4 : 3], 3);   // the glass dome
+  const k = Math.floor(t / 120);
+  for (let i = -2; i <= 2; i++) pix.px(cx + i * 3.5, cy + (big ? 1 : 0), (i + k) % 3 ? R[1] : C.amber, 3);   // running lights
+  if (big){ pix.rect(cx - 3, cy + 3, 6, 1, R[1], 3); if (k % 2) pix.px(cx, cy + 4, C.red, 3); }   // the bomb bay
 }
 function drawCourse(t){
   for (const f of features){
-    const c = f.x - sc; if (c > GW + 2 || c + f.w < -2) continue;
-    if (f.type === "tank"){ sprite(TANK, Math.round(c), groundAt(Math.floor(f.x)) - 2, HAZARD_RGB, f.hp > 1 ? 1 : 0.7, 3); continue; }
-    if (f.type === "boulder"){ const g = groundAt(Math.floor(f.x)); litBall(cx(c + 0.5), cy(g - 1) + screen.ch * 0.4, screen.ch * 0.95, HAZARD_RGB.map(v => v * 0.35)); continue; }   // red, so it reads as danger
-    if (f.type === "rock"){   // solid red, lighter on top, so it reads as danger in every display mode
-      const g = groundAt(f.x), art = f.h > 1 ? [" @ ", "@@@"] : ["@@"];
-      art.forEach((row, dy) => { for (let dx = 0; dx < row.length; dx++) if (row[dx] !== " ") put(c + dx, g - art.length + dy, HAZARD_RGB, dy === 0 ? 1 : 0.75, 3, 64); });
+    const x0 = Math.round(xOf(f.x)); if (x0 > pix.W + 24 || x0 + f.w * PX < -24) continue;
+    const base = Math.round(surf(x0 + f.w * PX / 2));
+    if (f.type === "rock") drawRock(f, x0, base);
+    else if (f.type === "tank") drawTank(f, x0, base, t);
+    else if (f.type === "boulder"){   // rolls, with dark pocks that turn with it
+      const bx0 = x0 + PX, by0 = base - 7.5;
+      pix.ball(bx0, by0, 7.5, C.rock.map(v => v * 0.8), 3);
+      for (let k = 0; k < 3; k++){ const a = f.a + k * 2.1; pix.px(bx0 + Math.cos(a) * 4, by0 + Math.sin(a) * 4, pix.ramp(C.rock)[0], 3); }
+    } else if (f.type === "mine"){   // a squat dome with spikes and a blinking light
+      const mx = x0 + 2;
+      pix.ball(mx, base - 1, 3, C.mine, 3, true);
+      for (const [dx, dy] of [[-4, -1], [4, -1], [0, -5], [-3, -4], [3, -4]]) pix.px(mx + dx, base + dy, pix.ramp(C.mine)[1], 3);
+      pix.px(mx, base - 4, Math.sin(t * 0.012) > 0 ? C.red : pix.ramp(C.red)[1], 3);
     }
-    else if (f.type === "mine") put(c, groundAt(f.x) - 1, BOMB_RGB, 0.85 + 0.25 * Math.sin(t * 0.012), 3, 42);   // pulses, but never goes dim
   }
-  for (let k = reached; k <= reached + 1; k++){   // checkpoint posts with their letter
-    const c = postX(k) - sc; if (c < -3 || c > GW + 3) continue;
-    const g = groundAt(postX(k));
-    for (let r = g - 4; r < g; r++) put(c, r, DIM, 1.4, 3, 124);
-    text(c - 1, g - 6, "[" + letter(k) + "]", k <= reached ? DIM : ACCENT);
+  for (let k = reached; k <= reached + 1; k++){   // checkpoint posts: a pole, a beacon and a flag with the letter
+    const x = Math.round(xOf(postX(k))) + 2; if (x < -12 || x > pix.W + 12) continue;
+    const base = Math.round(surf(x)), F = pix.ramp(C.post), next = k > reached;
+    for (let y = base - 30; y < base; y++) pix.px(x, y, F[y === base - 30 ? 4 : 3], 3);
+    pix.rect(x + 1, base - 30, 9, 6, pix.ramp(next ? C.hiAccent : C.post)[next ? 3 : 1], 3);
+    pix.px(x, base - 31, next && (t / 300 | 0) % 2 ? C.amber : F[2], 3);
+    pix.text(Math.round(postX(k) - scroll) - 1, Math.floor((base - 40) / PY), "[" + letter(k) + "]", next ? ACCENT : DIM);
   }
 }
-function drawRover(t){
-  const x = Math.floor(bxs()), top = Math.round(Math.min(...wy)) - 2;
-  sprite(ROVER, x, top, ROVER_RGB, 1, 3);
-  WHEELS.forEach((w, i) => put(x + w, Math.round(wy[i]), WHEEL_RGB, 1, 3, "O0Oo"[((scroll + w) * 2 | 0) & 3].charCodeAt(0)));
+function drawShots(t){
+  for (const s of fShots){ const x = xOf(s.x), y = s.y * PY + 4; for (let k = 0; k < 7; k++) pix.px(x - k, y, k < 3 ? C.shot : C.amber, 3); }
+  for (const s of uShots){ const x = xOf(s.x) + 2, y = s.y * PY; for (let k = 0; k < 6; k++) pix.px(x, y + k, k < 3 ? C.shot : C.amber, 3); }
+  for (const b of bombs){ const x = xOf(b.x) + 2, y = b.y * PY + 4; pix.ball(x, y, b.big ? 3 : 2.2, [70, 70, 80], 3, true); if ((t / 150 | 0) % 2) pix.px(x, y - (b.big ? 3 : 2), C.red, 3); }
+  for (const s of tShots){ const x = xOf(s.x) + 2, y = s.y * PY + 4; pix.ball(x, y, 2, C.amber, 3, true); pix.px(x - 1, y - 1, C.shot, 3); }
+}
+// world drawing (bodies, fx, flashes) is in the sc frame: shift it by the part-column scroll
+function drawWorld(){
+  pix.ox = -frac * PX;
+  for (const f of flashes) pix.glow(f.x, f.y, CH * 6 * f.size, FLASH.map(v => v * f.t));
+  for (const b of world.bodies){
+    if (b.mat.name === "rubber"){ wheel(b.x / PU + pix.ox, b.y / PU, b.r / PU, b.a); continue; }
+    pix.body(b, b.mat.name === "part" ? (b.gold ? C.gold : C.hull) : null);
+  }
+  vfx.draw(pix);
+  pix.ox = 0;
 }
 function drawTitle(){
   [["ROVER", 7], ["PATROL", 14]].forEach(([word, y0], wi) => {
-    const x0 = Math.floor((GW - word.length * 12 + 2) / 2);
-    [...word].forEach((ch, li) => FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#")
-      for (const k of [0, 1]) put(x0 + li * 12 + dx * 2 + k, y0 + dy, wi ? ROVER_RGB : UFO_RGB.saucer, 1.2, 3, 35); }));
+    const x0 = Math.floor((GW - word.length * 12 + 2) / 2), R = pix.ramp(wi ? C.gold : C.saucer);
+    [...word].forEach((ch, li) => FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#"){
+      const X = (x0 + li * 12 + dx * 2) * PX, Y = (y0 + dy) * PY, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
+      for (let j = 0; j < PY; j++) for (let i = 0; i < 2 * PX; i++){   // each dot a bevelled block, joined to its neighbours
+        const lv = (j === 0 && !on(0, -1)) || (i === 0 && !on(-1, 0)) ? 4 : (j === PY - 1 && !on(0, 1)) || (i === 2 * PX - 1 && !on(1, 0)) ? 1 : j < 3 ? 3 : 2;
+        pix.px(X + i, Y + j, R[lv], 3);
+      }
+    } }));
   });
   const blink = (performance.now() / 500 | 0) % 2;
-  center(21, pad.touch ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
-  center(23, pad.touch ? "D-PAD LEFT/RIGHT SPEED   A OR UP JUMP (HOLD: FURTHER)   B FIRE   SELECT MENU" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP (HOLD: FURTHER)   X FIRE   ESC MENU", DIM);
-  center(24, "JUMP CRATERS AND MINES. SHOOT ROCKS AHEAD AND UFOS ABOVE.", DIM);
-  center(25, "LATER: TANKS (JUMP THEIR SHELLS), ROLLING BOULDERS, AND FIGHTERS THAT DIVE (CHANGE SPEED TO DODGE).", DIM);
-  if (furthest) center(19, "START AT POINT " + letter(Math.min(startAt, furthest)) + "  (MENU: START AT, UP TO " + letter(furthest) + ")", DIM);
+  pix.center(21, pad.touch ? "PRESS A OR START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
+  pix.center(23, pad.touch ? "D-PAD LEFT/RIGHT SPEED   A OR UP JUMP (HOLD: FURTHER)   B FIRE   SELECT MENU" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP (HOLD: FURTHER)   X FIRE   ESC MENU", DIM);
+  pix.center(24, "JUMP CRATERS AND MINES. SHOOT ROCKS AHEAD AND UFOS ABOVE.", DIM);
+  pix.center(25, "LATER: TANKS (JUMP THEIR SHELLS), ROLLING BOULDERS, AND FIGHTERS THAT DIVE (CHANGE SPEED TO DODGE).", DIM);
+  if (furthest) pix.center(19, "START AT POINT " + letter(Math.min(startAt, furthest)) + "  (MENU: START AT, UP TO " + letter(furthest) + ")", DIM);
   if (scores.list.length){
-    center(27, "HIGH SCORES", ACCENT);
-    scores.list.forEach((s, i) => center(28 + i, `${i + 1}. ${String(s.score).padStart(7)}   POINT ${s.point.padEnd(2)}`, i ? DIM : WHITE));
+    pix.center(27, "HIGH SCORES", ACCENT);
+    scores.list.forEach((s, i) => pix.center(28 + i, `${i + 1}. ${String(s.score).padStart(7)}   POINT ${s.point.padEnd(2)}`, i ? DIM : WHITE));
   }
 }
 function draw(t){
-  screen.clear();
-  drawLand(t);
-  for (const b of world.bodies) screen.sphere(b, sun, { stripe: false });
-  vfx.draw(screen);
-  if (state === "title"){ drawRover(t); drawTitle(); drawMenu(); screen.render(ctx); return; }
-  drawCourse(t);
-  if (state === "play") drawRover(t);
-  for (const u of ufos){
-    const warn = u.dv && u.dv.t < 0, rgb = u.kind === "fighter" && (warn || u.dv) ? HAZARD_RGB : UFO_RGB[u.kind];   // a diving fighter turns warning red
-    if (!warn || (performance.now() / 90 | 0) % 2) sprite(u.kind === "bomber" ? BOMBER : u.kind === "fighter" ? FIGHTER : SAUCER, Math.round(u.x), Math.round(u.y), rgb, 1, 3);
+  frac = scroll - sc;
+  pix.clear();
+  drawSky(t);
+  drawGround();
+  if (state !== "title") drawCourse(t);
+  if (state === "play" || state === "title") drawBuggy(t);
+  if (state !== "title") for (const u of ufos){ const warn = u.dv && u.dv.t < 0; if (!warn || (performance.now() / 90 | 0) % 2) drawUfo(u, t); }
+  drawShots(t);
+  drawWorld();
+  pix.edges();
+  for (const s of stars){   // stars last, only where the sky is empty, twinkling
+    const x = Math.floor(((s.x - scroll * 0.05) % pix.W + pix.W) % pix.W), y = Math.floor(s.y), i = y * pix.W + x;
+    if (pix.lay[i] >= 0) continue;
+    const v = 70 + 90 * s.b + 40 * Math.sin(t * 0.0015 + s.ph * 7); pix.px(x, y, [v, v, v * 1.15], -1);
   }
-  for (const t of tShots) put(Math.floor(t.x) - sc, Math.round(t.y), HAZARD_RGB, 1.2, 3, 60);
-  for (const b of bombs) put(Math.floor(b.x) - sc, Math.round(b.y), BOMB_RGB, 1, 3, b.big ? 64 : 111);
-  for (const s of fShots) put(Math.floor(s.x) - sc, s.y, SHOT_RGB, 1, 3, 45);
-  for (const s of uShots) put(s.x - sc, Math.round(s.y), SHOT_RGB, 1, 3, 124);
-  // HUD: score and lives on the left, the course A..Z in the middle, time on the right
-  text(1, 0, "SCORE " + String(score).padStart(6, "0"), WHITE);
-  text(1, 1, "HI    " + String(Math.max(score, scores.list[0] ? scores.list[0].score : 0)).padStart(6, "0"), DIM);
-  text(GW - 18, 0, "LIVES " + "^".repeat(Math.max(0, lives - (state === "dead" ? 1 : 0))), ROVER_RGB);
-  text(GW - 18, 1, "TIME  " + String(Math.floor(pointT)).padStart(3), DIM);
-  const x0 = Math.floor((GW - 51) / 2), here = reached % 26;
-  for (let k = 0; k < 26; k++) put(x0 + k * 2, 0, k === here ? ACCENT : k < here ? WHITE : DIM, 1, TEXT_LAYER, 65 + k);
-  if (state === "over"){
-    center(16, "  GAME OVER  ", WHITE);
-    center(18, `  ${score} POINTS  `, ACCENT);
-    if (best) center(20, "  NEW HIGH SCORE!  ", ACCENT);
-    if (stateT > 1) center(22, pad.touch ? "  PRESS START  " : "  PRESS SPACE  ", DIM);
-  } else if (msgT > 0) center(4, "  " + msg + "  ", WHITE);
+  if (state === "title") drawTitle();
+  else {
+    // HUD: score and lives on the left, the course A..Z in the middle, time on the right
+    pix.text(1, 0, "SCORE " + String(score).padStart(6, "0"), WHITE);
+    pix.text(1, 1, "HI    " + String(Math.max(score, scores.list[0] ? scores.list[0].score : 0)).padStart(6, "0"), DIM);
+    pix.text(GW - 18, 0, "LIVES " + "^".repeat(Math.max(0, lives - (state === "dead" ? 1 : 0))), ROVER_RGB);
+    pix.text(GW - 18, 1, "TIME  " + String(Math.floor(pointT)).padStart(3), DIM);
+    const x0 = Math.floor((GW - 51) / 2), here = reached % 26;
+    for (let k = 0; k < 26; k++) pix.text(x0 + k * 2, 0, letter(k), k === here ? ACCENT : k < here ? WHITE : DIM);
+    if (state === "over"){
+      pix.center(16, "  GAME OVER  ", WHITE);
+      pix.center(18, `  ${score} POINTS  `, ACCENT);
+      if (best) pix.center(20, "  NEW HIGH SCORE!  ", ACCENT);
+      if (stateT > 1) pix.center(22, pad.touch ? "  PRESS START  " : "  PRESS SPACE  ", DIM);
+    } else if (msgT > 0) pix.center(4, "  " + msg + "  ", WHITE);
+  }
   const hint = pad.touch ? " SELECT MENU " : " ESC MENU ";
-  text(GW - 1 - hint.length, GH - 1, hint, DIM);
-  drawMenu();
-  screen.render(ctx);
-}
-function drawMenu(){
-  // the menu writes on its own layer, above the game's text, so nothing shows through its box
-  if (menu.open) menu.draw(screen, { accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED" });
+  pix.text(GW - 1 - hint.length, GH - 1, hint, DIM);
+  if (menu.open) menu.draw(pix, { accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED" });
+  pix.present(ctx);
 }
 
 /* ---------- input ---------- */
@@ -499,7 +646,7 @@ cv.addEventListener("pointerdown", e => {
 
 /* ---------- loop ---------- */
 function tick(dt, t){
-  if (screen && !menu.open && (dt = feel.step(dt))){   // the open menu pauses everything, and so does a hit-stop
+  if (ready && !menu.open && (dt = feel.step(dt))){   // the open menu pauses everything, and so does a hit-stop
     vfx.update(dt);
     if (state === "title"){   // the rover drives along an empty course behind the title
       scrollBy(10 * dt); for (let i = 0; i < 3; i++) wy[i] += (groundAt(bx() + WHEELS[i]) - 1 - wy[i]) * Math.min(1, dt * 30);
@@ -510,10 +657,10 @@ function tick(dt, t){
     for (const b of world.bodies) if (b.life) b.life -= dt;
     world.bodies = world.bodies.filter(b => !(b.life < 0));
   }
-  if (screen){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); }
+  if (ready){ feel.begin(ctx, cv); draw(t); feel.end(ctx, cv); }
 }
 layout();
 computeGround(); for (let i = 0; i < 3; i++) wy[i] = groundAt(bx() + WHEELS[i]) - 1;
-onResize(stage, () => { layout(); computeGround(); });
+onResize(stage, layout);
 startLoop(tick);
 })();
