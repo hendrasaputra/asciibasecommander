@@ -20,5 +20,6 @@ game rooftop-rumble.html rooftop src/audio/sfx-data.js src/pixel.js src/rooftop/
 game crater-duel.html crater src/audio/crater-sfx-data.js src/pixel.js src/crater/game.js
 game stack-smash.html stack src/audio/stack-sfx-data.js src/pixel.js src/stack/game.js
 game rover-patrol.html rover src/audio/rover-sfx-data.js src/pixel.js src/rover/game.js
+game meadow-mines.html mines src/audio/crater-sfx-data.js src/pixel.js src/mines/game.js
 page settings.html src/settings/head.html src/core.js src/settings/page.js
-echo "Built ascii-physics.html, ascii-engine-tutorial.html, base-commander.html, rooftop-rumble.html, crater-duel.html, stack-smash.html, rover-patrol.html and settings.html"
+echo "Built ascii-physics.html, ascii-engine-tutorial.html, base-commander.html, rooftop-rumble.html, crater-duel.html, stack-smash.html, rover-patrol.html, meadow-mines.html and settings.html"

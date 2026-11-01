@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Meadow Mines</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<!-- src/arcade/pad.css goes here (build.sh) -->
+</head>
+<body>
+<header>
+  <h1><a href="./" title="Back to the cartridge shelf">&#8249; Meadow Mines</a></h1>
+  <div id="hud">click dig &middot; right-click flag &middot; arrows + Space / F &middot; N new field &middot; Esc menu</div>
+  <div class="tools"><button id="menuBtn" type="button">Menu</button><button id="soundBtn" type="button">Sound</button></div>
+</header>
+<div id="stage">
+  <canvas id="cv" aria-label="Game screen: a meadow of grass squares with mines buried under some. Click or tap a square to dig it; a number tells how many mines touch it. Right-click, press F, or hold a finger on a square to flag it. The DIG button at the top switches taps to flagging."></canvas>
+</div>
