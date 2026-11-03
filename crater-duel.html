@@ -1383,19 +1383,20 @@ const PIXEL_FONT = { w: 4, h: 7, glyphs: {
   U: "55557", V: "55552", W: "55775", X: "55255", Y: "55222", Z: "71247",
   0: "25552", 1: "26227", 2: "61247", 3: "61216", 4: "55711", 5: "74616", 6: "34757", 7: "71222", 8: "75757", 9: "75716",
   "!": "22202", "-": "00700", ".": "00002", ":": "02020", "<": "12421", ">": "42124", "^": "25000", "|": "22222", "+": "02720",
-  "(": "12221", ")": "42224", "/": "11244", "'": "22000", ",": "00024", "?": "61202", "*": "05250", "#": "57575", "=": "07070", "_": "00007"
+  "(": "12221", ")": "42224", "/": "11244", "'": "22000", ",": "00024", "?": "61202", "*": "05250", "#": "57575", "=": "07070", "_": "00007", "$": "36236"
 } };
 (() => {
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
-// The ground is an engine terrain grid of small square cells (2 x 2 pixels), so blasts dig round craters. Tanks sit on
+// The ground is an engine terrain grid of small square cells, one pixel each, so blasts dig round craters. Tanks sit on
 // it and fall when it goes. Shells and rubble are engine bodies on top. After every blast, unsupported dirt falls
 // until the ground settles. Two to four tanks, each a person or the computer; between rounds each spends its winnings
-// in the shop. Everything is drawn as pixel art (src/pixel.js); text and the menu use a 64 x 40 grid over it.
-const TGW = 64, TGH = 40, WIN_ROUNDS = 3;          // the text grid: big enough letters to read on a phone
-const NX = 200, NY = 224, CELL = 4, PU = 2;        // ground cells; world units per cell and per pixel
-const COL = 8, ROW = 16;                           // a text column and row in world units: the sizes things are measured in
-const TW = 10, TH = 8;                             // a tank in ground cells (20 x 16 pixels)
+// in the shop. Everything is drawn as pixel art (src/pixel.js) on a 200 x 224 picture, small enough to scale by
+// whole pixels on a phone, with the text in the pixel font at its native size.
+const WIN_ROUNDS = 3;
+const NX = 200, NY = 224, CELL = 4, PU = 4;        // ground cells; world units per cell and per pixel
+const COL = 8, ROW = 16;                           // world units the sizes of things are measured in (once a text column and row)
+const TW = 10, TH = 8;                             // a tank in ground cells, and pixels
 const TANK_RGB = [[1.4, 0.9, 0.35], [0.45, 1.0, 1.45], [1.3, 0.5, 1.2], [0.6, 1.4, 0.5]];   // for text
 const TANK_PIX = [[226, 150, 60], [70, 180, 222], [204, 92, 192], [112, 200, 92]];         // for the tanks
 const WEAPONS = [   // r: blast radius in rows; dmg: damage at the centre; ammo: what a tank starts a match with
@@ -1418,11 +1419,11 @@ const SHOP = [
 const PAY = { damage: 1, kill: 60, win: 80, survive: 30, all: 50, start: 150 }, SHIELD_HP = 40, START_FUEL = 20;
 const GROUND_RGB = [[0.42, 0.55, 0.22], [0.55, 0.37, 0.2], [0.36, 0.3, 0.3]];   // topsoil, dirt, rock: rubble
 const SOIL = [[104, 142, 58], [146, 100, 60], [98, 86, 92]];                     // the same, as pixels
-const SUN_X = 348, SUN_Y = 40;                                                    // in pixels
+const SUN_X = 176, SUN_Y = 52;                                                       // in pixels
 const FLASH = [1.8, 0.9, 0.4], WHITE = [1.6, 1.6, 1.6], DIM = [0.4, 0.45, 0.6], GOLD = [1.6, 1.3, 0.4];
 const DIRT = { name: "dirt", density: 1.2, e: 0.15, mu: 0.9, kd: 0.9, ks: 0.1, shine: 6 };
 const METAL = { name: "metal", density: 2, e: 0.4, mu: 0.4, kd: 0.6, ks: 0.9, shine: 40 };
-const FONT = {   // 5x5 block letters for the title, two text columns wide per dot
+const FONT = {   // 5x5 block letters for the title, each dot a 4 x 4 block
   C: [".####", "#....", "#....", "#....", ".####"], R: ["####.", "#...#", "####.", "#..#.", "#...#"],
   A: [".###.", "#...#", "#####", "#...#", "#...#"], T: ["#####", "..#..", "..#..", "..#..", "..#.."],
   E: ["#####", "#....", "####.", "#....", "#####"], D: ["####.", "#...#", "#...#", "#...#", "####."],
@@ -1438,7 +1439,9 @@ const feel = createFeel(), vfx = createFx();
 applyArcadeSettings(defaultDisplay());   // the tube TV filter from the shared Settings page
 const world = new World(); world.openTop = true;   // high shots arc above the screen and come back down
 world.w = NX * CELL; world.h = NY * CELL; world.unit = COL; world.drag = 2e-4 * (600 / world.h) ** 2; world.g = { x: 0, y: world.h * 0.9 };
-const pix = createPixels(NX * CELL / PU, NY * CELL / PU, TGW, TGH, PU);
+const pix = createPixels(NX * CELL / PU, NY * CELL / PU, (NX * CELL / PU) / PIXEL_FONT.w, Math.floor(NY * CELL / PU / PIXEL_FONT.h), PU);
+pix.font = PIXEL_FONT;
+const TGW = pix.cols, TGH = pix.rows;   // the text grid: 50 x 32
 let ready = false, mode = "cpu", count = 2, state = "title", stateT = 0;
 let ground = null, tanks = [], turn = 0, wind = 0, shells = [], trail = [], lastTrail = [];
 let blasts = [], roundStarter = 0, msg = "", msgT = 0, plan = null, settleT = 0, shopAt = 0, shopSel = 0, driveT = 0;
@@ -1752,9 +1755,10 @@ function update(dt){
 const winner = () => tanks.reduce((b, T, i) => T.wins > tanks[b].wins ? i : b, 0);
 
 /* ---------- drawing ---------- */
-// Pixel art, drawn in code. Dusk on a grassy planet: a dithered sky, a low sun, far ridges, and the ground's layers
-// in Balote's close tones with pebbles and grass. Tanks after a modern tank seen from the side: tracks on road
-// wheels, a sloped hull, a rounded turret with a hatch and aerial, and a barrel that follows the aim.
+// Pixel art, drawn in code, one ground cell a pixel. Dusk on a grassy planet: a dithered sky, a low sun, far ridges,
+// and the ground's layers in Balote's close tones with pebbles and grass. Tanks after a modern tank seen from the
+// side, ten pixels long: tracks on road wheels, a hull, a turret with a hatch and aerial, and a barrel that follows
+// the aim.
 const SKY = [[14, 16, 38], [22, 22, 52], [36, 28, 64], [58, 36, 72], [92, 50, 76]];
 const hash = (x, y) => pixHash(x, y);
 const back = { d: new Uint8ClampedArray(pix.W * pix.H * 4), lay: new Int8Array(pix.W * pix.H), key: "" };
@@ -1765,101 +1769,96 @@ function bakeBack(dim){
     const v = Math.min(4, y / (pix.H * 0.62) * 4);
     for (let x = 0; x < pix.W; x++) pix.px(x, y, SKY[clamp(Math.floor(v + pix.bayer(x, y) - 0.5), 0, 4)], -1);
   }
-  for (let k = 0; k < 90; k++){ const x = Math.floor(hash(k, 1) * pix.W), y = Math.floor(hash(k, 2) * pix.H * 0.35), v = 90 + 120 * hash(k, 3); pix.px(x, y, [v, v, v * 1.1], -1); }
-  pix.ball(SUN_X, SUN_Y, 13, [255, 168, 84], 1);
+  for (let k = 0; k < 45; k++){ const x = Math.floor(hash(k, 1) * pix.W), y = Math.floor(hash(k, 2) * pix.H * 0.35), v = 90 + 120 * hash(k, 3); pix.px(x, y, [v, v, v * 1.1], -1); }
+  pix.ball(SUN_X, SUN_Y, 6.5, [255, 168, 84], 1);
   const ridge = pix.ramp([58, 44, 78]);
   for (let x = 0; x < pix.W; x++){   // far ridges
-    const top = pix.H * 0.42 - 26 * Math.abs(Math.sin(x * 0.011 + 1.3)) - 10 * Math.sin(x * 0.037);
-    for (let y = Math.floor(top); y < pix.H; y++) pix.px(x, y, ridge[y - top < 1 ? 3 : (y - top) * 0.02 + pix.bayer(x, y) * 0.5 > 0.5 ? 1 : 2], 1);
+    const top = pix.H * 0.42 - 13 * Math.abs(Math.sin(x * 0.022 + 1.3)) - 5 * Math.sin(x * 0.074);
+    for (let y = Math.floor(top); y < pix.H; y++) pix.px(x, y, ridge[y - top < 1 ? 3 : (y - top) * 0.04 + pix.bayer(x, y) * 0.5 > 0.5 ? 1 : 2], 1);
   }
   const { solid, layer } = ground;
   for (let r = 0; r < NY; r++) for (let c = 0; c < NX; c++){
     const i = r * NX + c; if (!solid[i]) continue;
     const R = pix.ramp(SOIL[layer[i]]), open = !r || !solid[i - NX];
     let depth = 0; for (let k = 1; k <= 12 && r - k >= 0 && solid[i - k * NX]; k++) depth = k;   // cells of ground above this one
-    for (let j = 0; j < 2; j++) for (let q = 0; q < 2; q++){
-      const x = c * 2 + q, y = r * 2 + j, h = hash(x, y);
-      let col;
-      if (open && j === 0) col = R[4];   // the lit top edge
-      else if (h > 0.985) col = R[4]; else if (hash(x - 1, y - 1) > 0.985) col = R[1];   // pebbles with a shadow
-      else {   // Balote's close tones from smooth noise, darker deeper down
-        const t = [0.9, 0.94, 0.98, 1.02][clamp(Math.floor((0.5 + (pixNoise(x * 0.07, y * 0.1) - 0.5) * 0.8) * 4 + (pix.bayer(x, y) - 0.5) * 0.6), 0, 3)] * (1 - depth * 0.02);
-        col = R[3].map(v => v * t);
-      }
-      pix.px(x, y, dim < 1 ? col.map(v => v * dim) : col, 2);
+    let col;
+    if (open) col = R[4];   // the lit top edge
+    else if (hash(c, r) > 0.985) col = R[4]; else if (hash(c - 1, r - 1) > 0.985) col = R[1];   // pebbles with a shadow
+    else {   // Balote's close tones from smooth noise, darker deeper down
+      const t = [0.9, 0.94, 0.98, 1.02][clamp(Math.floor((0.5 + (pixNoise(c * 0.14, r * 0.2) - 0.5) * 0.8) * 4 + (pix.bayer(c, r) - 0.5) * 0.6), 0, 3)] * (1 - depth * 0.02);
+      col = R[3].map(v => v * t);
     }
-    if (open && layer[i] === 0 && hash(c, 7) < 0.35){   // grass blades on open topsoil
-      const g = pix.ramp(SOIL[0]), hgt = 1 + Math.floor(hash(c, 8) * 3);
-      for (let k = 1; k <= hgt; k++) pix.px(c * 2 + (hash(c, 9) > 0.5 ? 1 : 0), r * 2 - k, dim < 1 ? g[4].map(v => v * dim) : g[k === hgt ? 4 : 3], 2);
+    pix.px(c, r, dim < 1 ? col.map(v => v * dim) : col, 2);
+    if (open && layer[i] === 0 && hash(c, 7) < 0.3){   // grass blades on open topsoil
+      const g = pix.ramp(SOIL[0]), hgt = 1 + Math.floor(hash(c, 8) * 2);
+      for (let k = 1; k <= hgt; k++) pix.px(c, r - k, dim < 1 ? g[4].map(v => v * dim) : g[k === hgt ? 4 : 3], 2);
     }
   }
   back.d.set(pix.d); back.lay.set(pix.lay);
 }
 function drawTank(T, k, t){
-  const x0 = T.x * 2, y0 = T.y * 2, f = T.angle <= 90 ? 1 : -1, hot = T.flash > 0;
+  const x0 = T.x, y0 = T.y, f = T.angle <= 90 ? 1 : -1, hot = T.flash > 0;
   const col = hot ? [250, 250, 250] : TANK_PIX[k], R = pix.ramp(col), M = pix.ramp([150, 152, 164]), K = pix.ramp([62, 62, 70]);
-  const P = (lx, ly, c) => pix.px(f > 0 ? x0 + lx : x0 + 19 - lx, y0 + ly, c, 3);   // the tank faces the way it aims
-  for (let lx = 0; lx < 20; lx++) for (let ly = 12; ly < 16; ly++){   // tracks: a rounded belt with moving links
-    if ((lx === 0 || lx === 19) && (ly === 12 || ly === 15)) continue;
-    P(lx, ly, K[ly === 12 ? 3 : ly === 15 ? 1 : (lx + T.odo * f) % 3 ? 1 : 2]);
+  const P = (lx, ly, c) => pix.px(f > 0 ? x0 + lx : x0 + 9 - lx, y0 + ly, c, 3);   // the tank faces the way it aims
+  for (let lx = 0; lx < 10; lx++){   // tracks: the belt on top, road wheels turning below
+    if (lx > 0 && lx < 9) P(lx, 6, K[3]);
+    P(lx, 7, lx === 0 || lx === 9 ? K[1] : (lx + T.odo * f) % 2 ? M[3] : K[1]);
   }
-  for (const wx of [2, 6, 10, 14, 17]) { P(wx, 13, M[4]); P(wx + 1, 13, M[3]); P(wx, 14, M[2]); P(wx + 1, 14, M[1]); }   // road wheels
-  // the hull, long and low: a sloped glacis at the front, a darker skirt with bolts along the side
-  [[2, 15, 4], [1, 17, 3], [1, 18, 2], [1, 18, 2]].forEach(([a, b, lv], j) => { for (let lx = a; lx <= b; lx++) P(lx, 8 + j, R[j < 2 && lx >= b - 1 ? 4 : lv]); });
-  for (let lx = 3; lx <= 16; lx += 3) P(lx, 10, R[1]);
-  // the turret, set back and angular, with a sloped front; a hatch and an aerial on top
-  [[7, 13, 4], [6, 14, 3], [6, 15, 3], [5, 15, 2]].forEach(([a, b, lv], j) => { for (let lx = a; lx <= b; lx++) P(lx, 4 + j, R[lx >= b ? Math.min(4, lv + 1) : lv]); });
-  P(9, 3, M[3]); P(10, 3, M[4]); P(11, 3, M[2]);
-  for (let ly = -3; ly < 4; ly++) P(6, ly, M[ly === -3 ? 4 : 2]);
-  const a = T.angle * Math.PI / 180, bx = (f > 0 ? x0 + 14 : x0 + 5) + 0.5, by = y0 + 5.5;   // the barrel pivots at the turret's front
-  for (let n = 1; n <= 11; n++){
-    const px = bx + Math.cos(a) * n, py = by - Math.sin(a) * n;
-    pix.px(px, py, M[3], 3); pix.px(px + Math.sin(a), py + Math.cos(a), M[1], 3);
-    if (n === 11){ pix.px(px + Math.cos(a), py - Math.sin(a), M[4], 3); pix.px(px - Math.sin(a), py - Math.cos(a), M[2], 3); }   // the muzzle brake
-  }
-  if (T.shield > 0) for (let n = 0; n < 48; n++){   // the shield: a bubble of dots, fuller the more it has left
-    if (n / 48 > 0.35 + 0.65 * T.shield / SHIELD_HP && n % 2) continue;
-    const s = n / 48 * Math.PI * 2 + t * 0.001; pix.px(x0 + 10 + Math.cos(s) * 14, y0 + 9 + Math.sin(s) * 11, (n + (t / 120 | 0)) % 6 ? [120, 200, 255] : [230, 250, 255], 3);
+  for (let lx = 0; lx < 10; lx++) P(lx, 5, R[lx === 2 || lx === 5 ? 1 : 2]);    // the skirt, with bolts
+  for (let lx = 1; lx < 10; lx++) P(lx, 4, R[lx >= 8 ? 4 : 3]);                // the hull, lit along its sloped front
+  for (let lx = 2; lx < 8; lx++) P(lx, 3, R[lx === 7 ? 4 : 3]);                // the turret
+  for (let lx = 3; lx < 7; lx++) P(lx, 2, R[4]);
+  P(4, 1, M[3]); P(5, 1, M[2]);                                                // the hatch
+  P(3, 0, M[2]); P(3, 1, M[2]); P(3, -1, M[4]);                                // the aerial
+  const a = T.angle * Math.PI / 180, bx = (f > 0 ? x0 + 7 : x0 + 2) + 0.5, by = y0 + 2.5;   // the barrel pivots at the turret's front
+  for (let n = 1; n <= 5; n++) pix.px(bx + Math.cos(a) * n, by - Math.sin(a) * n, n === 5 ? M[4] : M[3], 3);
+  if (T.shield > 0) for (let n = 0; n < 24; n++){   // the shield: a bubble of dots, fuller the more it has left
+    if (n / 24 > 0.35 + 0.65 * T.shield / SHIELD_HP && n % 2) continue;
+    const s = n / 24 * Math.PI * 2 + t * 0.001; pix.px(x0 + 5 + Math.cos(s) * 7, y0 + 4.5 + Math.sin(s) * 5.5, (n + (t / 120 | 0)) % 6 ? [120, 200, 255] : [230, 250, 255], 3);
   }
 }
 // A small bobbing arrow over the tank whose turn it is (after Balote's), in its colour with a dark outline.
-const ARROW = ["ooooo", "oXXXo", "ooXoo", ".oXo.", "..o.."];
+const ARROW = ["ooooo", ".oXo.", "..o.."];
 function drawArrow(T, k, t){
-  const x0 = T.x * 2 + 8, y0 = T.y * 2 - 16 - (t / 300 | 0) % 2 * 2;
+  const x0 = T.x + 3, y0 = T.y - 7 - (t / 300 | 0) % 2;
   ARROW.forEach((row, j) => [...row].forEach((ch, i) => { if (ch !== ".") pix.px(x0 + i, y0 + j, ch === "X" ? pix.ramp(TANK_PIX[k])[4] : [24, 22, 30], 3); }));
 }
 function drawWorld(t){
   for (const B of blasts) pix.glow(B.x, B.y, ROW * (B.big ? 9 : 6), FLASH.map(v => v * B.t * 0.8));
   for (const b of world.bodies){
     if (b.sensor) continue;
-    if (b.box) pix.body(b, SOIL[b.soil ?? 1]);
-    else pix.ball(b.x / PU, b.y / PU, Math.max(1, b.r / PU), b.tank !== undefined ? TANK_PIX[b.tank] : [150, 152, 164], 3, true);
+    // rubble: a two-pixel clod, lying or standing by its angle in quarter turns, so nothing is turned at an angle
+    if (b.box){ const R = pix.ramp(SOIL[b.soil ?? 1]), flat = (Math.round(b.a / (Math.PI / 2)) & 1) === 0, x = Math.round(b.x / PU), y = Math.round(b.y / PU); pix.px(x, y, R[3], 3); pix.px(x + (flat ? 1 : 0), y + (flat ? 0 : 1), R[1], 3); }
+    else pix.ball(b.x / PU, b.y / PU, Math.max(0.8, b.r / PU), b.tank !== undefined ? TANK_PIX[b.tank] : [150, 152, 164], 3, true);
   }
   vfx.draw(pix);
 }
+// text with a black box behind it (MENU_LAYER), so it reads over the hills
+const say2 = (row, s, v) => pix.text((TGW - s.length - 2) >> 1, row, " " + s + " ", v, MENU_LAYER);
 function drawTitle(){
-  pix.rect(24, 184, pix.W - 48, 146, [10, 12, 22], 3);   // a dark panel behind the buttons and text
-  [["CRATER", 80], ["DUEL", 136]].forEach(([word, y0], wi) => {
-    const x0 = (pix.W - word.length * 48 + 8) >> 1, R = pix.ramp(TANK_PIX[wi]);
+  pix.rect(8, 94, pix.W - 16, 88, [10, 12, 22], 3);   // a dark panel behind the buttons and text
+  [["CRATER", 40], ["DUEL", 66]].forEach(([word, y0], wi) => {
+    const x0 = (pix.W - word.length * 24 + 4) >> 1, R = pix.ramp(TANK_PIX[wi]);
     [...word].forEach((ch, li) => FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#"){
-      const X = x0 + li * 48 + dx * 8, Y = y0 + dy * 8, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
-      for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++){   // each dot a bevelled block, joined to its neighbours
-        const lv = (j === 0 && !on(0, -1)) || (i === 0 && !on(-1, 0)) ? 4 : (j === 7 && !on(0, 1)) || (i === 7 && !on(1, 0)) ? 1 : j < 3 ? 3 : 2;
+      const X = x0 + li * 24 + dx * 4, Y = y0 + dy * 4, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++){   // each dot a bevelled block, joined to its neighbours
+        const lv = (j === 0 && !on(0, -1)) || (i === 0 && !on(-1, 0)) ? 4 : (j === 3 && !on(0, 1)) || (i === 3 && !on(1, 0)) ? 1 : j < 2 ? 3 : 2;
         pix.px(X + i, Y + j, R[lv], 3);
       }
     } }));
   });
   const t = INPUT.touch;
-  pix.button(17, (t ? "" : "1  ") + "ONE PLAYER (VS COMPUTER)", WHITE); pix.button(20, (t ? "" : "2  ") + "TWO PLAYERS", WHITE);
-  pix.center(24, t ? "DRAG BACK FROM ANYWHERE AND LET GO TO FIRE." : "LEFT/RIGHT AIM  SHIFT+LEFT/RIGHT DRIVE  ESC MENU", DIM);
-  pix.center(25, t ? "DRAG YOUR TANK TO DRIVE.  TAP THE WEAPON TO CHANGE IT." : "HOLD SPACE FOR POWER, LET GO TO FIRE  TAB WEAPON", DIM);
-  pix.center(27, "LAST TANK STANDING WINS THE ROUND. FIRST TO " + WIN_ROUNDS + " ROUNDS.", DIM);
-  pix.center(28, "SHOP BETWEEN ROUNDS.  " + count + " TANKS (CHANGE IN THE MENU)", DIM);
+  pix.button(14, (t ? "" : "1  ") + "ONE PLAYER (VS COMPUTER)", WHITE); pix.button(17, (t ? "" : "2  ") + "TWO PLAYERS", WHITE);
+  if (t){ pix.center(21, "DRAG BACK FROM ANYWHERE AND LET GO TO FIRE.", DIM); pix.center(22, "DRAG YOUR TANK TO DRIVE.", DIM); pix.center(23, "TAP THE WEAPON TO CHANGE IT.", DIM); }
+  else { pix.center(21, "LEFT/RIGHT AIM  SHIFT+LEFT/RIGHT DRIVE  ESC MENU", DIM); pix.center(22, "HOLD SPACE FOR POWER, LET GO TO FIRE  TAB WEAPON", DIM); }
+  pix.center(24, "LAST TANK STANDING WINS. FIRST TO " + WIN_ROUNDS + " ROUNDS.", DIM);
+  pix.center(25, "SHOP BETWEEN ROUNDS. " + count + " TANKS (SEE THE MENU)", DIM);
 }
 const shopGap = () => INPUT.touch ? 2 : 1;   // shop rows two lines apart on a touch screen, so a finger can pick one
+const SHOP_Y = 3;                            // the shop's first text row
 function drawShop(){
-  const T = tanks[shopAt], x0 = 7, y0 = 6, w = 50, text = pix.text, CW = pix.W / TGW, CH = pix.H / TGH, g = shopGap(), n = (SHOP.length + 1) * g - 1;   // n: rows from the first item to DONE, less one
-  pix.rect((x0 - 2) * CW, (y0 - 1) * CH, (w + 4) * CW, (17 + n) * CH, [10, 12, 22], 3);
+  const T = tanks[shopAt], x0 = 2, y0 = SHOP_Y, w = 46, text = pix.text, CW = PIXEL_FONT.w, CH = PIXEL_FONT.h, g = shopGap(), n = (SHOP.length + 1) * g - 1;   // n: rows from the first item to DONE, less one
+  pix.rect((x0 - 1) * CW, (y0 - 1) * CH, (w + 2) * CW, (16 + n) * CH, [10, 12, 22], 3);
   text(x0, y0, "THE SHOP", GOLD); text(x0 + w - 18, y0, ("ROUND " + (tanks.reduce((s, U) => s + U.wins, 0) + 1)).padStart(18), DIM);
   text(x0, y0 + 2, name(shopAt), TANK_RGB[shopAt]); text(x0 + 20, y0 + 2, ("MONEY $" + T.money).padStart(w - 20), GOLD);
   text(x0, y0 + 3, "EARNED LAST ROUND $" + T.earned, DIM);
@@ -1868,9 +1867,9 @@ function drawShop(){
     text(x0, y0 + 5 + k * g, (sel ? "> " : "  ") + it.name.padEnd(12) + ("$" + it.price).padStart(6) + "    HAVE " + String(it.has(T) || 0).padStart(3), sel ? (can ? WHITE : DIM) : can ? [1, 1, 1] : DIM);
   });
   text(x0, y0 + 6 + n, (shopSel === SHOP.length ? "> " : "  ") + "DONE", shopSel === SHOP.length ? WHITE : [1, 1, 1]);
-  text(x0, y0 + 8 + n, "MISSILES ARE FREE. AMMO, FUEL AND MONEY CARRY ON.", DIM);
-  text(x0, y0 + 9 + n, "A SHIELD TAKES THE FIRST " + SHIELD_HP + " DAMAGE OF ONE ROUND.", DIM);
-  text(x0, y0 + 11 + n, INPUT.touch ? "TAP AN ITEM TO BUY IT.  TAP DONE TO GO ON." : "UP/DOWN CHOOSE   SPACE OR ENTER BUY   D WHEN DONE", DIM);
+  text(x0, y0 + 8 + n, "MISSILES ARE FREE. AMMO, FUEL, MONEY CARRY ON.", DIM);
+  text(x0, y0 + 9 + n, "A SHIELD STOPS THE FIRST " + SHIELD_HP + " DAMAGE OF A ROUND.", DIM);
+  text(x0, y0 + 11 + n, INPUT.touch ? "TAP AN ITEM TO BUY IT.  TAP DONE TO GO ON." : "UP/DOWN CHOOSE  SPACE BUY  D WHEN DONE", DIM);
   const st = tanks.map((U, i) => name(i) + " " + U.wins).join("   ");
   text(Math.max(x0, (TGW - st.length) >> 1), y0 + 13 + n, st, DIM);
 }
@@ -1887,16 +1886,16 @@ function draw(t){
     const R = pix.ramp(TANK_PIX[turn]), a = T.angle * Math.PI / 180, [mx, my] = muzzle(T);
     lastTrail[turn].forEach((p, i) => { if (i % 3 === 0) pix.px(p.x / PU, p.y / PU, R[1], 1); });
     const n = 2 + Math.round(T.power / 14);
-    for (let k = 1; k <= n; k++){ const px = mx / PU + Math.cos(a) * k * 5, py = my / PU - Math.sin(a) * k * 5; pix.px(px, py, k === n ? R[4] : R[2], 3); }
-    const ex = mx / PU + Math.cos(a) * n * 5, ey = my / PU - Math.sin(a) * n * 5;
+    for (let k = 1; k <= n; k++){ const px = mx / PU + Math.cos(a) * k * 3, py = my / PU - Math.sin(a) * k * 3; pix.px(px, py, k === n ? R[4] : R[2], 3); }
+    const ex = mx / PU + Math.cos(a) * n * 3, ey = my / PU - Math.sin(a) * n * 3;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) pix.px(ex + dx, ey + dy, R[4], 3);
     drawArrow(T, turn, t);
   }
-  trail.forEach((p, i) => { if (i % 2 === 0) pix.px(p.x / PU, p.y / PU, [150, 140, 120], 1); });
+  trail.forEach((p, i) => { if (i % 3 === 0) pix.px(p.x / PU, p.y / PU, [150, 140, 120], 1); });
   for (const b of shells) if (!b.dead){
-    const x = b.x / PU, y = b.y / PU;
-    if (y < 0){ for (let k = 0; k < 3; k++) pix.rect(x - k, 46 + k, 2 * k + 1, 1, [255, 230, 160], 3); continue; }   // above the top: a mark shows where it will come down
-    pix.ball(x, y, 2, [255, 236, 190], 3, true); pix.glow(b.x, b.y, ROW * 1.2, [0.5, 0.35, 0.15]);
+    const x = Math.round(b.x / PU), y = Math.round(b.y / PU);
+    if (y < 0){ for (let k = 0; k < 2; k++) pix.rect(x - k, 30 + k, 2 * k + 1, 1, [255, 230, 160], 3); continue; }   // above the top: a mark shows where it will come down
+    pix.rect(x, y, 2, 2, [255, 236, 190], 3); pix.glow(b.x, b.y, ROW * 1.2, [0.5, 0.35, 0.15]);
   }
   pix.edges();
   // HUD: each tank's health and rounds across the top, wind in the middle, the active tank's aim, weapon and fuel below
@@ -1908,20 +1907,20 @@ function draw(t){
   pix.center(2, "WIND " + (wind === 0 ? "CALM" : wind < 0 ? "<".repeat(Math.min(5, Math.ceil(-wind / 2))) + " " + -wind : wind + " " + ">".repeat(Math.min(5, Math.ceil(wind / 2)))), WHITE);
   if (state !== "over" && T && !T.dead){
     const W = WEAPONS[T.weapon], ammo = T.ammo[T.weapon] === Infinity ? "" : " x" + T.ammo[T.weapon];
-    pix.center(3, `ANGLE ${String(Math.round(T.angle)).padStart(3)}   POWER ${String(Math.round(T.power)).padStart(3)}   ${INPUT.touch ? "< " + W.name + ammo + " >" : W.name + ammo}   FUEL ${T.fuel}`, TANK_RGB[turn]);
+    pix.center(3, `ANG ${String(Math.round(T.angle)).padStart(3)} POW ${String(Math.round(T.power)).padStart(3)} ${INPUT.touch ? "< " + W.name + ammo + " >" : W.name + ammo} FUEL ${T.fuel}`, TANK_RGB[turn]);
   }
   if (state === "aim" || state === "cpu"){   // the power meter, with a mark where your last shot was
-    const R = pix.ramp(TANK_PIX[turn]), w = 120, x0 = (pix.W - w) >> 1, y0 = 48, fill = Math.round(T.power / 100 * w), lp = lastPower[turn];
-    pix.rect(x0 - 1, y0 - 1, w + 2, 6, [20, 22, 34], 4);
-    for (let x = 0; x < w; x++) for (let y = 0; y < 4; y++) pix.px(x0 + x, y0 + y, x < fill ? R[y ? 3 : 4] : [44, 46, 62], 4);
-    if (lp !== null){ const m = x0 + Math.min(w - 1, Math.round(lp / 100 * w)); pix.rect(m, y0 - 2, 1, 8, [240, 240, 240], 4); }
-    if (state === "aim" && charge === null && !sling && msgT <= 0) pix.center(5, INPUT.touch ? "DRAG BACK TO FIRE.  DRAG THE TANK TO DRIVE." : "HOLD SPACE FOR POWER, LET GO TO FIRE.  SHIFT DRIVES", DIM);
+    const R = pix.ramp(TANK_PIX[turn]), w = 60, x0 = (pix.W - w) >> 1, y0 = 30, fill = Math.round(T.power / 100 * w), lp = lastPower[turn];
+    pix.rect(x0 - 1, y0 - 1, w + 2, 4, [20, 22, 34], 4);
+    for (let x = 0; x < w; x++) for (let y = 0; y < 2; y++) pix.px(x0 + x, y0 + y, x < fill ? R[y ? 3 : 4] : [44, 46, 62], 4);
+    if (lp !== null){ const m = x0 + Math.min(w - 1, Math.round(lp / 100 * w)); pix.rect(m, y0 - 2, 1, 6, [240, 240, 240], 4); }
+    if (state === "aim" && charge === null && !sling && msgT <= 0) pix.center(5, INPUT.touch ? "DRAG BACK TO FIRE.  DRAG THE TANK TO DRIVE." : "HOLD SPACE FOR POWER, LET GO TO FIRE", DIM);
   }
   if (state === "over"){
     const w = winner();
-    pix.center(7, `  ${name(w)} WINS ${tanks.map(U => U.wins).join("-")}  `, TANK_RGB[w]);
-    pix.center(9, INPUT.touch ? "  TAP FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
-  } else if (msgT > 0) pix.center(7, "  " + msg + "  ", WHITE);
+    say2(7, `${name(w)} WINS ${tanks.map(U => U.wins).join("-")}`, TANK_RGB[w]);
+    say2(9, INPUT.touch ? "TAP FOR A NEW MATCH" : "PRESS SPACE FOR A NEW MATCH", WHITE);
+  } else if (msgT > 0) say2(7, msg, WHITE);
   if (!INPUT.touch) pix.text(TGW - 11, TGH - 1, " ESC MENU ", DIM);
   finish();
 }
@@ -2002,26 +2001,26 @@ function aimFrom(p){
   T.angle = clamp(Math.round(Math.atan2(Math.max(0, -dy), dx) * 180 / Math.PI), 0, 180);
   T.power = clamp(Math.round(Math.hypot(dx, dy) / (pix.W * 0.4) * 100), 1, 100);
 }
-function driveTo(p){ const T = tanks[turn], d = p.x * pix.W - (T.x * 2 + TW); keys.drive = Math.abs(d) < 6 ? 0 : Math.sign(d); }
+function driveTo(p){ const T = tanks[turn], d = p.x * pix.W - (T.x + TW / 2); keys.drive = Math.abs(d) < 3 ? 0 : Math.sign(d); }
 createTouch(cv, {
   down: p => {
     audio.unlock();
     if (menu.open || state !== "aim" || charge !== null) return;
-    const T = tanks[turn], dx = p.x * pix.W - (T.x * 2 + TW), dy = p.y * pix.H - (T.y * 2 + TH);
-    if (Math.abs(dx) < 18 && Math.abs(dy) < 16) driving = p; else sling = p;
+    const T = tanks[turn], dx = p.x * pix.W - (T.x + TW / 2), dy = p.y * pix.H - (T.y + TH / 2);
+    if (Math.abs(dx) < 9 && Math.abs(dy) < 8) driving = p; else sling = p;
   },
   move: p => { if (p === sling && p.moved >= 12) aimFrom(p); if (p === driving && state === "aim") driveTo(p); },
   up: p => {
     if (p === driving){ driving = null; keys.drive = 0; return; }
     if (p === sling){ sling = null; if (p.moved >= 12 && state === "aim"){ aimFrom(p); lastPower[turn] = tanks[turn].power; fire(turn); return; } }
     if (!p.tap) return;
-    if (menu.open) return menu.tap(Math.floor(p.x * TGW), Math.floor(p.y * TGH));
-    const gy = Math.floor(p.y * TGH);
-    if (state === "title"){ if (gy >= 17 && gy < 20) start("cpu"); else if (gy >= 20 && gy < 23) start("two"); }
+    if (menu.open) return menu.tap(...pix.gridAt(p.x, p.y));
+    const gy = pix.gridAt(p.x, p.y)[1];
+    if (state === "title"){ if (gy >= 14 && gy < 17) start("cpu"); else if (gy >= 17 && gy < 20) start("two"); }
     else if (state === "over") action();
     else if (state === "aim" && gy >= 2 && gy <= 4) nextWeapon();
     else if (state === "shop"){   // the item rows, then DONE
-      const g = shopGap(), k = Math.floor((gy - 11 + (g >> 1)) / g);
+      const g = shopGap(), k = Math.floor((gy - SHOP_Y - 5 + (g >> 1)) / g);
       if (k >= 0 && k < SHOP.length || k === SHOP.length + 1){ shopSel = Math.min(k, SHOP.length); shopKey("buy"); }
     }
   }
