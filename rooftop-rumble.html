@@ -1388,21 +1388,22 @@ const PIXEL_FONT = { w: 4, h: 7, glyphs: {
 (() => {
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
-// The city is an engine terrain grid of small square cells (2 x 2 pixels), so blasts punch round holes in it. The apes
+// The city is an engine terrain grid of small square cells, one pixel each, so blasts punch round holes in it. The apes
 // stand on it and drop when their roof goes. The thrown fruit and the rubble are engine bodies on top. Everything is
-// drawn as pixel art (src/pixel.js); text and the menu use a 64 x 40 grid over it.
-const TGW = 64, TGH = 40, WIN_SCORE = 3;    // the text grid: big enough letters to read on a phone
-const NX = 200, NY = 224, CELL = 4, PU = 2;  // city cells; world units per cell and per pixel
-const COL = 8, ROW = 16;                     // a text column and row in world units: the sizes things are measured in
+// drawn as pixel art (src/pixel.js) on a 200 x 224 picture, small enough to scale by whole pixels on a phone, with
+// the text in the pixel font at its native size.
+const WIN_SCORE = 3;
+const NX = 200, NY = 224, CELL = 4, PU = 4;  // city cells; world units per cell and per pixel
+const COL = 8, ROW = 16;                     // world units the sizes of things are measured in (once a text column and row)
 const PLAYER_RGB = [[1.5, 0.85, 0.4], [0.5, 1.0, 1.5]];                  // for text
 const PLAYER_PIX = [[230, 140, 70], [90, 190, 240]];                     // the title, the arrow, the aim
 const FUR = [[150, 92, 52], [70, 104, 150]], CHEST = [[214, 170, 120], [160, 186, 214]];
-const MOON = { x: 200, y: 62, r: 16 };                                   // in pixels
+const MOON = { x: 100, y: 31, r: 8 };                                    // in pixels
 const TINT = [[72, 82, 124], [128, 70, 66], [62, 108, 106]];             // the buildings' walls
 const FLASH = [1.8, 0.9, 0.4], WHITE = [1.6, 1.6, 1.6], DIM = [0.4, 0.45, 0.6], FRUIT = [1.8, 1.6, 0.3];
 const BRICK = { name: "brick", density: 1.2, e: 0.2, mu: 0.8, kd: 0.9, ks: 0.15, shine: 8 };
 const DEBRIS = { name: "debris", density: 0.5, e: 0.5, mu: 0.5, kd: 0.9, ks: 0.6, shine: 24 };
-const FONT = {   // 5x5 block letters for the title, two text columns wide per dot
+const FONT = {   // 5x5 block letters for the title, each dot a 4 x 4 block
   R: ["####.", "#...#", "####.", "#..#.", "#...#"], O: [".###.", "#...#", "#...#", "#...#", ".###."],
   F: ["#####", "#....", "####.", "#....", "#...."], T: ["#####", "..#..", "..#..", "..#..", "..#.."],
   P: ["####.", "#...#", "####.", "#....", "#...."], U: ["#...#", "#...#", "#...#", "#...#", ".###."],
@@ -1413,7 +1414,9 @@ const FONT = {   // 5x5 block letters for the title, two text columns wide per d
 applyArcadeSettings(defaultDisplay());   // the tube TV filter from the shared Settings page
 const world = new World(); world.openTop = true;   // high throws arc above the screen and come back down
 world.w = NX * CELL; world.h = NY * CELL; world.unit = COL; world.drag = 2e-4 * (600 / world.h) ** 2;
-const pix = createPixels(NX * CELL / PU, NY * CELL / PU, TGW, TGH, PU);
+const pix = createPixels(NX * CELL / PU, NY * CELL / PU, (NX * CELL / PU) / PIXEL_FONT.w, Math.floor(NY * CELL / PU / PIXEL_FONT.h), PU);
+pix.font = PIXEL_FONT;
+const TGW = pix.cols, TGH = pix.rows;   // the text grid: 50 x 32
 let ready = false, mode = "cpu", state = "title", stateT = 0;
 let city = null, apes = [], turn = 0, score = [0, 0], wind = 0, fruit = null, trail = [], lastTrail = [[], []];
 let blasts = [], moonShock = 0, roundStarter = 0, msg = "", msgT = 0, cpu = null, plan = null;
@@ -1482,7 +1485,7 @@ function startTurn(){
 function say(text, secs){ msg = text; msgT = secs; }
 // What a thrown fruit at (x, y), in world units, has hit: the ground or a building, an ape (j), or the moon.
 function solidAt(x, y){ const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL); return gy >= NY - 1 || (gy >= 0 && gx >= 0 && gx < NX && city.solid[gy * NX + gx] === 1); }
-function onApe(j, x, y){ const A = apes[j], dx = x / PU - A.x * 2, dy = y / PU - A.y * 2; return !A.dead && Math.abs(dx) <= 9 && dy <= 0 && dy >= -27; }
+function onApe(j, x, y){ const A = apes[j], dx = x - A.x * CELL, dy = y - A.y * CELL; return !A.dead && Math.abs(dx) <= 18 && dy <= 0 && dy >= -54; }   // in world units
 const hand = (A, dir) => [A.x * CELL + dir * 20, A.y * CELL - 56];   // the raised hand the fruit leaves from
 
 /* ---------- difficulty ---------- */
@@ -1633,7 +1636,8 @@ function update(dt){
 /* ---------- drawing: pixel art (src/pixel.js) ---------- */
 // After Balote: each colour as a ramp of five shades, light from the upper left, dithered gradients, outlines from
 // the edge pass. A night sky with a moon, a far skyline, and the city: walls in close tones with rows of windows,
-// most of them lit, and rooftop antennas and water tanks. The apes are gorillas built from lit balls.
+// most of them lit, and rooftop antennas and water tanks. The apes are gorillas built from lit balls. One city cell is
+// one pixel.
 const SKY = [[8, 10, 26], [12, 16, 38], [18, 22, 52], [26, 30, 66], [40, 42, 84]];
 const hash = (x, y) => pixHash(x, y);
 const back = { d: new Uint8ClampedArray(pix.W * pix.H * 4), lay: new Int8Array(pix.W * pix.H), key: "" };
@@ -1645,134 +1649,137 @@ function bakeBack(dim){
     const v = Math.min(4, y / (pix.H * 0.8) * 4);
     for (let x = 0; x < pix.W; x++) pix.px(x, y, D(SKY[clamp(Math.floor(v + pix.bayer(x, y) - 0.5), 0, 4)]), -1);
   }
-  pix.glow(MOON.x * PU, MOON.y * PU, 44 * PU, [0.1, 0.1, 0.14].map(v => v * dim));   // the moon's halo
+  pix.glow(MOON.x * PU, MOON.y * PU, 22 * PU, [0.1, 0.1, 0.14].map(v => v * dim));   // the moon's halo
   const far = pix.ramp(D([30, 34, 64])), lit = D([150, 120, 70]);
   for (let x = 0, k = 0; x < pix.W; k++){   // the far skyline: dark blocks with a few lit windows
-    const w = 10 + Math.floor(hash(k, city.seed) * 22), top = Math.floor(pix.H * (0.5 + hash(k, city.seed + 1) * 0.22));
+    const w = 5 + Math.floor(hash(k, city.seed) * 11), top = Math.floor(pix.H * (0.5 + hash(k, city.seed + 1) * 0.22));
     for (let i = 0; i < w; i++) for (let y = top; y < pix.H; y++){
-      const win = (i % 4 === 2) && (y - top) % 6 === 3 && hash(x + i, y) < 0.18;
+      const win = i % 3 === 1 && (y - top) % 4 === 2 && hash(x + i, y) < 0.18;
       pix.px(x + i, y, win ? lit : far[y === top ? 3 : 2], 1);
     }
-    x += w + 1 + Math.floor(hash(k, city.seed + 2) * 4);
+    x += w + 1 + Math.floor(hash(k, city.seed + 2) * 2);
   }
   const { solid, bld, burnt, buildings } = city;
   for (let r = 0; r < NY; r++) for (let c = 0; c < NX; c++){
     const i = r * NX + c; if (!solid[i]) continue;
     const B = buildings[bld[i] - 1], R = pix.ramp(TINT[B.tint]), open = !r || !solid[i - NX], scorch = burnt[i] ? 0.55 : 1;
-    for (let j = 0; j < 2; j++) for (let q = 0; q < 2; q++){
-      const x = c * 2 + q, y = r * 2 + j, lx = x - B.x * 2, ly = y - B.top * 2, W = B.w * 2;
-      const wx = Math.floor((lx - 3) / 6), wy = Math.floor((ly - 6) / 10), inWin = lx >= 3 && lx < W - 3 && (lx - 3) % 6 < 3 && ly >= 6 && (ly - 6) % 10 < 5;
-      let col;
-      if (open && j === 0) col = R[4];                                    // the moonlit top edge
-      else if (inWin){
-        const on = hash(wx + B.seed, wy) < 0.7, warm = hash(wx, wy + B.seed) < 0.5 ? [255, 206, 120] : [250, 226, 160];
-        col = on ? ((ly - 6) % 10 === 0 ? warm.map(v => v * 0.8) : warm) : [24, 28, 46];   // lit, with a shadow under the lintel; or dark
-      } else if (lx === 0) col = R[4]; else if (lx === W - 1) col = R[1];  // lit left side, shaded right side
-      else {   // Balote's close tones from smooth noise
-        const t = [0.9, 0.94, 0.98, 1.02][clamp(Math.floor((0.5 + (pixNoise(x * 0.09, y * 0.05) - 0.5) * 0.8) * 4 + (pix.bayer(x, y) - 0.5) * 0.6), 0, 3)];
-        col = R[3].map(v => v * t);
-      }
-      pix.px(x, y, D(scorch < 1 ? [col[0] * scorch + 12, col[1] * scorch * 0.9, col[2] * scorch * 0.8] : col), 2);
+    // windows two pixels square, in columns every four and rows every five
+    const lx = c - B.x, ly = r - B.top, wx = (lx - 2) >> 2, wy = Math.floor((ly - 3) / 5);
+    const inWin = lx >= 2 && lx < B.w - 2 && (lx - 2) % 4 < 2 && ly >= 3 && (ly - 3) % 5 < 2;
+    let col;
+    if (open) col = R[4];                                                 // the moonlit top edge
+    else if (inWin){
+      const on = hash(wx + B.seed, wy) < 0.7, warm = hash(wx, wy + B.seed) < 0.5 ? [255, 206, 120] : [250, 226, 160];
+      col = on ? ((ly - 3) % 5 === 0 ? warm.map(v => v * 0.8) : warm) : [24, 28, 46];   // lit, with a shadow under the lintel; or dark
+    } else if (lx === 0) col = R[4]; else if (lx === B.w - 1) col = R[1]; // lit left side, shaded right side
+    else {   // Balote's close tones from smooth noise
+      const t = [0.9, 0.94, 0.98, 1.02][clamp(Math.floor((0.5 + (pixNoise(c * 0.18, r * 0.1) - 0.5) * 0.8) * 4 + (pix.bayer(c, r) - 0.5) * 0.6), 0, 3)];
+      col = R[3].map(v => v * t);
     }
+    pix.px(c, r, D(scorch < 1 ? [col[0] * scorch + 12, col[1] * scorch * 0.9, col[2] * scorch * 0.8] : col), 2);
   }
   for (const B of buildings){   // rooftop details, standing only while the roof under them does
-    const mx = B.x + (B.w >> 1) + (B.deco === 1 ? -3 : 2), M = pix.ramp(D([120, 124, 140]));
-    if (!solid[B.top * NX + mx]) continue;
-    const x = mx * 2, y = B.top * 2;
-    if (B.deco === 1){ for (let k = 1; k <= 12; k++) pix.px(x, y - k, M[k === 12 ? 4 : 2], 2); pix.px(x - 1, y - 8, M[3], 2); pix.px(x + 1, y - 8, M[1], 2); pix.px(x, y - 13, D([255, 70, 60]), 2); }
+    const x = B.x + (B.w >> 1) + (B.deco === 1 ? -3 : 2), y = B.top, M = pix.ramp(D([120, 124, 140]));
+    if (!solid[y * NX + x]) continue;
+    if (B.deco === 1){ for (let k = 1; k <= 6; k++) pix.px(x, y - k, M[k === 6 ? 4 : 2], 2); pix.px(x - 1, y - 4, M[3], 2); pix.px(x + 1, y - 4, M[1], 2); pix.px(x, y - 7, D([255, 70, 60]), 2); }
     else if (B.deco === 2){   // a water tank on legs
-      pix.px(x - 2, y - 1, M[1], 2); pix.px(x + 3, y - 1, M[1], 2); pix.px(x - 2, y - 2, M[1], 2); pix.px(x + 3, y - 2, M[1], 2);
+      pix.px(x - 1, y - 1, M[1], 2); pix.px(x + 2, y - 1, M[1], 2);
       const T = pix.ramp(D([132, 96, 72]));
-      for (let j = 0; j < 7; j++) for (let i = 0; i < 6; i++) pix.px(x - 2 + i, y - 9 + j, T[j === 0 ? 4 : i === 0 ? 3 : i === 5 ? 1 : (j & 1) ? 2 : 3], 2);
-      for (let i = 0; i < 4; i++) pix.px(x - 1 + i, y - 10, T[3], 2);
-    } else if (B.deco === 3) pix.rect(x - 3, y - 3, 7, 3, M[2], 2);   // a vent box
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) pix.px(x - 1 + i, y - 5 + j, T[j === 0 ? 4 : i === 0 ? 3 : i === 3 ? 1 : 2], 2);
+      pix.px(x, y - 6, T[3], 2); pix.px(x + 1, y - 6, T[3], 2);
+    } else if (B.deco === 3) pix.rect(x - 2, y - 2, 4, 2, M[2], 2);   // a vent box
   }
   back.d.set(pix.d); back.lay.set(pix.lay);
 }
 function drawMoon(t){
-  const { x, y, r } = MOON, M = pix.ramp([236, 228, 184]), shock = moonShock > 0;
+  const { x, y, r } = MOON, M = pix.ramp([236, 228, 184]), ink = [70, 62, 52];
   pix.ball(x, y, r, [236, 228, 184], 1);
-  for (const [dx, dy, cr] of [[-7, 4, 3], [5, 7, 2], [7, -6, 2], [-4, -9, 1.5]]) for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++)   // craters
-    if (Math.hypot(i, j) <= cr) pix.px(x + dx + i, y + dy + j, M[Math.hypot(i + 0.7, j + 0.7) <= cr - 0.6 ? 1 : 2], 1);
-  const ink = [70, 62, 52];
-  if (shock){   // wide eyes and an O of a mouth
-    for (const ex of [-6, 3]){ pix.rect(x + ex, y - 5, 3, 3, ink, 1); pix.px(x + ex + 1, y - 4, [255, 255, 255], 1); }
-    pix.rect(x - 1, y + 2, 3, 1, ink, 1); pix.rect(x - 1, y + 5, 3, 1, ink, 1); pix.px(x - 2, y + 3, ink, 1); pix.px(x - 2, y + 4, ink, 1); pix.px(x + 2, y + 3, ink, 1); pix.px(x + 2, y + 4, ink, 1);
+  for (const [dx, dy] of [[-4, 2], [3, 4], [4, -3]]){ pix.px(x + dx, y + dy, M[1], 1); pix.px(x + dx + 1, y + dy, M[2], 1); }   // craters
+  if (moonShock > 0){   // wide eyes and an O of a mouth
+    for (const ex of [-3, 2]){ pix.rect(x + ex, y - 3, 2, 2, ink, 1); pix.px(x + ex, y - 3, [255, 255, 255], 1); }
+    pix.px(x, y + 1, ink, 1); pix.px(x - 1, y + 2, ink, 1); pix.px(x + 1, y + 2, ink, 1); pix.px(x, y + 3, ink, 1);
   } else {
     const blink = (t / 160 | 0) % 25 === 0;
-    for (const ex of [-6, 3]) pix.rect(x + ex, y - 4 + (blink ? 1 : 0), 2, blink ? 1 : 2, ink, 1);
-    for (const [i, j] of [[-4, 3], [-3, 4], [-2, 5], [-1, 5], [0, 5], [1, 4], [2, 3]]) pix.px(x + i, y + j, ink, 1);   // a smile
+    for (const ex of [-3, 2]) blink ? pix.rect(x + ex, y - 2, 2, 1, ink, 1) : pix.rect(x + ex, y - 3, 1, 2, ink, 1);
+    for (const [i, j] of [[-2, 1], [-1, 2], [0, 2], [1, 2], [2, 1]]) pix.px(x + i, y + j, ink, 1);   // a smile
   }
 }
 // A gorilla built from lit balls: legs, a round body with a pale chest, arms by pose, a head with a pale muzzle.
 // (x, y): the middle of its feet, in pixels.
 function drawApe(A, i){
-  const x = A.x * 2, y = A.y * 2, F = pix.ramp(FUR[i]), fur = FUR[i], chest = CHEST[i];
-  const limb = (x0, y0, x1, y1, w) => { const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0)); for (let k = 0; k <= n; k++) pix.ball(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, w, fur, 3, true); };
-  pix.rect(x - 7, y - 5, 4, 5, F[2], 3); pix.rect(x + 3, y - 5, 4, 5, F[1], 3);   // legs
-  pix.rect(x - 8, y - 1, 5, 1, F[1], 3); pix.rect(x + 3, y - 1, 5, 1, F[0], 3);   // feet
-  pix.ball(x, y - 11, 7.5, fur);
-  pix.ball(x, y - 10, 4.5, chest, 3, true);
+  const x = A.x, y = A.y, F = pix.ramp(FUR[i]), fur = FUR[i], chest = CHEST[i];
+  const limb = (x0, y0, x1, y1) => { const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0)); for (let k = 0; k <= n; k++) pix.px(Math.round(x0 + (x1 - x0) * k / n), Math.round(y0 + (y1 - y0) * k / n), F[2], 3); };
+  pix.rect(x - 3, y - 3, 2, 3, F[2], 3); pix.rect(x + 1, y - 3, 2, 3, F[1], 3);   // legs
+  pix.rect(x - 4, y - 1, 3, 1, F[1], 3); pix.rect(x + 1, y - 1, 3, 1, F[0], 3);   // feet
+  pix.ball(x, y - 6, 3.6, fur);
+  pix.ball(x, y - 5.5, 2, chest, 3, true);
   const up = A.pose === "cheer" ? [1, 1] : A.pose === "throwR" ? [0, 1] : A.pose === "throwL" ? [1, 0] : [0, 0];   // [left, right] arm raised
   [-1, 1].forEach((s, k) => {
-    const sx = x + s * 6, sy = y - 15, hx = up[k] ? x + s * 8 : x + s * 10, hy = up[k] ? y - 29 : y - 3;
-    limb(sx, sy, hx, hy, 2.2); pix.ball(hx, hy, 2.4, chest.map(v => v * 0.7), 3, true);
+    const sx = x + s * 3, sy = y - 8, hx = up[k] ? x + s * 4 : x + s * 5, hy = up[k] ? y - 14 : y - 2;
+    limb(sx, sy, hx, hy); pix.px(hx, hy, chest.map(v => v * 0.8), 3);
   });
-  pix.ball(x, y - 21, 5.5, fur);
-  pix.ball(x, y - 19, 3.2, chest, 3, true);
-  pix.rect(x - 4, y - 24, 8, 1, F[0], 3);                                    // the brow
-  pix.px(x - 2, y - 22, [24, 18, 20], 3); pix.px(x + 1, y - 22, [24, 18, 20], 3);
-  pix.px(x - 1, y - 20, F[0], 3); pix.px(x, y - 20, F[0], 3);                // nostrils
-  pix.rect(x - 1, y - 17, 3, 1, F[0], 3);
+  pix.ball(x, y - 10.5, 2.8, fur);
+  pix.rect(x - 1, y - 10, 3, 2, chest, 3);                                   // the muzzle
+  pix.rect(x - 2, y - 12, 5, 1, F[0], 3);                                    // the brow
+  pix.px(x - 1, y - 11, [24, 18, 20], 3); pix.px(x + 1, y - 11, [24, 18, 20], 3);
+  pix.px(x, y - 9, F[0], 3);                                                 // the mouth
 }
 // A small bobbing arrow over the ape whose turn it is, in its colour with a dark outline.
-const ARROW = ["ooooo", "oXXXo", "ooXoo", ".oXo.", "..o.."];
+const ARROW = ["ooooo", ".oXo.", "..o.."];
 function drawArrow(A, k, t){
-  const x0 = A.x * 2 - 2, y0 = A.y * 2 - 40 - (t / 300 | 0) % 2 * 2;
+  const x0 = A.x - 2, y0 = A.y - 20 - (t / 300 | 0) % 2;
   ARROW.forEach((row, j) => [...row].forEach((ch, i) => { if (ch !== ".") pix.px(x0 + i, y0 + j, ch === "X" ? pix.ramp(PLAYER_PIX[k])[4] : [24, 22, 30], 3); }));
 }
-// The fruit: a banana, turning as it flies.
+// The fruit: a banana, turning as it flies, in drawn frames: lying flat and on the diagonal, each turned in quarter
+// turns, so eight directions and no pixel art turned at an angle. b: brown tip, y: yellow, Y: its lit side.
+const BANANA = [["b...b", ".YyY."], ["...b", "..Yy", ".Yy.", "b..."]];
 function drawFruit(b){
-  const x = b.x / PU, y = b.y / PU, c = Math.cos(b.a), s = Math.sin(b.a), Y = pix.ramp([240, 210, 60]);
-  for (let k = -3; k <= 3; k++){
-    const lx = k, ly = 0.18 * k * k - 1;
-    pix.px(x + lx * c - ly * s, y + lx * s + ly * c, Math.abs(k) === 3 ? [110, 80, 30] : Y[k < 0 ? 4 : 3], 3);
-    pix.px(x + lx * c - (ly + 1) * s, y + lx * s + (ly + 1) * c, Math.abs(k) === 3 ? [110, 80, 30] : Y[2], 3);
-  }
+  const k = ((Math.round(b.a / (Math.PI / 4)) % 8) + 8) % 8, F = BANANA[k & 1], q = k >> 1, Y = pix.ramp([240, 210, 60]);
+  const w = F[0].length, h = F.length, x0 = Math.round(b.x / PU), y0 = Math.round(b.y / PU);
+  F.forEach((row, j) => [...row].forEach((ch, i) => {
+    if (ch === ".") return;
+    let u = i - (w >> 1), v = j - (h >> 1);
+    for (let n = 0; n < q; n++) [u, v] = [-v, u];   // a quarter turn
+    pix.px(x0 + u, y0 + v, ch === "b" ? [110, 80, 30] : Y[ch === "Y" ? 4 : 3], 3);
+  }));
 }
 function drawWorld(t){
   drawMoon(t);
   for (const B of blasts) pix.glow(B.x, B.y, ROW * 6, FLASH.map(v => v * B.t * 0.8));
   for (const b of world.bodies){
     if (b.sensor) continue;
-    if (b.box) pix.body(b, TINT[b.tint ?? 0]);
-    else pix.ball(b.x / PU, b.y / PU, Math.max(1, b.r / PU), b.ape !== undefined ? FUR[b.ape] : [150, 152, 164], 3, true);
+    // rubble: a two-pixel brick, lying or standing by its angle in quarter turns
+    if (b.box){ const R = pix.ramp(TINT[b.tint ?? 0]), flat = (Math.round(b.a / (Math.PI / 2)) & 1) === 0, x = Math.round(b.x / PU), y = Math.round(b.y / PU); pix.px(x, y, R[3], 3); pix.px(x + (flat ? 1 : 0), y + (flat ? 0 : 1), R[1], 3); }
+    else pix.ball(b.x / PU, b.y / PU, Math.max(0.8, b.r / PU), b.ape !== undefined ? FUR[b.ape] : [150, 152, 164], 3, true);
   }
   vfx.draw(pix);
 }
+// text with a black box behind it (MENU_LAYER), so it reads over the city
+const say2 = (row, s, v) => pix.text((TGW - s.length - 2) >> 1, row, " " + s + " ", v, MENU_LAYER);
 function drawTitle(){
-  pix.rect(24, 196, pix.W - 48, 126, [10, 12, 22], 3);   // a dark panel behind the buttons and text
-  [["ROOFTOP", 88], ["RUMBLE", 146]].forEach(([word, y0], wi) => {
-    const x0 = (pix.W - word.length * 48 + 8) >> 1, R = pix.ramp(PLAYER_PIX[wi]);
+  pix.rect(8, 94, pix.W - 16, 84, [10, 12, 22], 3);   // a dark panel behind the buttons and text
+  [["ROOFTOP", 40], ["RUMBLE", 66]].forEach(([word, y0], wi) => {
+    const x0 = (pix.W - word.length * 24 + 4) >> 1, R = pix.ramp(PLAYER_PIX[wi]);
     [...word].forEach((ch, li) => FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#"){
-      const X = x0 + li * 48 + dx * 8, Y = y0 + dy * 8, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
-      for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++){   // each dot a bevelled block, joined to its neighbours
-        const lv = (j === 0 && !on(0, -1)) || (i === 0 && !on(-1, 0)) ? 4 : (j === 7 && !on(0, 1)) || (i === 7 && !on(1, 0)) ? 1 : j < 3 ? 3 : 2;
+      const X = x0 + li * 24 + dx * 4, Y = y0 + dy * 4, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++){   // each dot a bevelled block, joined to its neighbours
+        const lv = (j === 0 && !on(0, -1)) || (i === 0 && !on(-1, 0)) ? 4 : (j === 3 && !on(0, 1)) || (i === 3 && !on(1, 0)) ? 1 : j < 2 ? 3 : 2;
         pix.px(X + i, Y + j, R[lv], 3);
       }
     } }));
   });
   const t = INPUT.touch;
-  pix.button(18, (t ? "" : "1  ") + "ONE PLAYER (VS COMPUTER)", WHITE); pix.button(21, (t ? "" : "2  ") + "TWO PLAYERS", WHITE);
-  pix.center(25, t ? "DRAG BACK FROM ANYWHERE AND LET GO TO THROW" : "UP/DOWN ANGLE  HOLD SPACE FOR POWER, LET GO TO THROW  ESC MENU", DIM);
-  pix.center(26, "FIRST TO " + WIN_SCORE + " HITS WINS. MIND THE WIND.", DIM);
-  pix.center(27, "DIFFICULTY: " + level.toUpperCase() + " (CHANGE IN THE MENU)", DIM);
+  pix.button(14, (t ? "" : "1  ") + "ONE PLAYER (VS COMPUTER)", WHITE); pix.button(17, (t ? "" : "2  ") + "TWO PLAYERS", WHITE);
+  if (t) pix.center(21, "DRAG BACK FROM ANYWHERE AND LET GO TO THROW", DIM);
+  else { pix.center(21, "UP/DOWN ANGLE - HOLD SPACE FOR POWER", DIM); pix.center(22, "LET GO TO THROW - ESC MENU", DIM); }
+  pix.center(23, "FIRST TO " + WIN_SCORE + " HITS WINS. MIND THE WIND.", DIM);
+  pix.center(24, "DIFFICULTY: " + level.toUpperCase() + " (CHANGE IN THE MENU)", DIM);
 }
 function draw(t){
   const dim = state === "title" ? 0.45 : 1, key = dim + "";
   if (city.dirty || back.key !== key){ city.dirty = false; back.key = key; bakeBack(dim); }
   pix.clear(); pix.d.set(back.d); pix.lay.set(back.lay);
-  for (let k = 0; k < 70; k++){   // twinkling stars
+  for (let k = 0; k < 40; k++){   // twinkling stars
     const x = Math.floor(hash(k, 11) * pix.W), y = Math.floor(hash(k, 12) * pix.H * 0.45), v = (60 + 120 * hash(k, 13)) * (0.6 + 0.4 * Math.sin(t * 0.0015 + k)) * dim;
     pix.px(x, y, [v, v, v * 1.15], -1);
   }
@@ -1783,8 +1790,8 @@ function draw(t){
     const A = apes[turn], dir = turn === 0 ? 1 : -1, a = A.angle * Math.PI / 180, R = pix.ramp(PLAYER_PIX[turn]);
     lastTrail[turn].forEach((p, i) => { if (i % 3 === 0) pix.px(p.x / PU, p.y / PU, R[1], 1); });   // your last throw, faintly
     const [hx, hy] = hand(A, dir).map(v => v / PU), n = 2 + Math.round(A.power / 14);   // an aim guide whose length shows power
-    for (let k = 1; k <= n; k++) pix.px(hx + Math.cos(a) * dir * k * 5, hy - Math.sin(a) * k * 5, k === n ? R[4] : R[2], 3);
-    const ex = hx + Math.cos(a) * dir * n * 5, ey = hy - Math.sin(a) * n * 5;
+    for (let k = 1; k <= n; k++) pix.px(hx + Math.cos(a) * dir * k * 3, hy - Math.sin(a) * k * 3, k === n ? R[4] : R[2], 3);
+    const ex = hx + Math.cos(a) * dir * n * 3, ey = hy - Math.sin(a) * n * 3;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) pix.px(ex + dx, ey + dy, R[4], 3);
     // the predicted arc, as dots: all of it on Easy, its start on Normal (only for people, not the computer)
     const share = ARC_SHARE[level];
@@ -1792,15 +1799,15 @@ function draw(t){
       const key = turn + "," + Math.round(A.angle) + "," + Math.round(A.power) + "," + wind;
       if (!arc || arc.key !== key) arc = { key, ...predict(turn, Math.round(A.angle), Math.round(A.power)) };
       const pts = arc.path, m = Math.ceil(pts.length * share);
-      for (let k = 6; k < m; k += 3){ const p = pts[k]; if (p.y > 0) pix.px(p.x / PU, p.y / PU, R[k / m < 0.6 ? 3 : 2], 3); }
-      if (share === 1 && arc.ape === 1 - turn){ const p = pts[pts.length - 1]; for (let d = -2; d <= 2; d++){ pix.px(p.x / PU + d, p.y / PU + d, [255, 255, 255], 3); pix.px(p.x / PU + d, p.y / PU - d, [255, 255, 255], 3); } }   // it would hit: an X marks it
+      for (let k = 6; k < m; k += 4){ const p = pts[k]; if (p.y > 0) pix.px(p.x / PU, p.y / PU, R[k / m < 0.6 ? 3 : 2], 3); }
+      if (share === 1 && arc.ape === 1 - turn){ const p = pts[pts.length - 1]; for (let d = -1; d <= 1; d++){ pix.px(p.x / PU + d, p.y / PU + d, [255, 255, 255], 3); pix.px(p.x / PU + d, p.y / PU - d, [255, 255, 255], 3); } }   // it would hit: an X marks it
     }
     drawArrow(A, turn, t);
   }
-  trail.forEach((p, i) => { if (i % 2 === 0) pix.px(p.x / PU, p.y / PU, [150, 140, 90], 1); });
+  trail.forEach((p, i) => { if (i % 3 === 0) pix.px(p.x / PU, p.y / PU, [150, 140, 90], 1); });
   if (fruit){
     if (fruit.y >= 0) drawFruit(fruit);
-    else for (let k = 0; k < 3; k++) pix.rect(fruit.x / PU - k, 24 + k, 2 * k + 1, 1, [255, 230, 120], 3);   // above the screen: a mark shows where it will come down
+    else for (let k = 0; k < 2; k++) pix.rect(Math.round(fruit.x / PU) - k, 15 + k, 2 * k + 1, 1, [255, 230, 120], 3);   // above the screen: a mark shows where it will come down
   }
   pix.edges();
   // HUD: each player's score, angle and power on their side; wind in the middle
@@ -1809,19 +1816,19 @@ function draw(t){
     pix.text(i === 0 ? 1 : TGW - 1 - s.length, 0, s, c); pix.text(i === 0 ? 1 : TGW - 1 - a.length, 1, a, c);
   }
   if (state === "aim" || state === "cpu"){   // the power meter, with a mark where your last throw was
-    const A = apes[turn], R = pix.ramp(PLAYER_PIX[turn]), w = 120, x0 = (pix.W - w) >> 1, y0 = 26, fill = Math.round(A.power / 100 * w), lp = lastPower[turn];
-    pix.rect(x0 - 1, y0 - 1, w + 2, 6, [20, 22, 34], 4);
-    for (let x = 0; x < w; x++) for (let y = 0; y < 4; y++) pix.px(x0 + x, y0 + y, x < fill ? R[y ? 3 : 4] : [44, 46, 62], 4);
-    if (lp !== null){ const m = x0 + Math.min(w - 1, Math.round(lp / 100 * w)); pix.rect(m, y0 - 2, 1, 8, [240, 240, 240], 4); }
+    const A = apes[turn], R = pix.ramp(PLAYER_PIX[turn]), w = 60, x0 = (pix.W - w) >> 1, y0 = 16, fill = Math.round(A.power / 100 * w), lp = lastPower[turn];
+    pix.rect(x0 - 1, y0 - 1, w + 2, 4, [20, 22, 34], 4);
+    for (let x = 0; x < w; x++) for (let y = 0; y < 2; y++) pix.px(x0 + x, y0 + y, x < fill ? R[y ? 3 : 4] : [44, 46, 62], 4);
+    if (lp !== null){ const m = x0 + Math.min(w - 1, Math.round(lp / 100 * w)); pix.rect(m, y0 - 2, 1, 6, [240, 240, 240], 4); }
     if (state === "aim" && charge === null && !sling && msgT <= 0) pix.center(3, INPUT.touch ? "DRAG BACK AND LET GO TO THROW" : "HOLD SPACE FOR POWER, LET GO TO THROW", DIM);
   }
   const arrows = wind === 0 ? "CALM" : (wind < 0 ? "<".repeat(Math.min(5, Math.ceil(-wind / 2))) + " " + -wind : wind + " " + ">".repeat(Math.min(5, Math.ceil(wind / 2))));
   pix.center(0, "WIND", WHITE); pix.center(1, arrows, WHITE);
   if (state === "over"){
     const w = score[0] > score[1] ? 0 : 1;
-    pix.center(9, `  ${name(w)} WINS ${score[w]}-${score[1 - w]}  `, PLAYER_RGB[w]);
-    pix.center(11, INPUT.touch ? "  TAP FOR A NEW MATCH  " : "  PRESS SPACE FOR A NEW MATCH  ", WHITE);
-  } else if (msgT > 0) pix.center(9, "  " + msg + "  ", WHITE);
+    say2(8, `${name(w)} WINS ${score[w]}-${score[1 - w]}`, PLAYER_RGB[w]);
+    say2(10, INPUT.touch ? "TAP FOR A NEW MATCH" : "PRESS SPACE FOR A NEW MATCH", WHITE);
+  } else if (msgT > 0) say2(8, msg, WHITE);
   if (!INPUT.touch) pix.text(TGW - 11, TGH - 1, " ESC MENU ", DIM);
   finish();
 }
@@ -1889,9 +1896,9 @@ createTouch(cv, {
   up: p => {
     if (p === sling){ sling = null; if (p.moved >= 12 && state === "aim"){ aimFrom(p); lastPower[turn] = apes[turn].power; throwFruit(turn); } return; }
     if (!p.tap) return;
-    if (menu.open) return menu.tap(Math.floor(p.x * TGW), Math.floor(p.y * TGH));
-    const gy = Math.floor(p.y * TGH);
-    if (state === "title"){ if (gy >= 18 && gy < 21) start("cpu"); else if (gy >= 21 && gy < 24) start("two"); }
+    if (menu.open) return menu.tap(...pix.gridAt(p.x, p.y));
+    const gy = pix.gridAt(p.x, p.y)[1];
+    if (state === "title"){ if (gy >= 14 && gy < 17) start("cpu"); else if (gy >= 17 && gy < 20) start("two"); }
     else if (state === "over") action();
   }
 });
