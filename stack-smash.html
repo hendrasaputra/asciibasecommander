@@ -931,9 +931,9 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     const gap = INPUT.touch ? 2 : 1;   // rows two lines apart on a touch screen, so a finger can pick one
     // a list longer than the screen shows a window around the chosen row, with ^ and v marks
     const n = Math.min(R.length, Math.max(3, Math.floor((GH - 8 - (note ? 1 : 0)) / gap))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
-    // 40 wide, or wider (up to the screen) when a row or the note needs it
+    // 40 wide, or wider when a row or the note needs it, but never wider than the screen
     const longest = Math.max(title.length + 4, note.length + 4, ...R.map(r => 5 + Math.max(18, r.label.length) + (r.value ? r.value().length + 4 : 0) + 3));
-    const w = Math.max(40, Math.min(GW - 2, longest)), h = n * gap + 6 - (gap - 1) + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
+    const w = Math.min(GW - 2, Math.max(40, longest)), h = n * gap + 6 - (gap - 1) + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
     const edge = "+" + "-".repeat(w - 2) + "+";
     text(x0, top, edge, dim); text(x0, top + h - 1, edge, dim);
     for (let y = 1; y < h - 1; y++){
@@ -1155,7 +1155,8 @@ function createFeel(){
       if (!left) return;
       const k = amp * left / dur;
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = SCREEN.bg; ctx.fillRect(0, 0, cv.width, cv.height); ctx.restore();
-      ctx.translate(Math.round((Math.random() * 2 - 1) * k), Math.round((Math.random() * 2 - 1) * k));
+      const u = +cv.dataset.px || 1;   // whole pixels of a pixel-art picture (src/pixel.js sets it), else CSS pixels
+      ctx.translate(Math.round((Math.random() * 2 - 1) * k / u) * u, Math.round((Math.random() * 2 - 1) * k / u) * u);
     },
     end(ctx, cv){
       ctx.restore();
@@ -1322,19 +1323,37 @@ function createPixels(W, H, cols, rows, unit){
     fit(stage, cv, ctx){
       const r = stage.getBoundingClientRect(); if (!r.width) return false;
       const dpr = Math.min(window.devicePixelRatio || 1, 3), fit = Math.min(r.width / W, r.height / H);
-      scale = Math.floor(fit * dpr) / dpr;
-      if (scale < fit * 0.9) scale = fit;   // whole pixels would waste too much of the stage (and shrink the text)
+      // Whole device pixels per pixel, with black bars around the picture. A picture with its own pixel font (P.font)
+      // keeps to that always. The others are too big for a phone at whole pixels (a 400-pixel-wide picture on a
+      // 386-point screen would be drawn 200 points wide), so when whole pixels waste more than 10% of the stage they
+      // scale by a fraction instead, until they are redrawn smaller. ponytail: at least 1 device pixel, so a stage
+      // smaller than that crops the picture.
+      scale = Math.max(1, Math.floor(fit * dpr)) / dpr;
+      if (!P.font && scale < fit * 0.9) scale = fit;
       sizeCanvas(cv, ctx, W * scale, H * scale, dpr, 1);
+      // placed on whole device pixels (translate(-50%) can land on a half one, which blurs the picture)
+      const at = (room, size) => Math.round((room - size) / 2 * dpr) / dpr + "px";
+      cv.style.transform = "none"; cv.style.left = at(r.width, W * scale); cv.style.top = at(r.height, H * scale);
+      cv.dataset.px = scale;   // CSS pixels per pixel, so the screen shake (createFeel) moves by whole pixels
       return true;
     },
+    // With P.font set (PIXEL_FONT), text is drawn into the picture in that pixel font at its native size, one cell
+    // font.w x font.h pixels, instead of in a smooth font over it. gridAt(fx, fy): the text cell at a fraction of
+    // the picture (a pointer), for menu.tap.
+    font: null,
+    gridAt(fx, fy){
+      const F = P.font; if (!F) return [Math.floor(fx * cols), Math.floor(fy * rows)];
+      return [Math.floor((fx * W - ((W - cols * F.w) >> 1)) / F.w), Math.floor(fy * H / F.h)];
+    },
     present(ctx){
+      if (P.font) drawFont();
       bx.putImageData(img, 0, 0);
       ctx.imageSmoothingEnabled = false;
       ctx.fillStyle = SCREEN.bg; ctx.fillRect(0, 0, W * scale, H * scale);   // the sky is see-through
       ctx.drawImage(buf, 0, 0, W * scale, H * scale);
       const cw = W * scale / cols, ch = H * scale / rows, f = Math.floor(Math.min(ch * 0.92, cw / 0.6));
       ctx.font = f + "px " + MONO; ctx.textBaseline = "middle";
-      for (const t of texts){
+      for (const t of P.font ? [] : texts){
         const y = (t.y + 0.5) * ch;
         if (t.layer >= MENU_LAYER){ ctx.fillStyle = "#000"; ctx.fillRect(t.x * cw, t.y * ch, t.s.length * cw, ch); }
         const c = P.rgb(t.v); if (!(c[0] + c[1] + c[2])) continue;
@@ -1343,8 +1362,30 @@ function createPixels(W, H, cols, rows, unit){
       }
     }
   };
+  function drawFont(){
+    const F = P.font, x0 = (W - cols * F.w) >> 1, set = (x, y, c) => { if (x < 0 || y < 0 || x >= W || y >= H) return; const p = 4 * (y * W + x); d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2]; d[p + 3] = 255; };
+    for (const t of texts){
+      const X = x0 + t.x * F.w, Y = t.y * F.h, c = P.rgb(t.v);
+      if (t.layer >= MENU_LAYER) for (let y = 0; y < F.h; y++) for (let x = 0; x < t.s.length * F.w; x++) set(X + x, Y + y, [0, 0, 0]);
+      if (!(c[0] + c[1] + c[2])) continue;
+      for (let i = 0; i < t.s.length; i++){
+        const g = F.glyphs[t.s[i]] || F.glyphs[t.s[i].toUpperCase()]; if (!g) continue;
+        for (let r = 0; r < 5; r++) for (let k = 0; k < 3; k++) if (+g[r] >> (2 - k) & 1) set(X + i * F.w + k, Y + 1 + r, c);
+      }
+    }
+  }
   return P;
 }
+// A 3 x 5 pixel font, drawn for this arcade: each glyph is five rows, a digit 0-7 per row whose bits are the three
+// columns, left to right. Cells are 4 x 7 pixels: a column and two rows of space.
+const PIXEL_FONT = { w: 4, h: 7, glyphs: {
+  A: "25755", B: "65656", C: "34443", D: "65556", E: "74647", F: "74644", G: "34553", H: "55755", I: "72227", J: "11152",
+  K: "55655", L: "44447", M: "57755", N: "65555", O: "75557", P: "65644", Q: "25553", R: "65655", S: "34216", T: "72222",
+  U: "55557", V: "55552", W: "55775", X: "55255", Y: "55222", Z: "71247",
+  0: "25552", 1: "26227", 2: "61247", 3: "61216", 4: "55711", 5: "74616", 6: "34757", 7: "71222", 8: "75757", 9: "75716",
+  "!": "22202", "-": "00700", ".": "00002", ":": "02020", "<": "12421", ">": "42124", "^": "25000", "|": "22222", "+": "02720",
+  "(": "12221", ")": "42224", "/": "11244", "'": "22000", ",": "00024", "?": "61202", "*": "05250", "#": "57575", "=": "07070", "_": "00007"
+} };
 (() => {
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");

@@ -195,7 +195,8 @@ function createFeel(){
       if (!left) return;
       const k = amp * left / dur;
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = SCREEN.bg; ctx.fillRect(0, 0, cv.width, cv.height); ctx.restore();
-      ctx.translate(Math.round((Math.random() * 2 - 1) * k), Math.round((Math.random() * 2 - 1) * k));
+      const u = +cv.dataset.px || 1;   // whole pixels of a pixel-art picture (src/pixel.js sets it), else CSS pixels
+      ctx.translate(Math.round((Math.random() * 2 - 1) * k / u) * u, Math.round((Math.random() * 2 - 1) * k / u) * u);
     },
     end(ctx, cv){
       ctx.restore();

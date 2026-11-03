@@ -20,7 +20,7 @@ Mines' label is a picture of the game itself.
 | [Crater Duel](crater-duel.html) | Scorched Earth | Pixel art drawn in code: tanks after a modern tank, a dusk sky, layered ground with round craters. Hills that collapse after each blast, falling tanks, four weapons. Two to four tanks (people or the computer), money and a shop between rounds (big shots, MIRVs, dirt bombs, fuel, shields), and tanks that drive on fuel |
 | [Stack Smash](stack-smash.html) | Tetris, Columns, Puyo Puyo | Pixel art drawn in code: bevelled tiles, cut jewels and round blobs with eyes; cleared lines burst into boxes that land on the stack. T-spins, back-to-back and combos; Versus, where clears send garbage to the other well (against the computer or a second player); and Columns and Puyo games in the same well, with chains |
 | [Rover Patrol](rover-patrol.html) | Moon Patrol, Ascii Patrol | Pixel art drawn in code: a moon buggy after the Apollo rover, the turning Earth, shaded hills. Sprung wheels over bumps; shot rocks, UFOs and the rover break into rolling rubble. Hold jump to jump further; ground tanks, rolling boulders and diving fighters further along; start at any checkpoint you have reached |
-| [Meadow Mines](meadow-mines.html) | Minesweeper | Pixel art drawn in code: a grass meadow you dig into, numbered dirt, flags. The first dig is always safe; digging a number whose mines are all flagged clears around it; a mine sets the rest off one after another. Easy 9x9, Medium 16x16 and Hard 30x16 (it stands upright on a phone held upright), with best times |
+| [Meadow Mines](meadow-mines.html) | Minesweeper | Pixel art drawn in code: a grass meadow you dig into, numbered dirt, flags. The first dig is always safe; digging a number whose mines are all flagged clears around it; a mine sets the rest off one after another. Easy 9x9, Medium 16x16, Hard 30x16 and Custom (9 to 30 across, 9 to 24 down, up to (width - 1) x (height - 1) mines, as in the Windows game); a long field stands upright on a phone held upright. Best times for the three set sizes. Follows the pixel art rules fully: whole-pixel scaling with black bars, one pixel size, and its text in a 3x5 pixel font at native size |
 | [Physics Sandbox](ascii-physics.html) | | The engine itself: throw balls and boxes under a lamp |
 
 All games are original code and art. Rover Patrol takes its idea from msokalski's
@@ -40,7 +40,7 @@ Torchlight Dungeons, a Moria adaptation, began here and has moved to its own pro
   and every button is at least 44 pixels tall. On a phone, the menu's rows are spaced out for fingers.
 - **Pause menu:** drawn on the game screen. It has resume, restart, the game's own options (Rooftop Rumble's mode and
   difficulty, Crater Duel's mode and number of tanks, Stack Smash's game, opponent and starting level, Rover Patrol's
-  starting point, Meadow Mines' field size), sound, the TV filter, and the way back to the shelf.
+  starting point, Meadow Mines' field size and custom width, height and mines), sound, the TV filter, and the way back to the shelf.
 - **Tube TV filter** (`settings.html`, shared by every game): scanlines, phosphor glow, rounded glass and a faint
   flicker over the game screen.
 - **Game feel**, in every game: screen shake, a short freeze on heavy hits, a flash, and sparks, embers, smoke and
@@ -69,7 +69,7 @@ physics.
   music), touch (`createTouch`, the header buttons), fitting the canvas to a fixed grid, resizing, the frame loop, and shake, freeze and
   flash (`createFeel`).
 - `src/pixel.js`: native pixel art (`createPixels`): a small canvas scaled to fit, shaded balls and plates, lit
-  outlines, light, and sharp text and menus over it. All five cartridges draw with it. Their text uses a coarser grid than the picture (about 6 x 12 pixels a letter), so it stays readable on a phone.
+  outlines, light, and sharp text and menus over it. All six cartridges draw with it. Five of them put their text on a coarser grid than the picture (about 6 x 12 pixels a letter), in a smooth font, so it stays readable on a phone; Meadow Mines draws its text into the picture in `PIXEL_FONT`, a 3 x 5 pixel font, at native size.
 - `src/fx.js`: the cartridges' particle effects (`createFx`): sparks, embers, smoke, debris and light.
 - `src/arcade/pad.css`: the styles every cartridge page shares (layout, header buttons, phone on its side); `build.sh` puts
   it into each page.
@@ -110,7 +110,7 @@ Everything is saved in the browser's localStorage. Nothing is sent anywhere.
 | `asciiPhysics.v3.display` | The sandbox's own display settings |
 | `<game>.v1.scores` | High scores (Base Commander, Stack Smash's Classic game, Rover Patrol) |
 | `stackSmash.v1.scores.columns`, `stackSmash.v1.scores.puyo` | Stack Smash's Columns and Puyo high scores |
-| `meadowMines.v1.level`, `meadowMines.v1.best` | Meadow Mines' field size and best times |
+| `meadowMines.v1.level`, `meadowMines.v1.custom`, `meadowMines.v1.best` | Meadow Mines' field size, custom field and best times |
 | `rooftopRumble.v1.difficulty` | Rooftop Rumble's difficulty |
 | `roverPatrol.v1.furthest` | The furthest checkpoint reached in Rover Patrol, for choosing where to start |
 | `<game>.v1.muted` | Sound on or off, per game |

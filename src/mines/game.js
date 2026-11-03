@@ -2,15 +2,21 @@
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
 // A meadow of grass squares with mines buried under some. Dig a square to see how many mines touch it; flag the
-// ones you think hide a mine. Drawn as pixel art (src/pixel.js), one tile T pixels square, under a HUD band. The
-// text grid is sized from the fitted picture, about 7 x 14 CSS pixels a letter, so the HUD and menu read on a phone.
-const T = 12, HUD = 22;
-const LEVELS = { easy: [9, 9, 10], medium: [16, 16, 40], hard: [30, 16, 99] };   // columns, rows, mines (wide)
+// ones you think hide a mine. Drawn as pixel art (src/pixel.js), one tile T pixels square, under a HUD band, with
+// the HUD and menu in the pixel font at its native size. The picture is at least MIN_W x MIN_H pixels below the HUD,
+// so the menu (36 letters wide) fits; a smaller field sits in the middle of a hedge.
+const T = 12, HUD = 22, MIN_W = 144, MIN_H = 144;
+const LEVELS = { easy: [9, 9, 10], medium: [16, 16, 40], hard: [30, 16, 99], custom: null };   // columns, rows, mines (wide)
 const NAMES = Object.keys(LEVELS);
+// Custom fields, as in the Windows game: 9 to 30 across, 9 to 24 down, 10 mines up to (w - 1) x (h - 1)
+const CW = [9, 30], CH = [9, 24], maxMines = c => (c.w - 1) * (c.h - 1);
 const GRASS = [[84, 158, 68], [94, 170, 76]], DIRT = [[150, 110, 70], [140, 102, 64]], SCORCH = [60, 44, 36];
 const NUM = [null, [90, 170, 255], [120, 230, 110], [255, 110, 90], [200, 140, 255], [255, 196, 70], [90, 232, 220], [244, 244, 244], [176, 176, 176]];
-const DIGITS = ["###", "#.#", "#.#", "#.#", "###", ".#.", "##.", ".#.", ".#.", "###", "###", "..#", "###", "#..", "###", "###", "..#", "###", "..#", "###",
-  "#.#", "#.#", "###", "..#", "..#", "###", "#..", "###", "..#", "###", "###", "#..", "###", "#.#", "###", "###", "..#", "..#", "#..", "#..", "###", "#.#", "###", "#.#", "###"];
+const DIGITS = [null,   // 5 x 7, the tiles' numbers
+  ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."], [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
+  ["####.", "....#", "....#", ".###.", "....#", "....#", "####."], ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+  ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."], [".###.", "#....", "#....", "####.", "#...#", "#...#", ".###."],
+  ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."], [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."]];
 const WHITE = [1.6, 1.6, 1.6], DIM = [0.4, 0.45, 0.6], ACCENT = [1.6, 1.3, 0.5], RED = [1.8, 0.4, 0.3], GREEN = [0.6, 1.6, 0.6];
 
 applyArcadeSettings(defaultDisplay());   // the tube TV filter from the shared Settings page
@@ -18,16 +24,17 @@ const store = prefs("meadowMines.v1.", "Meadow Mines");
 const audio = createAudio({ label: "Meadow Mines", store, sounds: CRATER_SFX, volume: 1, minGap: 0.05 });
 const sfx = name => audio.play(name);
 const feel = createFeel(), vfx = createFx();
-const best = store.getJSON("best", {});   // fastest clear in seconds, per level
+const best = store.getJSON("best", {});   // fastest clear in seconds, per level (not custom fields)
+const custom = { w: 20, h: 14, m: 45, ...store.getJSON("custom", {}) };
 
 let pix = null, ready = false, level = NAMES.includes(store.get("level")) ? store.get("level") : "easy", nextLevel = level;
-let bc = 0, br = 0, nMines = 0, mine, open, flag, cnt, gone, nOpen = 0, nFlags = 0;
+let bc = 0, br = 0, BX = 0, BY = HUD, nMines = 0, mine, open, flag, cnt, gone, nOpen = 0, nFlags = 0;
 let state = "ready", time = 0, overT = 0, boomQ = [], hitAt = -1, digMode = true, cursor = { x: 0, y: 0 }, msg = "";
 
 /* ---------- the field ---------- */
 function newField(){
   level = nextLevel; store.set("level", level);
-  const [w, h, m] = LEVELS[level], r = stage.getBoundingClientRect();
+  const [w, h, m] = LEVELS[level] || [custom.w, custom.h, custom.m], r = stage.getBoundingClientRect();
   [bc, br] = r.height > r.width && w > h ? [h, w] : [w, h];   // a long field stands up on a phone held upright
   nMines = m; const n = bc * br;
   mine = new Uint8Array(n); open = new Uint8Array(n); flag = new Uint8Array(n); cnt = new Uint8Array(n); gone = new Uint8Array(n);
@@ -96,18 +103,18 @@ function win(){
   for (let i = 0; i < bc * br; i++) if (mine[i] && !flag[i]){ flag[i] = 1; nFlags++; }
   const s = Math.floor(time), prev = best[level];
   msg = "CLEARED IN " + s + "S";
-  if (prev === undefined || s < prev){ best[level] = s; store.setJSON("best", best); if (prev !== undefined) msg += " - NEW BEST"; }
-  for (let k = 0; k < 6; k++) vfx.burst(pix.W * (0.15 + k * 0.14), HUD + br * T * 0.4, { n: 12, speed: 120, life: 0.9, g: 160 });
+  if (level !== "custom" && (prev === undefined || s < prev)){ best[level] = s; store.setJSON("best", best); if (prev !== undefined) msg += " - NEW BEST"; }
+  for (let k = 0; k < 6; k++) vfx.burst(pix.W * (0.15 + k * 0.14), BY + br * T * 0.4, { n: 12, speed: 120, life: 0.9, g: 160 });
   sfx("win");
 }
-const mid = i => [(i % bc + 0.5) * T, HUD + (((i / bc) | 0) + 0.5) * T];
+const mid = i => [BX + (i % bc + 0.5) * T, BY + (((i / bc) | 0) + 0.5) * T];
 
 /* ---------- fitting ---------- */
 function layout(){
-  const r = stage.getBoundingClientRect(); if (!r.width || !bc) return;
-  const W = bc * T, H = HUD + br * T, fit = Math.min(r.width / W, r.height / H);
-  const cols = Math.max(44, Math.round(W * fit / 7)), rows = Math.max(16, Math.round(H * fit / 14));
-  if (!pix || pix.W !== W || pix.H !== H || pix.cols !== cols || pix.rows !== rows) pix = createPixels(W, H, cols, rows, 1);
+  if (!bc) return;
+  const W = Math.max(bc * T, MIN_W), H = HUD + Math.max(br * T, MIN_H), F = PIXEL_FONT;
+  BX = (W - bc * T) >> 1; BY = HUD + ((H - HUD - br * T) >> 1);
+  if (!pix || pix.W !== W || pix.H !== H){ pix = createPixels(W, H, Math.floor(W / F.w), Math.floor(H / F.h), 1); pix.font = F; }
   ready = pix.fit(stage, cv, ctx);
 }
 // the DIG / FLAG switch in the middle of the HUD, in pixels
@@ -133,7 +140,7 @@ function ground(x0, y0, tx, ty, base){
   pix.px(x0 + 2 + h % 7, y0 + 2 + (h >> 3) % 7, R[1], 1); pix.px(x0 + 3 + (h >> 2) % 6, y0 + 4 + (h >> 4) % 6, R[3], 1);
 }
 function digit(x0, y0, d, c){
-  for (let r = 0; r < 5; r++) for (let k = 0; k < 3; k++) if (DIGITS[d * 5 + r][k] === "#") pix.rect(x0 + 3 + k * 2, y0 + 1 + r * 2, 2, 2, c, 3);
+  for (let r = 0; r < 7; r++) for (let k = 0; k < 5; k++) if (DIGITS[d][r][k] === "#") pix.px(x0 + 4 + k, y0 + 3 + r, c, 3);
 }
 function drawFlag(x0, y0, wrong){
   pix.rect(x0 + 3, y0 + 9, 6, 2, [70, 60, 50], 3);
@@ -157,9 +164,11 @@ function draw(){
     const rim = y === b.y || y === b.y + b.h - 1 || x === b.x || x === b.x + b.w - 1;
     pix.px(x, y, rim ? (digMode ? [140, 104, 66] : [200, 70, 56]) : (digMode ? [64, 46, 30] : [88, 30, 26]), 3);
   }
-  // the field
+  // the hedge around a small field, then the field
+  const HR = pix.ramp([46, 92, 50]);
+  for (let y = HUD; y < pix.H; y++) for (let x = 0; x < W; x++) pix.px(x, y, HR[pix.bayer(x, y) < 0.12 ? 3 : hash(x >> 2, y >> 2) % 5 ? 1 : 2], 1);
   for (let ty = 0; ty < br; ty++) for (let tx = 0; tx < bc; tx++){
-    const i = ty * bc + tx, x0 = tx * T, y0 = HUD + ty * T, over = state === "lost";
+    const i = ty * bc + tx, x0 = BX + tx * T, y0 = BY + ty * T, over = state === "lost";
     if (gone[i]){ ground(x0, y0, tx, ty, i === hitAt ? [200, 60, 40] : SCORCH); continue; }
     if (open[i]){ ground(x0, y0, tx, ty, DIRT[(tx + ty) & 1]); if (cnt[i]) digit(x0, y0, cnt[i], NUM[cnt[i]]); continue; }
     if (over && mine[i] && !flag[i]){ ground(x0, y0, tx, ty, DIRT[(tx + ty) & 1]); drawMine(x0, y0); continue; }
@@ -167,13 +176,13 @@ function draw(){
     if (flag[i]) drawFlag(x0, y0, over && !mine[i]);
   }
   if (!INPUT.touch && state !== "lost" && state !== "won"){   // the keyboard cursor
-    const x0 = cursor.x * T, y0 = HUD + cursor.y * T, c = [255, 226, 90];
+    const x0 = BX + cursor.x * T, y0 = BY + cursor.y * T, c = [255, 226, 90];
     for (let k = 0; k < T; k++){ pix.px(x0 + k, y0, c, 3); pix.px(x0 + k, y0 + T - 1, c, 3); pix.px(x0, y0 + k, c, 3); pix.px(x0 + T - 1, y0 + k, c, 3); }
   }
   vfx.draw(pix);
   pix.edges();
   // text over it
-  const C = pix.cols, hr = Math.floor(HUD / 2 / pix.H * pix.rows), bcol = Math.round((b.x + b.w / 2) / W * C);
+  const C = pix.cols, hr = 1, bcol = pix.gridAt((b.x + b.w / 2) / W, 0)[0];
   const left = nMines - nFlags, label = digMode ? "DIG" : "FLAG";
   pix.text(1, hr, String(left).padStart(3, " "), left < 0 ? RED : ACCENT);
   pix.text(bcol - (label.length >> 1), hr, label, WHITE);
@@ -189,19 +198,32 @@ function draw(){
 }
 // a message over the field: text on MENU_LAYER gets a black box behind it
 const say = (row, s, v) => pix.text((pix.cols - s.length - 2) >> 1, row, " " + s + " ", v, MENU_LAYER);
-const bestNote = () => "BEST " + NAMES.map(n => n.toUpperCase() + " " + (best[n] === undefined ? "--" : best[n] + "S")).join("  ");
+const bestNote = () => "BEST " + ["easy", "medium", "hard"].map(n => n.slice(0, n === "medium" ? 3 : 4).toUpperCase() + " " + (best[n] ?? "--")).join(" ");
 
 /* ---------- input ---------- */
 function cellAt(p){
-  const x = Math.floor(p.x * pix.W / T), y = Math.floor((p.y * pix.H - HUD) / T);
+  const x = Math.floor((p.x * pix.W - BX) / T), y = Math.floor((p.y * pix.H - BY) / T);
   return x >= 0 && y >= 0 && x < bc && y < br ? y * bc + x : -1;
 }
 const nextField = () => { if (overT > 0.6) newField(); };
+// A field chosen in the menu starts at once unless a game is under way; then it is used for the next one.
+const chosen = () => { if (state !== "play") newField(); };
+// Custom sizes step by one (mines by five) and wrap round, so tapping a row alone reaches every value.
+const wrap = (v, d, [a, b]) => v + d > b ? a : v + d < a ? b : v + d;
+function setCustom(k, d){
+  if (k === "m") custom.m = wrap(Math.min(custom.m, maxMines(custom)), 5 * d, [10, maxMines(custom)]);
+  else { custom[k] = wrap(custom[k], d, k === "w" ? CW : CH); custom.m = Math.min(custom.m, maxMines(custom)); }
+  store.setJSON("custom", custom); chosen();
+}
 const menu = createMenu(() => [
   { label: "RESUME", select: () => menu.hide() },
   { label: "NEW FIELD", select: () => { menu.hide(); newField(); } },
-  { label: "FIELD", value: () => nextLevel.toUpperCase() + (nextLevel !== level ? " (NEXT)" : ""),
-    change: d => { nextLevel = NAMES[(NAMES.indexOf(nextLevel) + (d || 1) + 3) % 3]; if (state !== "play") newField(); } },
+  { label: "FIELD", value: () => nextLevel.toUpperCase(),
+    change: d => { nextLevel = NAMES[(NAMES.indexOf(nextLevel) + (d || 1) + NAMES.length) % NAMES.length]; chosen(); } },
+  ...(nextLevel === "custom" ? [
+    { label: "  WIDTH", value: () => String(custom.w), change: d => setCustom("w", d || 1) },
+    { label: "  HEIGHT", value: () => String(custom.h), change: d => setCustom("h", d || 1) },
+    { label: "  MINES", value: () => String(custom.m), change: d => setCustom("m", d || 1) }] : []),
   { label: "SOUND", value: () => audio.muted ? "OFF" : "ON", change: () => audio.toggleMute() },
   { label: "DISPLAY SETTINGS", select: () => { location.href = "settings.html"; } },
   { label: "BACK TO CARTRIDGES", select: () => { location.href = "./"; } }
@@ -232,7 +254,7 @@ const touches = createTouch(cv, {
   down: p => { audio.unlock(); p.t = 0; },
   up: p => {
     if (p.done || !p.tap || !pix) return;
-    if (menu.open) return menu.tap(Math.floor(p.x * pix.cols), Math.floor(p.y * pix.rows));
+    if (menu.open) return menu.tap(...pix.gridAt(p.x, p.y));
     if (state === "lost" || state === "won") return nextField();
     const b = button(), x = p.x * pix.W, y = p.y * pix.H;
     if (x >= b.x - 4 && x < b.x + b.w + 4 && y < HUD){ digMode = !digMode; sfx("switch"); return; }

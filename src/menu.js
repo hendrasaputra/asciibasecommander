@@ -39,9 +39,9 @@ function createMenu(rows, { onOpen, onClose, onChange } = {}){
     const gap = INPUT.touch ? 2 : 1;   // rows two lines apart on a touch screen, so a finger can pick one
     // a list longer than the screen shows a window around the chosen row, with ^ and v marks
     const n = Math.min(R.length, Math.max(3, Math.floor((GH - 8 - (note ? 1 : 0)) / gap))), first = Math.max(0, Math.min(m.at - (n >> 1), R.length - n));
-    // 40 wide, or wider (up to the screen) when a row or the note needs it
+    // 40 wide, or wider when a row or the note needs it, but never wider than the screen
     const longest = Math.max(title.length + 4, note.length + 4, ...R.map(r => 5 + Math.max(18, r.label.length) + (r.value ? r.value().length + 4 : 0) + 3));
-    const w = Math.max(40, Math.min(GW - 2, longest)), h = n * gap + 6 - (gap - 1) + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
+    const w = Math.min(GW - 2, Math.max(40, longest)), h = n * gap + 6 - (gap - 1) + (note ? 1 : 0), x0 = (GW - w) >> 1, top = Math.max(1, (GH - h) >> 1);
     const edge = "+" + "-".repeat(w - 2) + "+";
     text(x0, top, edge, dim); text(x0, top + h - 1, edge, dim);
     for (let y = 1; y < h - 1; y++){
