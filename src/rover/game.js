@@ -3,12 +3,11 @@ const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false }), stage = $("stage");
 // A side-scroller after Moon Patrol. Rules run on a grid of world columns and rows: the course scrolls left
 // under the rover, one column at a time. The ground is an engine terrain grid rebuilt every frame, so rubble,
-// dust and the wreck of the rover bounce and roll on it. Everything is drawn as pixel art (src/pixel.js), four
-// pixels to a column and eight to a row, and scrolls smoothly between columns. Text and the menu use their own,
-// coarser grid (TGW x TGH), so the letters are big enough to read on a phone.
+// dust and the wreck of the rover bounce and roll on it. Everything is drawn as pixel art (src/pixel.js) on a
+// 240 x 176 picture, two pixels to a column and four to a row, small enough to scale by whole pixels on a phone, and
+// scrolls smoothly between columns. The text is the pixel font at its native size, on its own 60 x 25 grid.
 const GW = 120, GH = 44, GBASE = GH - 7;          // GBASE: ground row on flat ground
-const TGW = 72, TGH = 28;
-const CW = 8, CH = 16, PU = 2, PX = CW / PU, PY = CH / PU;   // world units per column and row; per pixel; pixels per column and row
+const CW = 8, CH = 16, PU = 4, PX = CW / PU, PY = CH / PU;   // world units per column and row; per pixel; pixels per column and row
 const SEC = 160, POST = 40;                        // course columns per checkpoint; post position in a section
 const CRUISE = 14, VMIN = 8, VMAX = 24;            // speed in columns per second
 const JUMPV = 18, G = 44, BOMB_G = 30;             // rows per second, rows per second squared
@@ -26,7 +25,7 @@ const ROVER_RGB = [1.6, 1.3, 0.5], BOMB_RGB = [2.6, 0.2, 0.1], FLASH = [1.8, 0.9
 const UFO_RGB = { saucer: [0.6, 1.6, 0.8], bomber: [1.6, 0.5, 1.4], fighter: [1.7, 1.0, 0.3] };
 const ROCK = { name: "rock", density: 1.4, e: 0.25, mu: 0.8, kd: 0.95, ks: 0.15, shine: 8 };
 const PART = { name: "part", density: 0.8, e: 0.45, mu: 0.6, kd: 0.9, ks: 0.6, shine: 24 };
-const FONT = {   // 5x5 block letters for the title, drawn two cells wide per dot
+const FONT = {   // 5x5 block letters for the title, each dot two columns by one row (4 x 4 pixels)
   R: ["####.", "#...#", "####.", "#..#.", "#...#"], O: [".###.", "#...#", "#...#", "#...#", ".###."],
   V: ["#...#", "#...#", "#...#", ".#.#.", "..#.."], E: ["#####", "#....", "####.", "#....", "#####"],
   P: ["####.", "#...#", "####.", "#....", "#...."], A: [".###.", "#...#", "#####", "#...#", "#...#"],
@@ -36,9 +35,11 @@ const FONT = {   // 5x5 block letters for the title, drawn two cells wide per do
 applyArcadeSettings(defaultDisplay());   // the tube TV filter from the shared Settings page
 const world = new World(); world.openTop = true;
 world.w = GW * CW; world.h = GH * CH; world.unit = CW; world.drag = 2e-4 * (600 / world.h) ** 2; world.g = { x: 0, y: world.h * 1.2 };
-const pix = createPixels(GW * PX, GH * PY, TGW, TGH, PU);
+const pix = createPixels(GW * PX, GH * PY, GW * PX / PIXEL_FONT.w, Math.floor(GH * PY / PIXEL_FONT.h), PU);
+pix.font = PIXEL_FONT;
+const TGW = pix.cols, TGH = pix.rows;
 let ready = false, state = "title", stateT = 0;
-const stars = Array.from({ length: 140 }, () => ({ x: Math.random() * GW * PX, y: 16 + Math.random() * 180, ph: Math.random() * 6.283, b: Math.random() }));
+const stars = Array.from({ length: 70 }, () => ({ x: Math.random() * GW * PX, y: 8 + Math.random() * 90, ph: Math.random() * 6.283, b: Math.random() }));
 let scroll = 0, sc = 0, speed = CRUISE, features = [], genTo = 0, seed = 1, gr = new Int16Array(GW + 16);
 let grounded = true, by = 0, vy = 0, wy = [0, 0, 0], airT = 0;
 let ufos = [], bombs = [], fShots = [], uShots = [], tShots = [], flashes = [], waveT = 0, fireT = 0;
@@ -328,10 +329,10 @@ function updateUfos(dt, x){
 }
 
 /* ---------- drawing ---------- */
-// Pixel art, drawn in code. The buggy follows the Apollo moon buggy: a low open frame on big wire-mesh wheels under
-// gold fenders, two seats (the driver in front), an umbrella dish on a mast, an equipment rack at the back; ours
-// adds a cannon at the nose and one pointing up between the seats. Its frame tilts with the wheels, which ride the
-// ground on their own. Things that can wreck it (craters, rocks, mines, tanks, boulders, bombs) are in reds.
+// Pixel art, drawn in code. The buggy follows the Apollo moon buggy: a low open frame on big wheels under gold
+// fenders, two seats (the driver in front), an umbrella dish on a mast, an equipment rack at the back; ours adds a
+// cannon at the nose and one pointing up between the seats. Its frame tilts with the wheels, which ride the ground on
+// their own. Things that can wreck it (craters, rocks, mines, tanks, boulders, bombs) are in reds.
 const C = {
   far: [62, 68, 108], hill: [92, 92, 118], dust: [178, 170, 154], earth: [52, 104, 186], land: [96, 140, 72], cloud: [232, 236, 240],
   hull: [222, 224, 230], gold: [226, 170, 62], frame: [126, 130, 142], seat: [66, 72, 92], tire: [98, 100, 110], rim: [176, 178, 188],
@@ -351,7 +352,7 @@ function surf(x){
 const hash = (x, y) => pixHash(x, y);
 function drawSky(t){
   // the earth, slowly turning: oceans, land and cloud from noise, lit from the left, with a dither at the terminator
-  const ex = (GW - 18) * PX, ey = 9 * PY, er = 24, R = { o: pix.ramp(C.earth), l: pix.ramp(C.land), c: pix.ramp(C.cloud) };
+  const ex = (GW - 18) * PX, ey = 9 * PY, er = 12, R = { o: pix.ramp(C.earth), l: pix.ramp(C.land), c: pix.ramp(C.cloud) };
   for (let y = -er; y <= er; y++) for (let x = -er; x <= er; x++){
     const dx = (x + 0.5) / er, dy = (y + 0.5) / er, nn = dx * dx + dy * dy; if (nn > 1) continue;
     const nz = Math.sqrt(1 - nn), lon = Math.atan2(dx, nz) + t * 0.00003, lat = Math.asin(dy);
@@ -370,7 +371,7 @@ function drawSky(t){
       const top = ridge(x, k, f), lit = ridge(x - 1, k, f) - ridge(x + 1, k, f);   // > 0: rising to the right, facing the sun
       for (let y = Math.max(0, Math.floor(top)); y < pix.H; y++){
         const depth = y - top, b = pix.bayer(x, y);
-        let lv = depth < 1 ? 3 : 1 + (lit * 0.6 + 0.4 - depth * 0.02 + (b - 0.5) * 0.6 > 0.5 ? 1 : 0);
+        let lv = depth < 1 ? 3 : 1 + (lit * 1.2 + 0.4 - depth * 0.04 + (b - 0.5) * 0.6 > 0.5 ? 1 : 0);
         if (hash(Math.floor(x + scroll * k * PX), y) > 0.985) lv = 0;   // a pock mark
         pix.px(x, y, R[Math.max(0, lv)], layer);
       }
@@ -383,76 +384,75 @@ function drawGround(){
     const top = surf(x), slope = surf(x - 1) - surf(x + 1), wc = sc + Math.floor(x / PX + frac), pit = craterAt(wc), X = x + X0;
     for (let y = Math.floor(top); y < pix.H; y++){
       const depth = y - top, h = hash(X, y);
-      if (pit && inPit(pit, wc) && depth < 6){ pix.px(x, y, H[depth < 1 ? 3 : 2], 2); continue; }   // a crater's floor is red: a pit always reads as danger
+      if (pit && inPit(pit, wc) && depth < 3){ pix.px(x, y, H[depth < 1 ? 3 : 2], 2); continue; }   // a crater's floor is red: a pit always reads as danger
       let c = R[depth < 1 ? 4 : 3];
-      if (depth < 3 && Math.abs(slope) > 1.5) c = R[slope > 0 ? 4 : 2];   // slopes facing the sun are lit
+      if (depth < 2 && Math.abs(slope) > 0.75) c = R[slope > 0 ? 4 : 2];   // slopes facing the sun are lit
       else if (h > 0.986) c = R[4]; else if (hash(X - 1, y - 1) > 0.986) c = R[1];   // pebbles with a shadow
       else if (depth >= 1){   // Balote's close tones from smooth noise, darkening with depth
-        const k = [0.9, 0.94, 0.98, 1.02][Math.max(0, Math.min(3, Math.floor((0.5 + (pixNoise(X * 0.06, y * 0.12) - 0.5) * 0.8) * 4 + (pix.bayer(x, y) - 0.5) * 0.6)))] * Math.max(0.55, 1 - depth * 0.006);
+        const k = [0.9, 0.94, 0.98, 1.02][Math.max(0, Math.min(3, Math.floor((0.5 + (pixNoise(X * 0.12, y * 0.24) - 0.5) * 0.8) * 4 + (pix.bayer(x, y) - 0.5) * 0.6)))] * Math.max(0.55, 1 - depth * 0.012);
         c = [c[0] * k, c[1] * k, c[2] * k];
       }
       pix.px(x, y, c, 2);
     }
   }
 }
-// A wire-mesh wheel of radius r turned by angle a: a chevron tread, spokes, a hub.
+// A wheel of radius r (3 pixels on the buggy) turned by angle a, in eighth turns so it stays pixel art: a tyre with a
+// tread mark, two spokes and a hub.
 function wheel(cx, cy, r, a){
-  const T = pix.ramp(C.tire), M = pix.ramp(C.rim);
-  for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++){
-    const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy), th = Math.atan2(dy, dx) - a;
-    if (d > r + 0.5) continue;
-    const tread = ((Math.floor(th * 10 / Math.PI) % 2) + 2) % 2;
-    if (d > r - 0.6){ if (tread) pix.px(x, y, T[2], 3); continue; }   // the tread's bumps stand proud of the tyre
-    if (d > r - 1.8){ pix.px(x, y, T[tread ? 1 : 2], 3); continue; }
-    if (d < 1.4){ pix.px(x, y, M[4], 3); continue; }
-    let spoke = false; for (let k = 0; k < 3; k++) if (Math.abs(Math.sin(th - k * Math.PI / 3)) * d < 0.6) spoke = true;
-    pix.px(x, y, spoke ? M[3] : (x + y) & 1 ? T[1] : T[0], 3);   // the wire mesh
+  const T = pix.ramp(C.tire), M = pix.ramp(C.rim), q = Math.round(a / (Math.PI / 4)) * (Math.PI / 4);
+  const x0 = Math.round(cx), y0 = Math.round(cy);
+  for (let y = -Math.ceil(r); y <= r; y++) for (let x = -Math.ceil(r); x <= r; x++){
+    const d = Math.hypot(x, y); if (d > r + 0.3) continue;
+    pix.px(x0 + x, y0 + y, d > r - 1 ? T[y < 0 ? 2 : 1] : T[0], 3);
   }
+  for (const s of [0, Math.PI / 2]) for (let k = -1; k <= 1; k += 2){   // spokes, and a tread mark on the tyre
+    const u = Math.round(Math.cos(q + s) * (r - 1)) * k, v = Math.round(Math.sin(q + s) * (r - 1)) * k;
+    pix.px(x0 + u, y0 + v, M[3], 3);
+  }
+  pix.px(x0 + Math.round(Math.cos(q) * r), y0 + Math.round(Math.sin(q) * r), T[3], 3);
+  pix.px(x0, y0, M[4], 3);
 }
 function drawBuggy(t){
-  const x0 = Math.round(bxs() * PX), r = 6;
+  const x0 = Math.round(bxs() * PX), r = 3;
   const W3 = WHEELS.map((w, i) => {
-    const x = x0 + w * PX + 2;
+    const x = x0 + w * PX + 1;
     return { x, y: (grounded || state === "title" ? surf(x) : (wy[i] + 1) * PY) - r };
   });
   const axle = lx => { const x = x0 + lx; return x <= W3[1].x ? W3[0].y + (W3[1].y - W3[0].y) * (x - W3[0].x) / (W3[1].x - W3[0].x) : W3[1].y + (W3[2].y - W3[1].y) * (x - W3[1].x) / (W3[2].x - W3[1].x); };
   const P = (lx, ly, c) => pix.px(x0 + lx, Math.round(axle(lx)) + ly, c, 3);   // a pixel on the buggy, which tilts with its wheels
   const box = (lx, ly, w, h, R, top = 4, mid = 3, bot = 2) => { for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) P(lx + i, ly + j, R[j === 0 ? top : j === h - 1 ? bot : mid]); };
   const hull = pix.ramp(C.hull), gold = pix.ramp(C.gold), fr = pix.ramp(C.frame), seat = pix.ramp(C.seat), suit = pix.ramp(C.suit);
-  const spin = scroll * PX / r;
   // suspension arms, then the wheels on them
-  for (const w of W3) for (let k = 0; k <= 4; k++) P(w.x - x0 - k, -k, fr[2]);
-  W3.forEach(w => wheel(w.x, w.y, r, spin));
-  // the frame: a two-pixel tube from end to end, a deck, the rack at the back and the nose
-  for (let lx = 1; lx <= 36; lx++){ P(lx, -5, fr[3]); P(lx, -4, fr[1]); }
-  box(4, -7, 30, 2, hull, 4, 3, 2);
-  box(2, -12, 7, 5, fr, 4, 3, 2); box(2, -13, 7, 1, gold, 4); P(3, -10, gold[3]); P(6, -10, gold[3]); P(4, -9, hull[4]);   // the equipment rack, gold foil on top
-  for (let k = 0; k < 4; k++) P(33 + k, -7 + Math.max(0, k - 1), hull[3 - (k >> 1)]);   // the nose slopes down
-  // fenders: gold arcs over each wheel, lit on top
-  for (const w of W3) for (let a = Math.PI * 1.08; a <= Math.PI * 1.92; a += 0.08){
-    const lx = Math.round(w.x - x0 + Math.cos(a) * (r + 1.6)), ly = Math.round(w.y - axle(w.x - x0) + Math.sin(a) * (r + 1.6));
-    P(lx, ly, gold[Math.sin(a) < -0.85 ? 4 : 3]); P(lx, ly - 1, gold[4]);
-  }
-  // two seats, the driver in the front one: white suit, helmet with a gold visor, backpack
-  box(12, -9, 6, 2, seat, 3, 2, 2); box(12, -14, 2, 5, seat, 3, 2, 1);
-  box(21, -9, 6, 2, seat, 3, 2, 2); box(21, -14, 2, 5, seat, 3, 2, 1);
-  box(23, -14, 3, 5, suit, 4, 3, 2); box(22, -13, 1, 4, fr, 3, 2, 2); box(26, -11, 3, 2, suit, 4, 3, 2);   // body, backpack, arm to the wheel
-  for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) if (x * x + y * y <= 9) P(24 + x, -17 + y, x > 0 && y > -2 && y < 2 ? pix.ramp(C.visor)[x > 1 ? 4 : 3] : suit[y < 0 && x < 1 ? 4 : 3]);
+  for (const w of W3) for (let k = 0; k <= 2; k++) P(w.x - x0 - k, -k, fr[2]);
+  W3.forEach(w => wheel(w.x, w.y, r, scroll * PX / r));
+  // the frame: a tube from end to end, a deck, the rack at the back and the nose
+  for (let lx = 0; lx <= 18; lx++) P(lx, -3, fr[2]);
+  box(2, -4, 15, 1, hull, 4);
+  box(0, -6, 4, 2, fr, 4, 3, 2); box(0, -7, 4, 1, gold, 4);   // the equipment rack, gold foil on top
+  P(17, -4, hull[3]); P(18, -4, hull[2]);                     // the nose slopes down
+  // fenders: gold arcs over each wheel
+  for (const w of W3) for (const [dx, dy] of [[-3, -2], [-2, -3], [-1, -4], [0, -4], [1, -4], [2, -3], [3, -2]]) P(w.x - x0 + dx, Math.round(w.y - axle(w.x - x0)) + dy, gold[dy === -4 ? 4 : 3]);
+  // two seats, the driver in the front one: white suit, a helmet with a gold visor
+  box(6, -5, 3, 1, seat, 3); box(6, -7, 1, 2, seat, 3, 2, 2);
+  box(10, -5, 3, 1, seat, 3); box(10, -7, 1, 2, seat, 3, 2, 2);
+  box(11, -7, 2, 2, suit, 4, 3, 3); P(13, -6, suit[3]);   // the driver, an arm to the wheel
+  for (const [x, y] of [[-1, -1], [0, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1]]) P(12 + x, -9 + y, suit[y < 0 ? 4 : 3]);
+  P(13, -9, C.visor); P(13, -10, suit[4]);
   // the up cannon between the seats, the nose cannon with a headlight, the dish on its mast, the whip aerial
-  box(18, -11, 2, 3, fr, 3, 2, 2); for (let ly = -17; ly <= -12; ly++) P(18, ly, fr[ly === -17 ? 4 : 3]);
-  for (let lx = 34; lx <= 39; lx++) P(lx, -6, fr[lx === 39 ? 4 : 3]);
-  P(36, -8, C.amber); P(37, -8, C.amber);
-  for (let ly = -8; ly >= -18; ly--) P(31, ly, fr[2]);
-  for (let lx = -5; lx <= 5; lx++){ const h = Math.round(Math.abs(lx) * 0.35); P(31 + lx, -20 + h, hull[lx < 0 ? 4 : 3]); if (Math.abs(lx) < 5) P(31 + lx, -19 + h, hull[1]); }
-  for (let ly = -6; ly >= -22; ly--) P(1, ly, fr[3]);
-  P(1, -23, (t / 400 | 0) % 2 ? C.red : pix.ramp(C.red)[1]);
+  for (let ly = -9; ly <= -6; ly++) P(9, ly, fr[ly === -9 ? 4 : 3]);
+  for (let lx = 17; lx <= 20; lx++) P(lx, -3, fr[lx === 20 ? 4 : 3]);
+  P(18, -5, C.amber);
+  for (let ly = -5; ly >= -9; ly--) P(15, ly, fr[2]);
+  for (let lx = -2; lx <= 2; lx++) P(15 + lx, -10 + (Math.abs(lx) > 1 ? 1 : 0), hull[lx < 0 ? 4 : 3]);
+  for (let ly = -4; ly >= -11; ly--) P(0, ly, fr[3]);
+  P(0, -12, (t / 400 | 0) % 2 ? C.red : pix.ramp(C.red)[1]);
 }
 // Rocks are lumpy domes, each with its own shape; shading as a lit ball.
 function drawRock(f, x0, base){
   const w = f.w * PX, h = f.h * PY * 0.85, seed = f.seed ??= Math.random() * 100, R = pix.ramp(C.rock);
   for (let x = 0; x < w; x++){
     const u = (x + 0.5 - w / 2) / (w / 2), top = base - h * Math.sqrt(Math.max(0, 1 - u * u)) * (0.8 + 0.35 * pixNoise(seed + x * 0.5, 1));
-    for (let y = Math.floor(top); y <= base + 1; y++){
+    for (let y = Math.floor(top); y <= base; y++){
       const v = (y - (base - h / 2)) / (h / 2 + 1), l = Math.max(0, Math.min(1, -0.55 * u - 0.6 * v + 0.5));
       const lv = Math.max(1, Math.min(4, Math.floor(l * 4.4 + 0.2 + (pix.bayer(x0 + x, y) - 0.5) * 0.7) - (hash(seed + x, y) > 0.9 ? 1 : 0)));
       pix.px(x0 + x, y, R[lv], 3);
@@ -460,100 +460,102 @@ function drawRock(f, x0, base){
   }
 }
 function drawTank(f, x0, base, t){
-  const R = pix.ramp(f.hp > 1 ? C.tank : C.tank.map(v => v * 0.7)), T = pix.ramp(C.tread), F = pix.ramp(C.frame);
-  for (let x = 1; x < 19; x++) for (let y = -5; y <= 0; y++){   // the tracks, round at the ends, with road wheels
-    const ends = (x < 3 || x > 16) && (y === -5 || y === 0); if (ends) continue;
-    pix.px(x0 + x, base + y, T[y === -5 ? 3 : (x + Math.floor(t / 60)) % 3 ? 1 : 2], 3);
+  const col = f.hp > 1 ? C.tank : C.tank.map(v => v * 0.7), R = pix.ramp(col), T = pix.ramp(C.tread), F = pix.ramp(C.frame);
+  for (let x = 0; x < 10; x++) for (let y = -2; y <= 0; y++){   // the tracks, round at the ends, with road wheels turning
+    if ((x === 0 || x === 9) && y !== -1) continue;
+    pix.px(x0 + x, base + y, y === -2 ? T[3] : y === 0 ? T[1] : (x + Math.floor(t / 120)) % 2 ? F[3] : T[1], 3);
   }
-  for (const wx of [4, 8, 12, 16]) pix.ball(x0 + wx, base - 2.5, 1.6, C.frame, 3, true);
-  for (let x = 2; x < 18; x++) for (let y = -9; y <= -6; y++) if (!(y === -9 && (x < 4 || x > 15))) pix.px(x0 + x, base + y, R[y === -9 ? 4 : y === -6 ? 2 : 3], 3);
-  pix.ball(x0 + 11, base - 9.5, 3.6, f.hp > 1 ? C.tank : C.tank.map(v => v * 0.7), 3, true);
-  for (let x = -4; x < 8; x++){ pix.px(x0 + x, base - 11, F[3], 3); pix.px(x0 + x, base - 10, F[1], 3); }   // the gun points at you
-  if ((t / 300 | 0) % 2) pix.px(x0 + 13, base - 12, C.red, 3);
+  for (let x = 1; x < 9; x++) for (let y = -4; y <= -3; y++) pix.px(x0 + x, base + y, R[y === -4 ? 4 : 2], 3);   // the hull
+  for (let x = 4; x < 8; x++) pix.px(x0 + x, base - 5, R[3], 3); pix.px(x0 + 5, base - 6, R[4], 3); pix.px(x0 + 6, base - 6, R[3], 3);   // the turret
+  for (let x = -2; x < 4; x++) pix.px(x0 + x, base - 5, F[3], 3);   // the gun points at you
+  if ((t / 300 | 0) % 2) pix.px(x0 + 7, base - 6, C.red, 3);
 }
 function drawUfo(u, t){
-  const cx = (u.x + 2.5) * PX, cy = (u.y + 1) * PY, warn = u.dv && u.dv.t < 0;
+  const cx = Math.round((u.x + 2.5) * PX), cy = Math.round((u.y + 1) * PY), warn = u.dv && u.dv.t < 0;
   const col = u.kind === "fighter" && (warn || u.dv) ? C.warn : C[u.kind], R = pix.ramp(col), G = pix.ramp(C.glass);
   if (u.kind === "fighter"){   // a dart pointing down, an engine glowing on top
-    for (let j = 0; j < 8; j++){ const hw = 6 - j * 0.75; for (let x = -hw; x <= hw; x++) pix.px(cx + x, cy - 4 + j, R[j === 0 ? 4 : Math.abs(x) > hw - 1 ? 2 : 3], 3); }
-    pix.px(cx, cy - 1, G[4]); pix.px(cx, cy, G[2]); pix.px(cx - 1, cy - 5, C.amber); pix.px(cx + 1, cy - 5, C.amber);
+    for (let j = 0; j < 4; j++){ const hw = 3 - j; for (let x = -hw; x <= hw; x++) pix.px(cx + x, cy - 2 + j, R[j === 0 ? 4 : Math.abs(x) === hw && hw ? 2 : 3], 3); }
+    pix.px(cx, cy, G[3], 3); pix.px(cx - 1, cy - 3, C.amber, 3); pix.px(cx + 1, cy - 3, C.amber, 3);
     return;
   }
-  const big = u.kind === "bomber", rx = big ? 10 : 9, ry = big ? 3.5 : 2.5;
-  for (let y = -Math.ceil(ry); y <= ry; y++) for (let x = -rx; x <= rx; x++){
-    if ((x / rx) ** 2 + (y / ry) ** 2 > 1) continue;
-    pix.px(cx + x, cy + y, R[y < -ry * 0.4 ? 4 : y < ry * 0.3 ? 3 : 1], 3);
-  }
-  for (let y = -4; y < -1; y++) for (let x = -4; x <= 4; x++) if ((x / 4.5) ** 2 + ((y + 1) / 3.5) ** 2 <= 1) pix.px(cx + x, cy + y - (big ? 1 : 0), G[x < 0 && y < -2 ? 4 : 3], 3);   // the glass dome
+  const big = u.kind === "bomber", rx = big ? 5 : 4;
+  for (let x = -rx; x <= rx; x++){ pix.px(cx + x, cy, R[3], 3); if (Math.abs(x) < rx) { pix.px(cx + x, cy - 1, R[4], 3); pix.px(cx + x, cy + 1, R[1], 3); } }   // the saucer
+  for (let x = -1; x <= 1; x++) pix.px(cx + x, cy - 2, G[x < 0 ? 4 : 3], 3); pix.px(cx, cy - 3, G[4], 3);   // the glass dome
   const k = Math.floor(t / 120);
-  for (let i = -2; i <= 2; i++) pix.px(cx + i * 3.5, cy + (big ? 1 : 0), (i + k) % 3 ? R[1] : C.amber, 3);   // running lights
-  if (big){ pix.rect(cx - 3, cy + 3, 6, 1, R[1], 3); if (k % 2) pix.px(cx, cy + 4, C.red, 3); }   // the bomb bay
+  for (let i = -1; i <= 1; i++) pix.px(cx + i * 3, cy, (i + k) % 3 ? R[1] : C.amber, 3);   // running lights
+  if (big){ pix.rect(cx - 1, cy + 2, 3, 1, R[1], 3); if (k % 2) pix.px(cx, cy + 3, C.red, 3); }   // the bomb bay
 }
 function drawCourse(t){
   for (const f of features){
-    const x0 = Math.round(xOf(f.x)); if (x0 > pix.W + 24 || x0 + f.w * PX < -24) continue;
+    const x0 = Math.round(xOf(f.x)); if (x0 > pix.W + 12 || x0 + f.w * PX < -12) continue;
     const base = Math.round(surf(x0 + f.w * PX / 2));
     if (f.type === "rock") drawRock(f, x0, base);
     else if (f.type === "tank") drawTank(f, x0, base, t);
-    else if (f.type === "boulder"){   // rolls, with dark pocks that turn with it
-      const bx0 = x0 + PX, by0 = base - 7.5;
-      pix.ball(bx0, by0, 7.5, C.rock.map(v => v * 0.8), 3);
-      for (let k = 0; k < 3; k++){ const a = f.a + k * 2.1; pix.px(bx0 + Math.cos(a) * 4, by0 + Math.sin(a) * 4, pix.ramp(C.rock)[0], 3); }
+    else if (f.type === "boulder"){   // rolls: a dark pock turns with it, in eighth turns
+      const bx0 = x0 + PX, by0 = base - 4, q = Math.round(f.a / (Math.PI / 4)) * (Math.PI / 4);
+      pix.ball(bx0, by0, 4, C.rock.map(v => v * 0.8), 3);
+      pix.px(Math.round(bx0 + Math.cos(q) * 2), Math.round(by0 + Math.sin(q) * 2), pix.ramp(C.rock)[0], 3);
     } else if (f.type === "mine"){   // a squat dome with spikes and a blinking light
-      const mx = x0 + 2;
-      pix.ball(mx, base - 1, 3, C.mine, 3, true);
-      for (const [dx, dy] of [[-4, -1], [4, -1], [0, -5], [-3, -4], [3, -4]]) pix.px(mx + dx, base + dy, pix.ramp(C.mine)[1], 3);
-      pix.px(mx, base - 4, Math.sin(t * 0.012) > 0 ? C.red : pix.ramp(C.red)[1], 3);
+      const mx = x0 + 1;
+      pix.rect(mx - 1, base - 1, 3, 1, pix.ramp(C.mine)[3], 3);
+      for (const [dx, dy] of [[-2, -1], [2, -1]]) pix.px(mx + dx, base + dy, pix.ramp(C.mine)[1], 3);
+      pix.px(mx, base - 2, Math.sin(t * 0.012) > 0 ? C.red : pix.ramp(C.red)[1], 3);
     }
   }
   for (let k = reached; k <= reached + 1; k++){   // checkpoint posts: a pole, a beacon and a flag with the letter
-    const x = Math.round(xOf(postX(k))) + 2; if (x < -12 || x > pix.W + 12) continue;
+    const x = Math.round(xOf(postX(k))) + 1; if (x < -12 || x > pix.W + 12) continue;
     const base = Math.round(surf(x)), F = pix.ramp(C.post), next = k > reached;
-    for (let y = base - 30; y < base; y++) pix.px(x, y, F[y === base - 30 ? 4 : 3], 3);
-    pix.rect(x + 1, base - 30, 9, 6, pix.ramp(next ? C.hiAccent : C.post)[next ? 3 : 1], 3);
-    pix.px(x, base - 31, next && (t / 300 | 0) % 2 ? C.amber : F[2], 3);
-    pix.text(Math.round((x + 5) / pix.W * TGW) - 1, Math.floor((base - 40) / pix.H * TGH), "[" + letter(k) + "]", next ? ACCENT : DIM);
+    for (let y = base - 15; y < base; y++) pix.px(x, y, F[y === base - 15 ? 4 : 3], 3);
+    pix.rect(x + 1, base - 15, 5, 3, pix.ramp(next ? C.hiAccent : C.post)[next ? 3 : 1], 3);
+    pix.px(x, base - 16, next && (t / 300 | 0) % 2 ? C.amber : F[2], 3);
+    const [gx, gy] = pix.gridAt((x + 3) / pix.W, (base - 20) / pix.H);
+    pix.text(gx - 1, gy - 1, "(" + letter(k) + ")", next ? ACCENT : DIM);
   }
 }
 function drawShots(t){
-  for (const s of fShots){ const x = xOf(s.x), y = s.y * PY + 4; for (let k = 0; k < 7; k++) pix.px(x - k, y, k < 3 ? C.shot : C.amber, 3); }
-  for (const s of uShots){ const x = xOf(s.x) + 2, y = s.y * PY; for (let k = 0; k < 6; k++) pix.px(x, y + k, k < 3 ? C.shot : C.amber, 3); }
-  for (const b of bombs){ const x = xOf(b.x) + 2, y = b.y * PY + 4; pix.ball(x, y, b.big ? 3 : 2.2, [70, 70, 80], 3, true); if ((t / 150 | 0) % 2) pix.px(x, y - (b.big ? 3 : 2), C.red, 3); }
-  for (const s of tShots){ const x = xOf(s.x) + 2, y = s.y * PY + 4; pix.ball(x, y, 2, C.amber, 3, true); pix.px(x - 1, y - 1, C.shot, 3); }
+  for (const s of fShots){ const x = Math.round(xOf(s.x)), y = Math.round(s.y * PY) + 2; for (let k = 0; k < 4; k++) pix.px(x - k, y, k < 2 ? C.shot : C.amber, 3); }
+  for (const s of uShots){ const x = Math.round(xOf(s.x)) + 1, y = Math.round(s.y * PY); for (let k = 0; k < 3; k++) pix.px(x, y + k, k < 2 ? C.shot : C.amber, 3); }
+  for (const b of bombs){ const x = Math.round(xOf(b.x)) + 1, y = Math.round(b.y * PY) + 2; pix.rect(x - 1, y - 1, b.big ? 3 : 2, b.big ? 3 : 2, [70, 70, 80], 3); if ((t / 150 | 0) % 2) pix.px(x, y - 2, C.red, 3); }
+  for (const s of tShots){ const x = Math.round(xOf(s.x)) + 1, y = Math.round(s.y * PY) + 2; pix.rect(x, y, 2, 1, C.amber, 3); pix.px(x, y - 1, C.shot, 3); }
 }
 // world drawing (bodies, fx, flashes) is in the sc frame: shift it by the part-column scroll
 function drawWorld(){
   pix.ox = -frac * PX;
   for (const f of flashes) pix.glow(f.x, f.y, CH * 6 * f.size, FLASH.map(v => v * f.t));
   for (const b of world.bodies){
-    if (b.mat.name === "rubber"){ wheel(b.x / PU + pix.ox, b.y / PU, b.r / PU, b.a); continue; }
-    pix.body(b, b.mat.name === "part" ? (b.gold ? C.gold : C.hull) : null);
+    const x = Math.round(b.x / PU + pix.ox), y = Math.round(b.y / PU);
+    if (b.mat.name === "rubber"){ wheel(x, y, Math.max(1.5, b.r / PU), b.a); continue; }
+    // the wreck's plates: a bar three pixels long, lying or standing by its angle in quarter turns
+    if (b.box){ const R = pix.ramp(b.gold ? C.gold : C.hull), flat = (Math.round(b.a / (Math.PI / 2)) & 1) === 0; for (let k = -1; k <= 1; k++) pix.px(x + (flat ? k : 0), y + (flat ? 0 : k), R[k ? 2 : 4], 3); continue; }
+    pix.ball(b.x / PU + pix.ox, b.y / PU, Math.max(0.8, b.r / PU), pix.rgb(b.alb), 3, true);
   }
   vfx.draw(pix);
   pix.ox = 0;
 }
+// text with a black box behind it (MENU_LAYER), so it reads over the ground
+const say2 = (row, s, v) => pix.text((TGW - s.length - 2) >> 1, row, " " + s + " ", v, MENU_LAYER);
 function drawTitle(){
   [["ROVER", 5], ["PATROL", 11]].forEach(([word, y0], wi) => {
     const x0 = Math.floor((GW - word.length * 12 + 2) / 2), R = pix.ramp(wi ? C.gold : C.saucer);
     [...word].forEach((ch, li) => FONT[ch].forEach((row, dy) => { for (let dx = 0; dx < 5; dx++) if (row[dx] === "#"){
       const X = (x0 + li * 12 + dx * 2) * PX, Y = (y0 + dy) * PY, on = (ddx, ddy) => FONT[ch][dy + ddy] && FONT[ch][dy + ddy][dx + ddx] === "#";
       for (let j = 0; j < PY; j++) for (let i = 0; i < 2 * PX; i++){   // each dot a bevelled block, joined to its neighbours
-        const lv = (j === 0 && !on(0, -1)) || (i === 0 && !on(-1, 0)) ? 4 : (j === PY - 1 && !on(0, 1)) || (i === 2 * PX - 1 && !on(1, 0)) ? 1 : j < 3 ? 3 : 2;
+        const lv = (j === 0 && !on(0, -1)) || (i === 0 && !on(-1, 0)) ? 4 : (j === PY - 1 && !on(0, 1)) || (i === 2 * PX - 1 && !on(1, 0)) ? 1 : j < 2 ? 3 : 2;
         pix.px(X + i, Y + j, R[lv], 3);
       }
     } }));
   });
-  const blink = (performance.now() / 500 | 0) % 2;
-  pix.center(12, INPUT.touch ? "TAP TO START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
-  pix.center(14, INPUT.touch ? "RIGHT SIDE: JUMP (HOLD TO JUMP FURTHER)" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP (HOLD: FURTHER)", DIM);
-  pix.center(15, INPUT.touch ? "LEFT SIDE: FIRE, AND SLIDE TO CHANGE SPEED" : "X FIRE   ESC MENU", DIM);
-  pix.center(16, "JUMP CRATERS AND MINES. SHOOT ROCKS AHEAD AND UFOS ABOVE.", DIM);
-  pix.center(17, "LATER: TANKS (JUMP THEIR SHELLS) AND ROLLING BOULDERS,", DIM);
-  pix.center(18, "AND FIGHTERS THAT DIVE (CHANGE SPEED TO DODGE).", DIM);
-  if (furthest) pix.center(11, "START AT POINT " + letter(Math.min(startAt, furthest)) + "  (MENU: START AT, UP TO " + letter(furthest) + ")", DIM);
+  const blink = (performance.now() / 500 | 0) % 2;   // each line in a black box, so it reads over the hills
+  if (furthest) say2(10, "START AT POINT " + letter(Math.min(startAt, furthest)) + "  (MENU: START AT, UP TO " + letter(furthest) + ")", DIM);
+  say2(11, INPUT.touch ? "TAP TO START" : "PRESS SPACE TO START", blink ? WHITE : DIM);
+  say2(12, INPUT.touch ? "RIGHT SIDE: JUMP (HOLD TO JUMP FURTHER)" : "LEFT/RIGHT SPEED   UP OR SPACE JUMP (HOLD: FURTHER)", DIM);
+  say2(13, INPUT.touch ? "LEFT SIDE: FIRE, AND SLIDE TO CHANGE SPEED" : "X FIRE   ESC MENU", DIM);
+  say2(14, "JUMP CRATERS AND MINES. SHOOT ROCKS AHEAD AND UFOS ABOVE.", DIM);
+  say2(15, "LATER: TANKS (JUMP THEIR SHELLS) AND ROLLING BOULDERS,", DIM);
+  say2(16, "AND FIGHTERS THAT DIVE (CHANGE SPEED TO DODGE).", DIM);
   if (scores.list.length){   // the best three; more would run onto the ground
-    pix.center(19, "HIGH SCORES", ACCENT);
-    scores.list.slice(0, 3).forEach((s, i) => pix.center(20 + i, `${i + 1}. ${String(s.score).padStart(7)}   POINT ${s.point.padEnd(2)}`, i ? DIM : WHITE));
+    say2(17, "HIGH SCORES", ACCENT);
+    scores.list.slice(0, 3).forEach((s, i) => say2(18 + i, `${i + 1}. ${String(s.score).padStart(7)}   POINT ${s.point.padEnd(2)}`, i ? DIM : WHITE));
   }
 }
 function draw(t){
@@ -577,16 +579,16 @@ function draw(t){
     // HUD: score and lives on the left, the course A..Z in the middle, time on the right
     pix.text(1, 0, "SCORE " + String(score).padStart(6, "0"), WHITE);
     pix.text(1, 1, "HI    " + String(Math.max(score, scores.list[0] ? scores.list[0].score : 0)).padStart(6, "0"), DIM);
-    pix.text(TGW - 14, 0, "LIVES " + "^".repeat(Math.max(0, lives - (state === "dead" ? 1 : 0))), ROVER_RGB);
-    pix.text(TGW - 14, 1, "TIME  " + String(Math.floor(pointT)).padStart(3), DIM);
+    pix.text(TGW - 10, 0, "LIVES " + "^".repeat(Math.max(0, lives - (state === "dead" ? 1 : 0))), ROVER_RGB);
+    pix.text(TGW - 10, 1, "TIME  " + String(Math.floor(pointT)).padStart(3), DIM);
     const x0 = (TGW - 26) >> 1, here = reached % 26;
     for (let k = 0; k < 26; k++) pix.text(x0 + k, 0, letter(k), k === here ? ACCENT : k < here ? WHITE : DIM);
     if (state === "over"){
-      pix.center(9, "  GAME OVER  ", WHITE);
-      pix.center(11, `  ${score} POINTS  `, ACCENT);
-      if (best) pix.center(12, "  NEW HIGH SCORE!  ", ACCENT);
-      if (stateT > 1) pix.center(14, INPUT.touch ? "  TAP TO GO ON  " : "  PRESS SPACE  ", DIM);
-    } else if (msgT > 0) pix.center(3, "  " + msg + "  ", WHITE);
+      say2(7, "GAME OVER", WHITE);
+      say2(9, `${score} POINTS`, ACCENT);
+      if (best) say2(10, "NEW HIGH SCORE!", ACCENT);
+      if (stateT > 1) say2(12, INPUT.touch ? "TAP TO GO ON" : "PRESS SPACE", DIM);
+    } else if (msgT > 0) say2(3, msg, WHITE);
   }
   if (!INPUT.touch) pix.text(TGW - 11, TGH - 1, " ESC MENU ", DIM);
   if (menu.open) menu.draw(pix, { accent: ACCENT, normal: WHITE, dim: DIM, title: state === "title" ? "MENU" : "PAUSED" });
@@ -640,12 +642,12 @@ createTouch(cv, {
     if (menu.open || state !== "play") return;
     if (p.x >= 0.5){ jumper = p; jumpQueued = JUMP_BUFFER; jumpHeld = true; } else { gunner = p; fireHeld = true; }
   },
-  move: p => { if (p === gunner){ const d = (p.x - p.x0) * pix.W; keys.right = d > 16; keys.left = d < -16; } },
+  move: p => { if (p === gunner){ const d = (p.x - p.x0) * pix.W; keys.right = d > 8; keys.left = d < -8; } },
   up: p => {
     if (p === jumper){ jumper = null; jumpHeld = false; return; }
     if (p === gunner){ gunner = null; fireHeld = false; keys.left = keys.right = false; return; }
     if (!p.tap) return;
-    if (menu.open) menu.tap(Math.floor(p.x * TGW), Math.floor(p.y * TGH));
+    if (menu.open) menu.tap(...pix.gridAt(p.x, p.y));
     else action();
   }
 });
